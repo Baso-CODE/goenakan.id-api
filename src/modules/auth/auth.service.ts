@@ -7,6 +7,7 @@ import { LoginDTO } from "./dto/login.dto";
 import { RegisterDTO } from "./dto/register.dto";
 import { PasswordService } from "./password.service";
 import { TokenService } from "./token.service";
+import { Role } from "@prisma/client";
 
 @injectable()
 export class AuthService {
@@ -16,6 +17,7 @@ export class AuthService {
     private readonly tokenService: TokenService,
   ) {}
 
+  // === LOGIN ===
   login = async (body: LoginDTO) => {
     const { email, password } = body;
 
@@ -45,13 +47,14 @@ export class AuthService {
     );
 
     const { password: pw, ...userWithoutPassword } = existingUser;
-
     return { ...userWithoutPassword, accessToken };
   };
 
+  // === REGISTER ===
   register = async (body: RegisterDTO) => {
-    const { email, password } = body;
+    const { email, password, name, role } = body;
 
+    // 1. Cek apakah email sudah dipakai
     const existingUser = await this.prisma.user.findFirst({
       where: { email },
     });
@@ -60,14 +63,28 @@ export class AuthService {
       throw new ApiError("Email already exist", 400);
     }
 
+    // 2. Cegah pendaftaran SUPER_ADMIN lewat endpoint
+    if (role === "SUPER_ADMIN") {
+      throw new ApiError(
+        "SUPER_ADMIN cannot be registered via this endpoint",
+        403,
+      );
+    }
+
+    // 3. Hash password
     const hashedPassword = await this.passwordService.hashPassword(password);
 
-    return await this.prisma.user.create({
+    // 4. Simpan user baru
+    const newUser = await this.prisma.user.create({
       data: {
+        name,
         email,
         password: hashedPassword,
+        role: (role as Role) || Role.ADMIN_INVOICE,
       },
       select: prismaExclude("User", ["password"]),
     });
+
+    return newUser;
   };
 }

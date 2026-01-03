@@ -1,0 +1,116 @@
+import { injectable } from "tsyringe";
+import { OrderExportQuery, OrderService } from "./order.service";
+import { NextFunction, Request, Response } from "express";
+import { CreateOrderDTO } from "./dto/createOrder.dto";
+
+@injectable()
+export class OrderController {
+  constructor(private readonly orderService: OrderService) {}
+
+  createOrder = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = req.body as CreateOrderDTO;
+      const result = await this.orderService.createOrder(body);
+      res.status(201).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  updateOrder = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const body = req.body as CreateOrderDTO;
+      const result = await this.orderService.updateOrder(id, body);
+
+      res.status(201).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+  getOrderByIdUpdate = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { id } = req.params;
+      const result = await this.orderService.getOrderForUpdate(id);
+
+      res.status(201).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+  getOrderByIdDetail = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { id } = req.params;
+      const result = await this.orderService.getOrderForDetail(id);
+
+      res.status(201).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // order.controller.ts
+
+  getAllOrder = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { page, take, search, salesCategory, startDate, endDate } =
+        req.query;
+
+      const result = await this.orderService.getAllOrders({
+        // PERBAIKAN: Validasi Number agar tidak NaN
+        page: page && !isNaN(Number(page)) ? Number(page) : 1,
+        take: take && !isNaN(Number(take)) ? Number(take) : 10,
+
+        // Handle string filtering
+        search: search ? String(search) : undefined,
+
+        // Handle filter "ALL" dari frontend agar tidak terkirim ke Prisma
+        salesCategory:
+          salesCategory && String(salesCategory) !== "ALL"
+            ? String(salesCategory)
+            : undefined,
+
+        startDate: startDate ? String(startDate) : undefined,
+        endDate: endDate ? String(endDate) : undefined,
+      });
+
+      res.status(200).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  exportOrders = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const query: OrderExportQuery = {
+        startDate: req.query.startDate as string,
+        endDate: req.query.endDate as string,
+        search: req.query.search as string,
+        salesCategory: req.query.salesCategory as string,
+      };
+
+      const excelBuffer = await this.orderService.exportOrdersToExcel(query);
+
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="orders-export-${new Date().toISOString().slice(0, 10)}.xlsx"`,
+      );
+
+      res.send(excelBuffer);
+    } catch (error) {
+      next(error);
+    }
+  };
+}

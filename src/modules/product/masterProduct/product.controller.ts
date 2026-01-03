@@ -1,0 +1,347 @@
+import { NextFunction, Request, Response } from "express";
+import { injectable } from "tsyringe";
+import { CreateProductDTO } from "./dto/createProduct.dto";
+import { UpdateProductAttributesDTO } from "./dto/updateAttributes.dto";
+import { UpdateProductCoreDTO } from "./dto/updateProduct.dto";
+import { UpdateProductImageDTO } from "./dto/updateProductImage.dto";
+import { UpdateProductVideoDTO } from "./dto/updateProductVideo.dto";
+import {
+  UpdateProductVariantFiles,
+  UpdateProductVariantsDTO,
+} from "./dto/updateVariantsProduct.dto";
+import { ProductExportQuery, ProductService } from "./product.service";
+import { ProductSeoDTO } from "./dto/productSEO.dto";
+
+// Tipe untuk req.files dari multer.fields
+interface ProductFiles {
+  images?: Express.Multer.File[];
+  videos?: Express.Multer.File[];
+  variantImages?: {
+    [variantIndex: number]: Express.Multer.File[];
+  };
+}
+
+@injectable()
+export class ProductController {
+  constructor(private readonly productService: ProductService) {}
+
+  // === CREATE PRODUCT ===
+  createProduct = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // Setelah parseFormData dijalankan, req.body sudah berupa objek dengan tipe data yang benar (bukan string)
+      console.log("Request Body:", req.body);
+      const data: CreateProductDTO = req.body;
+
+      const files: ProductFiles = (req.files as unknown as ProductFiles) || {};
+
+      const result = await this.productService.createProduct(data, files);
+      res.status(201).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === GET ALL PRODUCTS ===
+  getAllProducts = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { page, take, search, categoryId, isCustom } = req.query;
+
+      const products = await this.productService.getAllProducts({
+        page: page ? Number(page) : 1,
+        take: take ? Number(take) : 10,
+        search: search as string,
+        categoryId: categoryId as string,
+        isCustom:
+          typeof isCustom === "string" ? isCustom === "true" : undefined,
+      });
+
+      res.status(200).json(products);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === GET PRODUCT BY ID ===
+  getProductById = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const product = await this.productService.getProductById(id);
+
+      res.status(200).send(product);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === UPDATE CORE PRODUCT DATA ===
+  updateProductCore = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { id } = req.params;
+      const data: UpdateProductCoreDTO = req.body;
+
+      // Catatan: Media/Attributes/Tiers di-update di endpoint terpisah untuk menghindari kompleksitas
+      const updatedProduct = await this.productService.updateProductCore(
+        id,
+        data,
+      );
+
+      res.status(200).send(updatedProduct);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === DELETE PRODUCT ===
+  deleteProduct = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const result = await this.productService.deleteProduct(id);
+      res.status(200).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === UPDATE PRICE TIERS ===
+  updatePriceTiers = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { id } = req.params;
+      const data = req.body;
+      const updated = await this.productService.updatePriceTiers(id, data);
+      res.status(200).send(updated);
+    } catch (error) {
+      next(error);
+    }
+  }; // === ADD IMAGE ===
+  addImage = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const file = req.file as Express.Multer.File;
+      const metadata = req.body;
+      const image = await this.productService.addImage(id, file, metadata);
+      res.status(201).send(image);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === DELETE IMAGE ===
+  deleteImage = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { imageId } = req.params;
+      const result = await this.productService.deleteImage(imageId);
+      res.status(200).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === ADD VIDEO ===
+  addVideo = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const file = req.file as Express.Multer.File;
+      const { title } = req.body;
+      const video = await this.productService.addVideo(id, file, title);
+      res.status(201).send(video);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === DELETE VIDEO ===
+  deleteVideo = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { videoId } = req.params;
+      const result = await this.productService.deleteVideo(videoId);
+      res.status(200).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === GET ALL PRODUCTS FOR ORDER ===
+  getAllProductsForOrder = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const query = {
+        categoryId: req.query.categoryId as string | undefined,
+        isCustom: req.query.isCustom as string | undefined,
+      };
+      const products = await this.productService.getAllProductsForOrder(query);
+      res.status(200).json(products);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === UPDATE PRODUCT ATTRIBUTES ===
+  updateProductAttributes = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const dto: UpdateProductAttributesDTO = {
+        productId: req.params.id,
+        attributeValueIds: req.body.attributeValueIds,
+      };
+
+      console.log("Ini adlaah data", dto);
+
+      const result = await this.productService.updateProductAttributes(dto);
+      res.status(200).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === UPDATE PRODUCT VARIANTS (GENERAL) ===
+  updateProductVariants = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      // data JSON berada pada req.body.data
+      const dto: UpdateProductVariantsDTO = JSON.parse(req.body.data);
+
+      // cast files
+      const files = req.files as unknown as UpdateProductVariantFiles;
+
+      const result = await this.productService.updateProductVariants(
+        dto,
+        files,
+      );
+
+      res.status(200).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === UPDATE VARIANT IMAGES ONLY ===
+  updateVariantImages = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { id: productId, variantId } = req.params;
+
+      // metadata dikirim sebagai JSON string pada field "metadata"
+      const metadata = JSON.parse(req.body.metadata);
+
+      // files datang dari multer.fields -> req.files.images[]
+      const files = {
+        images: (req.files as any)?.images || [],
+      };
+
+      const result = await this.productService.updateVariantImages(
+        productId,
+        variantId,
+        metadata,
+        files,
+      );
+
+      res.status(200).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  exportProduct = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const query = req.query as unknown as ProductExportQuery;
+      const excelBuffer =
+        await this.productService.exportProductsToExcel(query);
+
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="data-vendor-master-export${new Date().toISOString().slice(0, 10)}.xlsx"`,
+      );
+      res.send(excelBuffer);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  updateImageSEO = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { imageId } = req.params;
+      const data: UpdateProductImageDTO = req.body;
+
+      const updatedImage = await this.productService.updateProductImageSEO(
+        imageId,
+        data,
+      );
+
+      res.status(200).send(updatedImage);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  updateVideoSEO = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { videoId } = req.params;
+      const data: UpdateProductVideoDTO = req.body;
+
+      const updatedVideo = await this.productService.updateProductVideoSEO(
+        videoId,
+        data,
+      );
+
+      res.status(200).send(updatedVideo);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === UPDATE/CREATE SEO ===
+  updateProductSEO = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { id } = req.params;
+      const data: ProductSeoDTO = req.body;
+
+      const result = await this.productService.upsertProductSEO(id, data);
+
+      res.status(200).send({
+        message: "Product SEO data updated successfully",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === GET SEO DATA ===
+  getProductSEO = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const result = await this.productService.getProductSEO(id);
+      res.status(200).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+}

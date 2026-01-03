@@ -1,35 +1,832 @@
+// ===============================================
+// PRISMA SCHEMA — GOENAKAN ID
+// ===============================================
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
-model Sample {
-  id        Int       @id @default(autoincrement())
-  name      String
-  deletedAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+// ===============================================
+// ENUMS & MASTER TABLES
+// ===============================================
 
-  @@map("samples")
+enum Role {
+  SUPER_ADMIN
+  ADMIN_ARTICLE
+  ADMIN_INVOICE
 }
 
+enum ClientType {
+  B2B
+  B2C
+}
+
+enum VendorType {
+  SERVICE
+  PRODUCT
+}
+
+enum InvoiceStatus {
+  DRAFT
+  UNPAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum InvoiceCategory {
+  DP
+  FULL_PAYMENT
+  INSTALLMENT
+  REMAINING_BALANCE
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  CASH
+  CREDIT_CARD
+  QRIS
+}
+
+enum SalesCategory {
+  SALES
+  SAMPLE
+}
+
+enum CashflowType {
+  IN
+  OUT
+}
+
+enum InOutType {
+  INBOUND
+  OUTBOUND
+}
+
+enum DeliveryType {
+  FULL
+  PARTIAL
+}
+
+enum DeliveryStatus {
+  SENT
+  PENDING
+  CANCELLED
+}
+
+enum QuotationStatus {
+  SENT
+  ACCEPTED
+  REJECTED
+}
+
+// ===============================================
+// USER TABLE
+// ===============================================
+
 model User {
-  id        Int       @id @default(autoincrement())
-  email     String    @unique
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
   password  String
-  role      Role      @default(USER)
-  deletedAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  role      Role     @default(ADMIN_ARTICLE)
+  createdAt DateTime @default(now())
+
+  articles Article[]
+  invoices Invoice[]
+  sessions Session[]
 
   @@map("users")
 }
 
-enum Role {
-  USER
-  ADMIN
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+// ===============================================
+// CLIENT SECTION
+// ===============================================
+model PurchaseChannel {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relasi ke B2B dan B2C
+  clientsB2B ClientB2B[]
+  clientsB2C ClientB2C[]
+  orders     Order[]
+
+  @@map("purchase_channels")
+}
+
+model Client {
+  id        String     @id @default(uuid())
+  custCode  String     @unique
+  type      ClientType
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  b2b        ClientB2B?
+  b2c        ClientB2C?
+  orders     Order[]
+  invoices   Invoice[]
+  quotations Quotation[]
+
+  @@map("clients")
+}
+
+model ClientB2C {
+  id     String  @id
+  prefix String
+  name   String
+  phone  String?
+
+  country     String?
+  province    String?
+  city        String?
+  district    String?
+  subDistrict String?
+  postalCode  String?
+  fullAddress String
+
+  purchaseChannelId String
+  purchaseChannel   PurchaseChannel @relation(fields: [purchaseChannelId], references: [id])
+
+  client Client @relation(fields: [id], references: [id])
+
+  @@map("clients_b2c")
+}
+
+model ClientB2B {
+  id           String     @id
+  companyName  String
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  phone   String?
+  email   String?
+  website String
+
+  country     String?
+  province    String?
+  city        String?
+  district    String?
+  subDistrict String?
+  postalCode  String?
+  fullAddress String
+
+  purchaseChannelId String
+  purchaseChannel   PurchaseChannel @relation(fields: [purchaseChannelId], references: [id])
+
+  pics   ClientB2BPIC[]
+  client Client         @relation(fields: [id], references: [id])
+
+  @@map("clients_b2b")
+}
+
+model ClientB2BPIC {
+  id          String  @id @default(uuid())
+  clientB2BId String
+  prefix      String?
+  name        String
+  email       String?
+  phone       String?
+
+  clientB2B ClientB2B @relation(fields: [clientB2BId], references: [id])
+  orders    Order[]
+
+  @@map("client_b2b_pics")
+}
+
+model Department {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clientsB2B ClientB2B[]
+
+  @@map("departments")
+}
+
+// ===============================================
+// PRODUCT SECTION
+// ===============================================
+
+model ProductCategory {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  products  Product[]
+  updatedAt DateTime  @updatedAt
+
+  @@map("product_categories")
+}
+
+model Product {
+  id           String   @id @default(uuid())
+  name         String
+  sku          String   @unique // SKU
+  slug         String   @unique
+  description  String?
+  basePrice    Int
+  isCustom     Boolean  @default(false)
+  materialType String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  weight       Int?
+  width        Int?
+  height       Int?
+  length       Int?
+
+  // Relasi Category
+  categoryId String
+  category   ProductCategory @relation(fields: [categoryId], references: [id])
+
+  // Relasi Baru
+  attributeValues ProductAttributeValue[]
+  priceTiers      PriceTier[]
+
+  // Relasi transaksi
+  invoiceItems    InvoiceItem[]
+  orderProducts   OrderProduct[]
+  quotationItems  QuotationItem[]
+  cashflowRevenue CashflowRevenue[]
+  images          ProductImage[]
+  videos          ProductVideo[]
+  productVariants ProductVariant[]
+  seo             ProductSEO?
+
+  @@map("products")
+}
+
+model ProductSEO {
+  id String @id @default(uuid())
+
+  // Field SEO Standar
+  metaTitle       String? // Judul yang muncul di Google (biasanya max 60 chars)
+  metaDescription String? // Deskripsi di bawah judul (biasanya max 160 chars)
+  keywords        String? // Kata kunci (bisa dipisah koma)
+  canonicalUrl    String? // Jika ada URL duplikat, arahkan ke sini
+
+  // Open Graph (Untuk tampilan saat share di Facebook/WhatsApp/Twitter)
+  ogTitle       String?
+  ogDescription String?
+  ogImage       String? // URL gambar thumbnail khusus share sosmed
+
+  // Structured Data (JSON-LD) - Opsional tapi bagus untuk Rich Snippet
+  structuredData String? @db.Text // Menyimpan schema.org dalam format JSON string
+
+  // Relasi balik ke Product
+  productId String  @unique // @unique menandakan relasi One-to-One
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("product_seo")
+}
+
+model Attribute {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  values   AttributeValue[]
+  products ProductAttributeValue[]
+
+  @@map("attributes")
+}
+
+model AttributeValue {
+  id          String    @id @default(uuid())
+  value       String
+  attributeId String
+  attribute   Attribute @relation(fields: [attributeId], references: [id])
+
+  products                      ProductAttributeValue[]
+  productVariantAttributeValues ProductVariantAttributeValue[]
+
+  @@map("attribute_values")
+}
+
+model ProductAttributeValue {
+  id String @id @default(uuid())
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  attributeValueId String
+  attributeValue   AttributeValue @relation(fields: [attributeValueId], references: [id])
+  attribute        Attribute?     @relation(fields: [attributeId], references: [id])
+  attributeId      String?
+
+  @@unique([productId, attributeValueId]) // agar tidak dobel assign
+  @@map("product_attribute_values")
+}
+
+model ProductVariant {
+  id          String   @id @default(uuid())
+  sku         String   @unique
+  variantName String?
+  price       Decimal?
+  stock       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  attributeValues ProductVariantAttributeValue[]
+  images          ProductVariantImage[]
+  orderProducts   OrderProduct[]
+
+  @@map("product_variants")
+}
+
+model ProductVariantAttributeValue {
+  id String @id @default(uuid())
+
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+
+  attributeValueId String
+  attributeValue   AttributeValue @relation(fields: [attributeValueId], references: [id])
+
+  @@unique([variantId, attributeValueId])
+  @@map("product_variant_attribute_values")
+}
+
+model PriceTier {
+  id          String   @id @default(uuid())
+  minQuantity Int      @default(1)
+  maxQuantity Int?
+  price       Decimal
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@map("price_tiers")
+}
+
+model ProductVariantImage {
+  id         String   @id @default(uuid())
+  url        String
+  publicId   String
+  isFeatured Boolean? @default(false)
+  altText    String?
+
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@map("product_variant_images")
+}
+
+model ProductImage {
+  id         String  @id @default(uuid())
+  url        String
+  publicId   String
+  isFeatured Boolean @default(false)
+  altText    String?
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@map("product_images")
+}
+
+model ProductVideo {
+  id         String  @id @default(uuid())
+  url        String
+  publicId   String
+  title      String?
+  isFeatured Boolean @default(false)
+  altText    String?
+
+  // Relasi ke Produk
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@map("product_videos")
+}
+
+// ===============================================
+// INVOICE SECTION
+// ===============================================
+
+model Invoice {
+  id          String          @id @default(uuid())
+  clientId    String
+  userId      String
+  orderId     String?
+  totalAmount Decimal
+  status      InvoiceStatus   @default(UNPAID)
+  category    InvoiceCategory @default(FULL_PAYMENT)
+  method      PaymentMethod?
+  dueDate     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User          @relation(fields: [userId], references: [id])
+  client Client        @relation(fields: [clientId], references: [id])
+  order  Order?        @relation(fields: [orderId], references: [id])
+  items  InvoiceItem[]
+
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id        String  @id @default(uuid())
+  invoiceId String
+  productId String
+  quantity  Int
+  price     Decimal
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@map("invoice_items")
+}
+
+// ===============================================
+// ARTICLE SECTION
+// ===============================================
+
+model Article {
+  id        String   @id @default(uuid())
+  title     String
+  slug      String   @unique
+  content   String
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+
+  @@map("articles")
+}
+
+// ===============================================
+// VENDOR SECTION
+// ===============================================
+
+model Vendor {
+  id          String   @id @default(uuid())
+  companyName String
+  slug        String   @unique
+  picName     String
+  country     String?
+  province    String?
+  city        String?
+  district    String?
+  subDistrict String?
+  postalCode  String?
+  address     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  isActive    Boolean  @default(true)
+
+  // === RELATIONS ===
+  vendorItems  VendorVendorItem[]
+  cashflowCost CashflowCost[]
+  orderVendors OrderVendor[]
+  contacts     VendorContact[]
+
+  @@map("vendors")
+}
+
+model VendorCategory {
+  id          String       @id @default(uuid())
+  name        String
+  slug        String       @unique
+  type        VendorType
+  description String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  isActive    Boolean      @default(true)
+  items       VendorItem[]
+
+  @@map("vendor_categories")
+}
+
+model VendorItem {
+  id          String             @id @default(uuid())
+  categoryId  String
+  slug        String             @unique
+  name        String
+  description String
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  category    VendorCategory     @relation(fields: [categoryId], references: [id])
+  vendors     VendorVendorItem[]
+
+  @@map("vendor_items")
+}
+
+model VendorVendorItem {
+  vendorId String
+  itemId   String
+  vendor   Vendor     @relation(fields: [vendorId], references: [id])
+  item     VendorItem @relation(fields: [itemId], references: [id])
+
+  @@id([vendorId, itemId])
+  @@map("vendor_vendor_items")
+}
+
+// ===============================================
+// CONTACT SECTION
+// ===============================================
+
+model VendorContact {
+  id         String   @id @default(uuid())
+  vendorId   String
+  platformId String
+  contactId  String
+  isPrimary  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  vendor   Vendor          @relation(fields: [vendorId], references: [id])
+  platform ContactPlatform @relation(fields: [platformId], references: [id])
+
+  @@map("vendor_contacts")
+}
+
+model ContactPlatform {
+  id        String          @id @default(uuid())
+  name      String
+  slug      String          @unique
+  icon      String?
+  isActive  Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  contacts  VendorContact[]
+
+  @@map("contact_platforms")
+}
+
+// ===============================================
+// SALES SECTION (NEW)
+// ===============================================
+
+model Sales {
+  id                String      @id @default(uuid())
+  prefix            String
+  name              String
+  phone             String
+  signatureUrl      String?
+  signaturePublicId String?
+  isActive          Boolean     @default(true)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  orders            Order[]
+  bankAccounts      SalesBank[]
+
+  @@map("sales")
+}
+
+model SalesBank {
+  salesId           String
+  bankName          String
+  accountNumber     String
+  accountHolderName String
+
+  sales Sales @relation(fields: [salesId], references: [id])
+
+  @@id([salesId, accountNumber])
+  @@map("sales_banks")
+}
+
+// ===============================================
+// ORDER SYSTEM
+// ===============================================
+
+model Order {
+  id                String           @id @default(uuid())
+  dateOrder         DateTime
+  salesCategory     SalesCategory
+  poNumber          String
+  clientId          String
+  salesId           String
+  shippingAddress   String
+  totalAmount       Decimal
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  clientB2BPICId    String?
+  pic               ClientB2BPIC?    @relation(fields: [clientB2BPICId], references: [id])
+  purchaseChannelId String?
+  purchaseChannel   PurchaseChannel? @relation(fields: [purchaseChannelId], references: [id])
+
+  client          Client            @relation(fields: [clientId], references: [id])
+  sales           Sales             @relation(fields: [salesId], references: [id])
+  products        OrderProduct[]
+  vendors         OrderVendor[]
+  cashflows       Cashflow[]
+  inboundOutbound InboundOutbound[]
+  invoices        Invoice[]
+  deliveryNotes   DeliveryNote[]
+  quotations      Quotation[]
+  cashflowSummary CashflowSummary[]
+
+  @@map("orders")
+}
+
+model OrderProduct {
+  id            String          @id @default(uuid())
+  orderId       String
+  productId     String
+  quantity      Int
+  unitPrice     Decimal
+  customization Json?
+  remarks       String?
+  order         Order           @relation(fields: [orderId], references: [id])
+  product       Product         @relation(fields: [productId], references: [id])
+  variantId     String?
+  variant       ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@map("order_products")
+}
+
+model OrderVendor {
+  id             String @id @default(uuid())
+  orderId        String
+  vendorId       String
+  vendorPicName  String
+  vendorPicPhone String
+  roleInOrder    String
+  order          Order  @relation(fields: [orderId], references: [id])
+  vendor         Vendor @relation(fields: [vendorId], references: [id])
+
+  @@map("order_vendors")
+}
+
+// ===============================================
+// CASHFLOW SECTION
+// ===============================================
+
+model Cashflow {
+  id          String       @id @default(uuid())
+  orderId     String
+  description String
+  amount      Decimal
+  type        CashflowType
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  order       Order        @relation(fields: [orderId], references: [id])
+
+  @@map("cashflows")
+}
+
+model InboundOutbound {
+  id      String    @id @default(uuid())
+  orderId String
+  type    InOutType
+  date    DateTime
+  remarks String
+  order   Order     @relation(fields: [orderId], references: [id])
+
+  @@map("inbound_outbound")
+}
+
+model DeliveryNote {
+  id             String         @id @default(uuid())
+  orderId        String
+  deliveryNumber String         @unique
+  deliveryDate   DateTime
+  type           DeliveryType
+  status         DeliveryStatus
+  remarks        String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  order          Order          @relation(fields: [orderId], references: [id])
+
+  @@map("delivery_notes")
+}
+
+model Quotation {
+  id              String          @id @default(uuid())
+  clientId        String
+  orderId         String?
+  quotationNumber String          @unique
+  date            DateTime
+  totalAmount     Decimal
+  status          QuotationStatus
+  notes           String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  client          Client          @relation(fields: [clientId], references: [id])
+  order           Order?          @relation(fields: [orderId], references: [id])
+  items           QuotationItem[]
+
+  @@map("quotations")
+}
+
+model QuotationItem {
+  id            String    @id @default(uuid())
+  quotationId   String
+  productId     String
+  quantity      Int
+  price         Decimal
+  customization Json
+  remarks       String
+  quotation     Quotation @relation(fields: [quotationId], references: [id])
+  product       Product   @relation(fields: [productId], references: [id])
+
+  @@map("quotation_items")
+}
+
+model CashflowSummary {
+  id             String   @id @default(uuid())
+  orderId        String
+  poNumber       String
+  totalRevenue   Decimal
+  totalCost      Decimal
+  profitLoss     Decimal
+  baseCurrencyId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  order        Order             @relation(fields: [orderId], references: [id])
+  baseCurrency Currency          @relation(fields: [baseCurrencyId], references: [code])
+  revenues     CashflowRevenue[]
+  costs        CashflowCost[]
+
+  @@map("cashflow_summaries")
+}
+
+model CashflowRevenue {
+  id           String   @id @default(uuid())
+  cashflowId   String
+  description  String
+  productId    String?
+  unitPrice    Decimal
+  quantity     Int
+  total        Decimal
+  currency     String
+  exchangeRate Decimal?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  summary      CashflowSummary @relation(fields: [cashflowId], references: [id])
+  product      Product?        @relation(fields: [productId], references: [id])
+  Currency     Currency?       @relation(fields: [currencyCode], references: [code])
+  currencyCode String?
+
+  @@map("cashflow_revenue")
+}
+
+model CashflowCost {
+  id           String   @id @default(uuid())
+  cashflowId   String
+  description  String
+  vendorId     String
+  costPerUnit  Decimal
+  quantity     Int
+  total        Decimal
+  currency     String
+  exchangeRate Decimal?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  summary      CashflowSummary @relation(fields: [cashflowId], references: [id])
+  vendor       Vendor          @relation(fields: [vendorId], references: [id])
+  Currency     Currency?       @relation(fields: [currencyCode], references: [code])
+  currencyCode String?
+
+  @@map("cashflow_cost")
+}
+
+// ===============================================
+// CURRENCY MASTER
+// ===============================================
+
+model Currency {
+  code   String @id // ex: IDR, USD
+  symbol String // ex: Rp, $
+  name   String // ex: Rupiah, US Dollar
+
+  cashflowSummaries CashflowSummary[]
+  cashflowRevenues  CashflowRevenue[]
+  cashflowCosts     CashflowCost[]
+
+  @@map("currencies")
 }

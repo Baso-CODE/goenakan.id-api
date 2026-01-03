@@ -1,3 +1,5 @@
+import { config as dotenvConfig } from "dotenv";
+dotenvConfig();
 import { plainToInstance } from "class-transformer";
 import { IsNotEmpty, IsNumber, IsString, validateSync } from "class-validator";
 
@@ -13,6 +15,10 @@ class EnvConfig {
   @IsNotEmpty()
   @IsString()
   readonly JWT_SECRET!: string;
+
+  @IsNotEmpty()
+  @IsString()
+  readonly NEXTAUTH_SECRET!: string;
 
   @IsNotEmpty()
   @IsString()

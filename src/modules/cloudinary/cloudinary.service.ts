@@ -1,4 +1,8 @@
-import { v2 as cloudinary, UploadApiResponse } from "cloudinary";
+import {
+  v2 as cloudinary,
+  UploadApiErrorResponse,
+  UploadApiResponse,
+} from "cloudinary";
 import { Readable } from "stream";
 import { env } from "../../config";
 
@@ -28,13 +32,19 @@ export class CloudinaryService {
     return publicId;
   };
 
-  public upload = (file: Express.Multer.File): Promise<UploadApiResponse> => {
+  public upload = (
+    file: Express.Multer.File,
+    options: Record<string, any> = {},
+  ): Promise<UploadApiResponse> => {
     return new Promise((resolve, reject) => {
       const readableStream = this.bufferToStream(file.buffer);
 
       const uploadStream = cloudinary.uploader.upload_stream(
-        (error, result: UploadApiResponse) => {
+        options,
+        (error?: UploadApiErrorResponse, result?: UploadApiResponse) => {
           if (error) return reject(error);
+          if (!result)
+            return reject(new Error("Upload failed: result undefined"));
           resolve(result);
         },
       );
