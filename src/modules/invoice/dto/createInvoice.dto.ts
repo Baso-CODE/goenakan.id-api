@@ -1,12 +1,12 @@
 // src/modules/invoice/dto/createInvoice.dto.ts
 import {
-  IsNotEmpty,
-  IsString,
-  IsOptional,
   IsEnum,
+  IsNotEmpty,
   IsNumber,
-  Min,
+  IsOptional,
+  IsString,
   Max,
+  Min,
 } from "class-validator";
 
 // Sesuaikan dengan Enum di Schema.prisma Anda

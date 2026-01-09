@@ -37,6 +37,11 @@ export class InvoiceRouter {
     //   this.invoiceController.getOrderByIdUpdate,
     // );
     this.router.get(
+      "/chart",
+      // this.nextAuthMiddleware.verifyNextAuthToken,
+      this.invoiceController.getRevenueChart,
+    );
+    this.router.get(
       "/",
       this.nextAuthMiddleware.verifyNextAuthToken,
       this.invoiceController.getAll,

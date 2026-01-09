@@ -357,6 +357,7 @@ model ProductVariant {
   attributeValues ProductVariantAttributeValue[]
   images          ProductVariantImage[]
   orderProducts   OrderProduct[]
+  invoiceItems    InvoiceItem[]
 
   @@map("product_variants")
 }
@@ -433,15 +434,16 @@ model ProductVideo {
 // ===============================================
 
 model Invoice {
-  id          String          @id @default(uuid())
-  clientId    String
-  userId      String
-  orderId     String?
-  totalAmount Decimal
-  status      InvoiceStatus   @default(UNPAID)
-  category    InvoiceCategory @default(FULL_PAYMENT)
-  method      PaymentMethod?
-  dueDate     DateTime?
+  id            Int             @id @default(autoincrement())
+  invoiceNumber String?         @unique
+  clientId      String
+  userId        String
+  orderId       String?
+  totalAmount   Decimal
+  status        InvoiceStatus   @default(UNPAID)
+  category      InvoiceCategory @default(FULL_PAYMENT)
+  method        PaymentMethod?
+  dueDate       DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -455,13 +457,19 @@ model Invoice {
 }
 
 model InvoiceItem {
-  id        String  @id @default(uuid())
-  invoiceId String
-  productId String
-  quantity  Int
-  price     Decimal
-  invoice   Invoice @relation(fields: [invoiceId], references: [id])
-  product   Product @relation(fields: [productId], references: [id])
+  id            Int     @id @default(autoincrement())
+  invoiceId     Int
+  productId     String
+  variantId     String?
+  remarks       String?
+  customization Json?
+
+  quantity Int
+  price    Decimal
+
+  invoice Invoice         @relation(fields: [invoiceId], references: [id])
+  product Product         @relation(fields: [productId], references: [id])
+  variant ProductVariant? @relation(fields: [variantId], references: [id])
 
   @@map("invoice_items")
 }

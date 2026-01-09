@@ -32,10 +32,10 @@ export class InvoiceController {
 
   pay = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { id } = req.params; // Invoice ID dari URL
+      const { id } = req.params;
       const dto: PayInvoiceDTO = req.body;
 
-      const result = await this.invoiceService.payInvoice(id, dto);
+      const result = await this.invoiceService.payInvoice(Number(id), dto);
 
       res.status(200).json({
         message: "Payment recorded successfully",
@@ -78,7 +78,26 @@ export class InvoiceController {
   ) => {
     try {
       const { id } = req.params;
-      const result = await this.invoiceService.getInvoiceDetail(id);
+      const result = await this.invoiceService.getInvoiceDetail(Number(id));
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getRevenueChart = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const now = new Date();
+      const { month, year } = req.query;
+
+      const queryMonth = month ? Number(month) : now.getMonth() + 1;
+      const queryYear = year ? Number(year) : now.getFullYear();
+
+      const result = await this.invoiceService.getMonthlyRevenueChart(
+        queryMonth,
+        queryYear,
+      );
+
       res.status(200).json(result);
     } catch (error) {
       next(error);

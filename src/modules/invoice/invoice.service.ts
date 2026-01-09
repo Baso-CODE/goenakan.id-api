@@ -1,4 +1,6 @@
 // src/modules/invoice/invoice.service.ts
+import { Prisma } from "@prisma/client";
+import { eachDayOfInterval, endOfMonth, format, startOfMonth } from "date-fns";
 import { injectable } from "tsyringe";
 import { ApiError } from "../../utils/api-error";
 import { PaginationService } from "../pagination/pagination.service";
@@ -24,12 +26,13 @@ export class InvoiceService {
       dueDate,
     } = data;
 
-    // 1. Ambil Data Order
+    // 1. Ambil Data Order (Pastikan include client untuk ambil kodenya)
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: {
         products: true,
-        client: true, // Butuh ID client
+        client: true, // PENTING: Kita butuh data client (custCode)
+        invoices: true,
       },
     });
 
@@ -37,81 +40,123 @@ export class InvoiceService {
       throw new ApiError("Order not found", 404);
     }
 
-    // 2. Hitung Total Amount Invoice berdasarkan Kategori
-    let invoiceAmount = Number(order.totalAmount); // Default Full Payment
+    // 2. Hitung Total Amount Invoice Baru
+    let invoiceAmount = 0;
+    const totalOrderAmount = Number(order.totalAmount);
 
-    if (category === InvoiceCategory.DP) {
+    if (category === InvoiceCategory.FULL_PAYMENT) {
+      invoiceAmount = totalOrderAmount;
+    } else if (category === InvoiceCategory.DP) {
       if (!dpPercentage) {
         throw new ApiError("dpPercentage is required for DP Invoice", 400);
       }
-      // Rumus: Total Order * (Persen / 100)
-      invoiceAmount = Math.floor(invoiceAmount * (dpPercentage / 100));
-    } else if (
-      category === InvoiceCategory.INSTALLMENT ||
-      category === InvoiceCategory.REMAINING_BALANCE
-    ) {
-      // Jika user input nominal manual
-      if (customAmount) {
-        invoiceAmount = customAmount;
-      } else {
+      invoiceAmount = Math.floor(totalOrderAmount * (dpPercentage / 100));
+    } else if (category === InvoiceCategory.REMAINING_BALANCE) {
+      // Hitung total yang SUDAH ditagihkan sebelumnya
+      const totalInvoiced = order.invoices.reduce((sum, inv) => {
+        if (inv.status !== "CANCELLED") {
+          return sum + Number(inv.totalAmount);
+        }
+        return sum;
+      }, 0);
+
+      invoiceAmount = totalOrderAmount - totalInvoiced;
+
+      if (invoiceAmount <= 0) {
         throw new ApiError(
-          "customAmount is required for Installment/Remaining Balance",
+          "Order ini sudah lunas, tidak ada sisa tagihan.",
           400,
         );
       }
+    } else if (category === InvoiceCategory.INSTALLMENT) {
+      if (!customAmount) {
+        throw new ApiError("customAmount is required for Installment", 400);
+      }
+      invoiceAmount = customAmount;
     }
 
-    // 3. Siapkan Data Items
-    // Map dari OrderProduct ke InvoiceItem
-    const invoiceItemsData = order.products.map((op) => ({
-      productId: op.productId,
-      quantity: op.quantity,
-      price: op.unitPrice,
-    }));
+    const invoiceItemsData = order.products.map((op) => {
+      // Pastikan customization valid (tidak undefined)
+      // Prisma.JsonNull digunakan jika datanya null
+      const customData = op.customization
+        ? (op.customization as Prisma.InputJsonValue)
+        : Prisma.JsonNull;
 
-    // 4. Create Invoice ke Database
-    const newInvoice = await this.prisma.invoice.create({
-      data: {
-        orderId: order.id,
-        clientId: order.clientId,
-        userId: userId,
-
-        // Field Invoice sesuai Schema
-        totalAmount: invoiceAmount,
-        status: status || undefined, // Biarkan default Prisma (UNPAID) jika null/undefined
-        category: category,
-        method: method || undefined, // Nullable di schema
-        dueDate: dueDate ? new Date(dueDate) : undefined,
-
-        // Relasi Items
-        items: {
-          create: invoiceItemsData,
-        },
-      },
-      include: {
-        items: {
-          include: {
-            product: { select: { name: true, sku: true } },
+      return {
+        productId: op.productId,
+        quantity: op.quantity,
+        price: op.unitPrice,
+        variantId: op.variantId,
+        remarks: op.remarks,
+        customization: customData, // Type-safe assignment
+      };
+    });
+    // 4. TRANSACTION: Create -> Generate Number -> Update
+    const result = await this.prisma.$transaction(async (tx) => {
+      // A. Create Invoice (ID Auto Increment terbentuk di sini)
+      // Note: invoiceNumber masih kosong/null dulu
+      const createdInvoice = await tx.invoice.create({
+        data: {
+          orderId: order.id,
+          clientId: order.clientId,
+          userId: userId,
+          totalAmount: invoiceAmount,
+          status: status || undefined,
+          category: category,
+          method: method || undefined,
+          dueDate: dueDate ? new Date(dueDate) : undefined,
+          // GUNAKAN createMany UNTUK PERFORMANCE & TYPE SAFETY YANG LEBIH BAIK
+          items: {
+            createMany: {
+              data: invoiceItemsData,
+            },
           },
         },
+      });
 
-        client: {
-          select: {
-            id: true,
-            custCode: true,
-            type: true,
-            b2b: { select: { companyName: true, email: true } },
-            b2c: { select: { name: true } },
-          },
+      const id = createdInvoice.id;
+      const clientCode = order.client.custCode
+        ? order.client.custCode.toUpperCase()
+        : "NOC";
+
+      const date = new Date();
+      const month = ("0" + (date.getMonth() + 1)).slice(-2); // "01" - "12"
+      const year = date.getFullYear(); // "2023"
+
+      const formattedInvoiceNumber = `INV/${id}/${clientCode}/${month}/${year}`;
+
+      // C. Update Invoice dengan Nomor yang sudah digenerate
+      const updatedInvoice = await tx.invoice.update({
+        where: { id: id },
+        data: {
+          invoiceNumber: formattedInvoiceNumber,
         },
-        order: { select: { poNumber: true } },
-      },
+        include: {
+          items: {
+            include: {
+              product: { select: { name: true, sku: true } },
+            },
+          },
+          client: {
+            select: {
+              id: true,
+              custCode: true,
+              type: true,
+              b2b: { select: { companyName: true, email: true } },
+              b2c: { select: { name: true } },
+            },
+          },
+          order: { select: { poNumber: true } },
+        },
+      });
+
+      return updatedInvoice;
     });
 
-    return newInvoice;
+    return result;
   }
 
-  async payInvoice(invoiceId: string, data: PayInvoiceDTO) {
+  async payInvoice(invoiceId: number, data: PayInvoiceDTO) {
     // 1. Cek Invoice
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
@@ -211,13 +256,13 @@ export class InvoiceService {
       where,
       skip: (Number(query.page || 1) - 1) * Number(query.take || 10),
       take: Number(query.take || 10),
-      orderBy: { createdAt: "desc" }, // Urutkan dari yang terbaru
+      orderBy: { createdAt: "desc" },
       include: {
         client: {
           include: { b2b: true, b2c: true },
         },
         order: {
-          select: { poNumber: true }, // Ambil PO Number
+          select: { poNumber: true },
         },
         _count: {
           select: { items: true }, // Hitung jumlah item di invoice
@@ -237,6 +282,7 @@ export class InvoiceService {
 
       return {
         id: inv.id,
+        invoiceNumber: inv.invoiceNumber,
         invoiceDate: inv.createdAt, // Tanggal buat
         dueDate: inv.dueDate, // Jatuh tempo
         poNumber: inv.order?.poNumber || "-",
@@ -258,27 +304,87 @@ export class InvoiceService {
     return { data: formattedData, meta };
   }
 
-  async getInvoiceDetail(id: string) {
+  async getInvoiceDetail(id: number) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
       include: {
-        items: {
-          include: {
-            product: { select: { name: true, sku: true } },
-          },
-        },
+        // 1. Client Info (Lengkap)
         client: {
           include: {
             b2b: { include: { department: true, pics: true } },
             b2c: true,
           },
         },
-        order: { select: { poNumber: true } },
+
+        // 2. Order Info & Products (SUMBER DATA VARIAN & REMARKS)
+        order: {
+          select: {
+            id: true,
+            poNumber: true,
+            dateOrder: true,
+            products: {
+              include: {
+                product: { select: { name: true, sku: true } },
+                variant: { select: { variantName: true, sku: true } }, // Ambil Nama Varian
+              },
+            },
+          },
+        },
+
+        // 3. Invoice Items (SUMBER DATA HARGA TAGIHAN)
+        items: {
+          include: {
+            product: {
+              select: { name: true, sku: true, materialType: true },
+            },
+          },
+        },
       },
     });
 
     if (!invoice) throw new ApiError("Invoice not found", 404);
 
     return invoice;
+  }
+  async getMonthlyRevenueChart(month: number, year: number) {
+    // 1. Tentukan Range Tanggal (Awal s/d Akhir Bulan)
+    const startDate = startOfMonth(new Date(year, month - 1));
+    const endDate = endOfMonth(new Date(year, month - 1));
+
+    // 2. Ambil Invoice yang sudah PAID di range tersebut
+    const invoices = await this.prisma.invoice.findMany({
+      where: {
+        status: "PAID",
+        updatedAt: {
+          // Gunakan updatedAt (tanggal bayar) bukan createdAt
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+      select: {
+        updatedAt: true,
+        totalAmount: true,
+      },
+    });
+
+    // 3. Generate semua tanggal dalam bulan tersebut (1, 2, 3... 30/31)
+    const allDays = eachDayOfInterval({ start: startDate, end: endDate });
+
+    // 4. Mapping Data (Gabungkan tanggal kosong dengan data invoice)
+    const chartData = allDays.map((day) => {
+      const dateStr = format(day, "yyyy-MM-dd");
+
+      // Cari invoice yang dibayar pada tanggal ini
+      const dailyTotal = invoices
+        .filter((inv) => format(inv.updatedAt, "yyyy-MM-dd") === dateStr)
+        .reduce((sum, inv) => sum + Number(inv.totalAmount), 0);
+
+      return {
+        date: format(day, "dd MMM"), // Format tampilan: "01 Jan"
+        revenue: dailyTotal,
+      };
+    });
+
+    return chartData;
   }
 }

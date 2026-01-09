@@ -1,15 +1,15 @@
-import {
-  IsNotEmpty,
-  IsString,
-  IsOptional,
-  IsBoolean,
-  IsArray,
-  ValidateNested,
-  IsNumber,
-  Min,
-  IsInt,
-} from "class-validator";
 import { Type } from "class-transformer";
+import {
+  IsArray,
+  IsBoolean,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from "class-validator";
 import { CreateProductAttributeSelectionDTO } from "./createProductAttributesSelection.dto";
 
 export class VariantImageMetadataDTO {
@@ -25,6 +25,12 @@ export class VariantImageMetadataDTO {
   @IsOptional()
   @IsString()
   altText?: string;
+
+  @IsNotEmpty()
+  @Type(() => Number)
+  @IsInt({ message: "price must be an integer" })
+  @Min(0, { message: "price cannot be negative" })
+  price!: number;
 }
 
 export class CreateProductAttributeDTO {

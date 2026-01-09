@@ -1,5 +1,5 @@
-import { injectable } from "tsyringe";
 import * as ExcelJS from "exceljs";
+import { injectable } from "tsyringe";
 
 import { ApiError } from "../../../utils/api-error";
 import { SlugService } from "../../../utils/genereateSlug";
@@ -7,15 +7,15 @@ import { CloudinaryService } from "../../cloudinary/cloudinary.service";
 import { PaginationService } from "../../pagination/pagination.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateProductDTO } from "./dto/createProduct.dto";
+import { ProductSeoDTO } from "./dto/productSEO.dto";
+import { UpdateProductAttributesDTO } from "./dto/updateAttributes.dto";
 import { UpdateProductCoreDTO } from "./dto/updateProduct.dto";
+import { UpdateProductImageDTO } from "./dto/updateProductImage.dto";
+import { UpdateProductVideoDTO } from "./dto/updateProductVideo.dto";
 import {
   UpdateProductVariantFiles,
   UpdateProductVariantsDTO,
 } from "./dto/updateVariantsProduct.dto";
-import { UpdateProductAttributesDTO } from "./dto/updateAttributes.dto";
-import { UpdateProductImageDTO } from "./dto/updateProductImage.dto";
-import { UpdateProductVideoDTO } from "./dto/updateProductVideo.dto";
-import { ProductSeoDTO } from "./dto/productSEO.dto";
 
 export interface ProductExportQuery {
   startDate?: string;
@@ -225,25 +225,49 @@ export class ProductService {
 
       // 3. AUTO GENERATE VARIANTS
       if (attributes.length > 0) {
+        // Ambil semua attributeValue DAN nama attributenya (Warna, Ukuran, dll)
+        const allAttributeValues = await this.prisma.attributeValue.findMany({
+          where: {
+            id: {
+              in: attributes.flatMap((attr) => attr.valueIds),
+            },
+          },
+          include: {
+            attribute: true, // PENTING: Include nama atribut induknya
+          },
+        });
+
         const listOfValueGroups = attributes.map((attr) => attr.valueIds);
         const combinations = this.cartesianProduct(listOfValueGroups);
 
         const variantCreates = combinations.map((combination, index) => {
           const variantSku = `${productCore.sku}-VAR-${index + 1}`;
 
-          // Bangun variantName dari label masing-masing value
-          const variantName = combination
+          const variantNameParts = combination
             .map((valueId) => {
               const val = allAttributeValues.find((x) => x.id === valueId);
-              return val ? val.value : "";
+              if (val && val.attribute) {
+                // Gabungkan Nama Atribut + Nilainya
+                return `${val.attribute.name}: ${val.value}`;
+              }
+              return "";
             })
-            .filter(Boolean)
-            .join(" • ");
+            .filter(Boolean);
 
+          const variantName = variantNameParts.join(" • ");
+
+          const meta = variantImagesMetadata.find(
+            (m) => m.variantIndex === index,
+          );
+
+          const variantPrice = meta?.price
+            ? meta.price.toString()
+            : productCore.basePrice.toString();
           return {
             sku: variantSku,
             variantName,
             productId: product.id,
+            price: variantPrice,
             attributeValues: {
               createMany: {
                 data: combination.map((valueId) => ({
@@ -254,6 +278,7 @@ export class ProductService {
           };
         });
 
+        // Batch Insert Variants
         for (const variant of variantCreates) {
           await tx.productVariant.create({ data: variant });
         }

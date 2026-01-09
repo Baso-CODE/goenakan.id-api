@@ -429,20 +429,25 @@ export class OrderService {
     return formValues;
   }
 
+  // src/modules/order/order.service.ts (atau lokasi file service kamu)
+
   async getOrderForDetail(id: string) {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
         purchaseChannel: true,
-        pic: true,
+        pic: true, // Relasi ke ClientB2BPIC
         client: {
-          include: { b2b: true, b2c: true },
+          include: {
+            b2b: { include: { department: true } },
+            b2c: true,
+          },
         },
         sales: true,
         products: {
           include: {
-            product: true, // Pastikan ini ter-include
-            variant: true, // Pastikan ini ter-include
+            product: true,
+            variant: true,
           },
         },
         vendors: {
@@ -450,6 +455,8 @@ export class OrderService {
             vendor: true,
           },
         },
+        // [BARU] Wajib include invoices agar tidak error saat difilter di frontend/backend
+        invoices: true,
       },
     });
 
@@ -469,9 +476,11 @@ export class OrderService {
 
     if (order.client.b2b) {
       clientInfo.name = order.client.b2b.companyName;
+      // Gunakan null coalescing operator (??) atau OR (||)
       clientInfo.phone = order.client.b2b.phone || "-";
       clientInfo.email = order.client.b2b.email || "-";
 
+      // Cek PIC Order (Prioritas) atau PIC Client
       if (order.pic) {
         clientInfo.picName = order.pic.name;
         clientInfo.picPhone = order.pic.phone || "-";
@@ -479,20 +488,26 @@ export class OrderService {
     } else if (order.client.b2c) {
       clientInfo.name = order.client.b2c.name;
       clientInfo.phone = order.client.b2c.phone || "-";
-      clientInfo.picName = order.client.b2c.name;
+      clientInfo.picName = order.client.b2c.name; // B2C biasanya PIC-nya ya customer itu sendiri
     }
 
-    // 2. Products Detail (Mapping Penting!)
+    // 2. Products Detail Mapping
     const productsDetail = order.products.map((p) => {
-      // Parsing Customization dengan aman
       let customizationDetail = "-";
       if (p.customization) {
         try {
+          // Cek tipe data customization (Json di schema bisa string atau object)
           const cObj =
             typeof p.customization === "string"
               ? JSON.parse(p.customization)
               : p.customization;
-          if (cObj?.detail) customizationDetail = cObj.detail;
+
+          // Sesuaikan dengan struktur JSON kamu, misal ada field 'detail'
+          if (cObj && typeof cObj === "object" && "detail" in cObj) {
+            customizationDetail = (cObj as any).detail;
+          } else if (cObj) {
+            customizationDetail = JSON.stringify(cObj);
+          }
         } catch (e) {
           customizationDetail = String(p.customization);
         }
@@ -500,12 +515,11 @@ export class OrderService {
 
       return {
         id: p.id,
-        // Gunakan Optional Chaining (?.) untuk keamanan jika relasi putus
         productName: p.product?.name || "Unknown Product",
         sku: p.product?.sku || "-",
-        variantName: p.variant ? p.variant.variantName : "-",
+        // Handle variant safely
+        variantName: p.variant ? p.variant.variantName || "-" : "-",
         quantity: p.quantity,
-        // Konversi Decimal ke Number agar frontend tidak error
         unitPrice: Number(p.unitPrice),
         totalPrice: Number(p.unitPrice) * p.quantity,
         customization: customizationDetail,
@@ -513,7 +527,7 @@ export class OrderService {
       };
     });
 
-    // 3. Vendors Detail
+    // 3. Vendors Detail Mapping
     const vendorsDetail = order.vendors.map((v) => ({
       id: v.vendor.id,
       companyName: v.vendor.companyName,
@@ -522,9 +536,19 @@ export class OrderService {
       role: v.roleInOrder,
     }));
 
-    // === RETURN OBJECT YANG BERSIH ===
-    // Jangan gunakan spread ...order di sini jika tidak perlu semua field raw.
-    // Kita construct object baru agar 'products' pasti berisi 'productsDetail'.
+    // 4. [BARU] Invoices Mapping
+    // Ini penting agar frontend menerima array invoices yang bersih
+    const invoicesDetail = order.invoices.map((inv) => ({
+      id: inv.id,
+      totalAmount: Number(inv.totalAmount),
+      status: inv.status,
+      category: inv.category,
+      dueDate: inv.dueDate,
+      createdAt: inv.createdAt,
+      method: inv.method,
+    }));
+
+    // === RETURN OBJECT ===
     return {
       id: order.id,
       poNumber: order.poNumber,
@@ -534,17 +558,22 @@ export class OrderService {
       totalAmount: Number(order.totalAmount),
       createdAt: order.createdAt,
 
-      // Data Relasi yang sudah di-format
       purchaseChannelName: order.purchaseChannel
         ? order.purchaseChannel.name
         : "-",
+
       clientInfo: clientInfo,
+
       sales: {
         name: order.sales.name,
         phone: order.sales.phone,
       },
-      products: productsDetail, // Pastikan ini array yang sudah di-map!
+
+      products: productsDetail,
       vendors: vendorsDetail,
+
+      // [PENTING] Sertakan invoices di return object
+      invoices: invoicesDetail,
     };
   }
   async getAllOrders(query: {
