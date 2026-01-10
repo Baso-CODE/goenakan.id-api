@@ -39,9 +39,9 @@ export class OrderService {
     } = data;
 
     let totalAmount = 0;
+    const orderProductsData: any[] = []; // Array untuk menampung semua product
 
-    const orderProductsData: OrderProductInput[] = [];
-
+    // 1. LOOP PRODUCT: Siapkan data product & hitung total amount
     for (const item of products) {
       const product = await this.prisma.product.findUnique({
         where: { id: item.productId },
@@ -57,6 +57,7 @@ export class OrderService {
 
       let finalPrice = 0;
 
+      // Logika Harga (Custom vs Base Price/Tier)
       if (product.isCustom) {
         if (!item.variantId) {
           throw new ApiError(
@@ -86,9 +87,11 @@ export class OrderService {
         }
       }
 
+      // Tambah ke Total Amount Order
       const subtotal = finalPrice * item.quantity;
       totalAmount += subtotal;
 
+      // Siapkan object untuk Prisma Create
       const productData: any = {
         product: { connect: { id: item.productId } },
         quantity: item.quantity,
@@ -98,7 +101,6 @@ export class OrderService {
           : undefined,
       };
 
-      // Hanya tambahkan field jika ada isinya
       if (item.customization) {
         productData.customization = JSON.stringify({
           detail: item.customization,
@@ -107,87 +109,85 @@ export class OrderService {
       if (item.remarks) {
         productData.remarks = item.remarks;
       }
+
+      // PUSH ke array (JANGAN create dulu)
       orderProductsData.push(productData);
+    }
+    // --- AKHIR LOOP PRODUCT ---
 
-      const vendorsToConnect: any[] = [];
-
-      if (vendorIds.length > 0) {
-        const vendors = await this.prisma.vendor.findMany({
-          where: { id: { in: vendorIds } },
-          include: {
-            contacts: true,
-          },
-        });
-
-        for (const v of vendors) {
-          const phone = v.contacts.length > 0 ? v.contacts[0].contactId : "-";
-
-          vendorsToConnect.push({
-            vendor: { connect: { id: v.id } },
-            vendorPicName: v.picName || "Unknown PIC",
-            vendorPicPhone: phone,
-            roleInOrder: "Supplier",
-          });
-        }
-      }
-
-      const newOrder = await this.prisma.$transaction(async (tx) => {
-        const connectRelations: any = {};
-
-        // Connect PIC (hanya jika ID dikirim dan tidak null/empty string)
-        if (clientB2BPICId) {
-          connectRelations.pic = { connect: { id: clientB2BPICId } };
-        }
-
-        // Connect Purchase Channel (hanya jika ID dikirim)
-        if (purchaseChannelId) {
-          connectRelations.purchaseChannel = {
-            connect: { id: purchaseChannelId },
-          };
-        }
-        const order = await tx.order.create({
-          data: {
-            dateOrder: new Date(orderCore.dateOrder),
-            salesCategory: orderCore.salesCategory,
-            poNumber: orderCore.poNumber,
-            shippingAddress: orderCore.shippingAddress,
-            totalAmount: totalAmount,
-
-            client: { connect: { id: orderCore.clientId } },
-            sales: { connect: { id: orderCore.salesId } },
-            ...connectRelations,
-
-            products: {
-              create: orderProductsData,
-            },
-
-            vendors: {
-              create: vendorsToConnect,
-            },
-          },
-          include: {
-            products: true,
-            vendors: true,
-            client: {
-              include: {
-                b2b: {
-                  include: {
-                    pics: true,
-                  },
-                },
-              },
-            },
-            purchaseChannel: true,
-          },
-        });
-
-        return order;
+    // 2. SIAPKAN VENDOR (Di luar loop product agar tidak duplikat)
+    const vendorsToConnect: any[] = [];
+    if (vendorIds && vendorIds.length > 0) {
+      const vendors = await this.prisma.vendor.findMany({
+        where: { id: { in: vendorIds } },
+        include: { contacts: true },
       });
 
-      return newOrder;
-    }
-  }
+      for (const v of vendors) {
+        const phone = v.contacts.length > 0 ? v.contacts[0].contactId : "-"; // Asumsi contactId menyimpan phone/email string? Sesuaikan fieldnya
 
+        vendorsToConnect.push({
+          vendor: { connect: { id: v.id } },
+          vendorPicName: v.picName || "Unknown PIC",
+          vendorPicPhone: phone,
+          roleInOrder: "Supplier",
+        });
+      }
+    }
+
+    // 3. EKSEKUSI DATABASE TRANSACTION (Create Order Sekali Saja)
+    const newOrder = await this.prisma.$transaction(async (tx) => {
+      const connectRelations: any = {};
+
+      if (clientB2BPICId) {
+        connectRelations.pic = { connect: { id: clientB2BPICId } };
+      }
+
+      if (purchaseChannelId) {
+        connectRelations.purchaseChannel = {
+          connect: { id: purchaseChannelId },
+        };
+      }
+
+      const order = await tx.order.create({
+        data: {
+          dateOrder: new Date(orderCore.dateOrder),
+          salesCategory: orderCore.salesCategory,
+          poNumber: orderCore.poNumber,
+          shippingAddress: orderCore.shippingAddress,
+          totalAmount: totalAmount, // Total yang sudah dihitung di loop
+
+          client: { connect: { id: orderCore.clientId } },
+          sales: { connect: { id: orderCore.salesId } },
+          ...connectRelations,
+
+          // Masukkan array items yang sudah dikumpulkan
+          products: {
+            create: orderProductsData,
+          },
+
+          // Masukkan array vendors yang sudah dikumpulkan
+          vendors: {
+            create: vendorsToConnect,
+          },
+        },
+        include: {
+          products: true,
+          vendors: true,
+          client: {
+            include: {
+              b2b: { include: { pics: true } },
+            },
+          },
+          purchaseChannel: true,
+        },
+      });
+
+      return order;
+    });
+
+    return newOrder;
+  }
   // === UPDATE ORDER ===
   async updateOrder(id: string, data: CreateOrderDTO) {
     const {
@@ -432,11 +432,12 @@ export class OrderService {
   // src/modules/order/order.service.ts (atau lokasi file service kamu)
 
   async getOrderForDetail(id: string) {
+    // 1. Ambil Data Order
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
         purchaseChannel: true,
-        pic: true, // Relasi ke ClientB2BPIC
+        pic: true,
         client: {
           include: {
             b2b: { include: { department: true } },
@@ -455,7 +456,6 @@ export class OrderService {
             vendor: true,
           },
         },
-        // [BARU] Wajib include invoices agar tidak error saat difilter di frontend/backend
         invoices: true,
       },
     });
@@ -464,7 +464,18 @@ export class OrderService {
       throw new ApiError(`Order with ID ${id} not found`, 404);
     }
 
-    // 1. Client Info Logic
+    // === [UPDATE PENTING DISINI] ===
+    // 2. Ambil History Item yang SUDAH Masuk Invoice (Kecuali Cancelled)
+    const billedItems = await this.prisma.invoiceItem.findMany({
+      where: {
+        invoice: {
+          orderId: id, // Filter berdasarkan Order ID ini
+          status: { not: "CANCELLED" }, // Abaikan invoice yang batal
+        },
+      },
+    });
+
+    // 3. Client Info Logic (Tetap Sama)
     let clientInfo = {
       name: "",
       phone: "",
@@ -476,11 +487,8 @@ export class OrderService {
 
     if (order.client.b2b) {
       clientInfo.name = order.client.b2b.companyName;
-      // Gunakan null coalescing operator (??) atau OR (||)
       clientInfo.phone = order.client.b2b.phone || "-";
       clientInfo.email = order.client.b2b.email || "-";
-
-      // Cek PIC Order (Prioritas) atau PIC Client
       if (order.pic) {
         clientInfo.picName = order.pic.name;
         clientInfo.picPhone = order.pic.phone || "-";
@@ -488,21 +496,19 @@ export class OrderService {
     } else if (order.client.b2c) {
       clientInfo.name = order.client.b2c.name;
       clientInfo.phone = order.client.b2c.phone || "-";
-      clientInfo.picName = order.client.b2c.name; // B2C biasanya PIC-nya ya customer itu sendiri
+      clientInfo.picName = order.client.b2c.name;
     }
 
-    // 2. Products Detail Mapping
+    // 4. Products Detail Mapping dengan Perhitungan SISA
     const productsDetail = order.products.map((p) => {
+      // Logic Customization (Tetap Sama)
       let customizationDetail = "-";
       if (p.customization) {
         try {
-          // Cek tipe data customization (Json di schema bisa string atau object)
           const cObj =
             typeof p.customization === "string"
               ? JSON.parse(p.customization)
               : p.customization;
-
-          // Sesuaikan dengan struktur JSON kamu, misal ada field 'detail'
           if (cObj && typeof cObj === "object" && "detail" in cObj) {
             customizationDetail = (cObj as any).detail;
           } else if (cObj) {
@@ -513,21 +519,40 @@ export class OrderService {
         }
       }
 
+      // === [CALCULATION LOGIC] ===
+      // Hitung total qty yang sudah ditagih untuk produk spesifik ini
+      // Kita harus mencocokkan productId DAN variantId agar akurat
+      const currentBilledQty = billedItems
+        .filter(
+          (item) =>
+            item.productId === p.productId && item.variantId === p.variantId,
+        )
+        .reduce((sum, item) => sum + item.quantity, 0);
+
+      // Hitung Sisa (Total Order - Sudah Ditagih)
+      // Math.max(0, ...) untuk mencegah nilai minus jika ada anomali data
+      const remaining = Math.max(0, p.quantity - currentBilledQty);
+
       return {
         id: p.id,
+        productId: p.productId, // ID Master Product (Penting untuk filter di frontend)
+        variantId: p.variantId, // ID Varian
         productName: p.product?.name || "Unknown Product",
         sku: p.product?.sku || "-",
-        // Handle variant safely
         variantName: p.variant ? p.variant.variantName || "-" : "-",
-        quantity: p.quantity,
+        quantity: p.quantity, // Total Qty Order Awal
         unitPrice: Number(p.unitPrice),
         totalPrice: Number(p.unitPrice) * p.quantity,
         customization: customizationDetail,
         remarks: p.remarks || "-",
+
+        // [FIELD BARU UNTUK FRONTEND]
+        billedQuantity: currentBilledQty, // Berapa yang sudah di-invoice
+        remainingQuantity: remaining, // Berapa sisa yang boleh dipilih
       };
     });
 
-    // 3. Vendors Detail Mapping
+    // 5. Vendors Detail Mapping (Tetap Sama)
     const vendorsDetail = order.vendors.map((v) => ({
       id: v.vendor.id,
       companyName: v.vendor.companyName,
@@ -536,10 +561,10 @@ export class OrderService {
       role: v.roleInOrder,
     }));
 
-    // 4. [BARU] Invoices Mapping
-    // Ini penting agar frontend menerima array invoices yang bersih
+    // 6. Invoices Mapping (Tetap Sama)
     const invoicesDetail = order.invoices.map((inv) => ({
       id: inv.id,
+      invoiceNumber: inv.invoiceNumber,
       totalAmount: Number(inv.totalAmount),
       status: inv.status,
       category: inv.category,
@@ -557,25 +582,23 @@ export class OrderService {
       shippingAddress: order.shippingAddress,
       totalAmount: Number(order.totalAmount),
       createdAt: order.createdAt,
-
       purchaseChannelName: order.purchaseChannel
         ? order.purchaseChannel.name
         : "-",
-
       clientInfo: clientInfo,
-
       sales: {
         name: order.sales.name,
         phone: order.sales.phone,
       },
 
+      // Data Products yang sudah ada field 'remainingQuantity'
       products: productsDetail,
-      vendors: vendorsDetail,
 
-      // [PENTING] Sertakan invoices di return object
+      vendors: vendorsDetail,
       invoices: invoicesDetail,
     };
   }
+
   async getAllOrders(query: {
     page?: number;
     take?: number;

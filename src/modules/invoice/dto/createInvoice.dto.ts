@@ -1,5 +1,7 @@
 // src/modules/invoice/dto/createInvoice.dto.ts
+import { Type } from "class-transformer";
 import {
+  IsArray,
   IsEnum,
   IsNotEmpty,
   IsNumber,
@@ -7,6 +9,7 @@ import {
   IsString,
   Max,
   Min,
+  ValidateNested,
 } from "class-validator";
 
 // Sesuaikan dengan Enum di Schema.prisma Anda
@@ -28,6 +31,16 @@ export enum PaymentMethod {
   CASH = "CASH",
   CREDIT_CARD = "CREDIT_CARD",
   QRIS = "QRIS",
+}
+class SelectedItemDTO {
+  @IsNotEmpty()
+  @IsString()
+  productId!: string;
+
+  @IsNotEmpty()
+  @IsNumber()
+  @Min(1)
+  quantity!: number;
 }
 
 export class CreateInvoiceDTO {
@@ -69,4 +82,10 @@ export class CreateInvoiceDTO {
   @IsNumber()
   @Min(0)
   customAmount?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true }) // Validasi setiap item di array
+  @Type(() => SelectedItemDTO) // Transform plain object ke instance class DTO
+  selectedItems?: SelectedItemDTO[];
 }

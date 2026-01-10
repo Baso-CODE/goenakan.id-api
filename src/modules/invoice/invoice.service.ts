@@ -24,14 +24,25 @@ export class InvoiceService {
       dpPercentage,
       customAmount,
       dueDate,
+      selectedItems,
     } = data;
 
-    // 1. Ambil Data Order (Pastikan include client untuk ambil kodenya)
+    console.log("📥 Data Invoice Masuk:", JSON.stringify(data, null, 2));
+
+    // 0. Validasi User
+    const userExists = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!userExists) {
+      throw new ApiError("User tidak valid. Silakan login ulang.", 401);
+    }
+
+    // 1. Ambil Data Order
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: {
-        products: true,
-        client: true, // PENTING: Kita butuh data client (custCode)
+        products: true, // Pastikan ini mengambil data OrderProduct
+        client: true,
         invoices: true,
       },
     });
@@ -40,61 +51,108 @@ export class InvoiceService {
       throw new ApiError("Order not found", 404);
     }
 
-    // 2. Hitung Total Amount Invoice Baru
-    let invoiceAmount = 0;
-    const totalOrderAmount = Number(order.totalAmount);
+    console.log(
+      "📦 Order Products DB:",
+      order.products.map((p) => ({ id: p.id, productId: p.productId })),
+    );
 
-    if (category === InvoiceCategory.FULL_PAYMENT) {
-      invoiceAmount = totalOrderAmount;
-    } else if (category === InvoiceCategory.DP) {
-      if (!dpPercentage) {
-        throw new ApiError("dpPercentage is required for DP Invoice", 400);
+    // --- LOGIC PENENTUAN ITEM & HARGA ---
+
+    let invoiceAmount = 0;
+    let targetOrderProducts: any[] = []; // Gunakan any atau type intersection agar bisa attach quantityToBill
+
+    // KONDISI A: SPLIT INVOICE (User memilih item tertentu)
+    if (selectedItems && selectedItems.length > 0) {
+      // [FIX] Filter Logic: Cek terhadap productId (Master) ATAU id (OrderProduct)
+      // Ini menangani kasus jika frontend mengirim ID yang berbeda
+      targetOrderProducts = order.products
+        .filter((op) =>
+          selectedItems.some(
+            (sel) =>
+              sel.productId === op.productId || // Cek ID Master Product
+              sel.productId === op.id, // Cek ID Order Product (Fallback)
+          ),
+        )
+        .map((op) => {
+          // Cari item yang cocok dari input selectedItems
+          const selected = selectedItems.find(
+            (sel) => sel.productId === op.productId || sel.productId === op.id,
+          );
+
+          // Gunakan quantity dari frontend, atau fallback ke quantity asli order
+          // Pastikan dikonversi ke Number agar aman
+          const quantityToBill = selected
+            ? Number(selected.quantity)
+            : op.quantity;
+
+          return { ...op, quantityToBill }; // Attach qty tagihan ke object
+        });
+
+      if (targetOrderProducts.length === 0) {
+        console.warn(
+          "⚠️ Warning: Tidak ada produk yang cocok dengan selectedItems!",
+        );
+        // Opsi: Throw error jika ingin strict
+        // throw new ApiError("Item yang dipilih tidak ditemukan dalam order ini", 400);
       }
-      invoiceAmount = Math.floor(totalOrderAmount * (dpPercentage / 100));
-    } else if (category === InvoiceCategory.REMAINING_BALANCE) {
-      // Hitung total yang SUDAH ditagihkan sebelumnya
-      const totalInvoiced = order.invoices.reduce((sum, inv) => {
-        if (inv.status !== "CANCELLED") {
-          return sum + Number(inv.totalAmount);
-        }
-        return sum;
+
+      // Hitung Total Amount
+      invoiceAmount = targetOrderProducts.reduce((sum, item) => {
+        return sum + Number(item.unitPrice) * item.quantityToBill;
       }, 0);
 
-      invoiceAmount = totalOrderAmount - totalInvoiced;
-
-      if (invoiceAmount <= 0) {
-        throw new ApiError(
-          "Order ini sudah lunas, tidak ada sisa tagihan.",
-          400,
-        );
-      }
-    } else if (category === InvoiceCategory.INSTALLMENT) {
-      if (!customAmount) {
-        throw new ApiError("customAmount is required for Installment", 400);
-      }
-      invoiceAmount = customAmount;
+      console.log(
+        `💰 Calculated Split Amount: ${invoiceAmount} for ${targetOrderProducts.length} items`,
+      );
     }
 
-    const invoiceItemsData = order.products.map((op) => {
-      // Pastikan customization valid (tidak undefined)
-      // Prisma.JsonNull digunakan jika datanya null
+    // KONDISI B: STANDARD / GLOBAL INVOICE
+    else {
+      targetOrderProducts = order.products.map((op) => ({
+        ...op,
+        quantityToBill: op.quantity,
+      }));
+
+      const totalOrderAmount = Number(order.totalAmount);
+
+      if (category === InvoiceCategory.FULL_PAYMENT) {
+        invoiceAmount = totalOrderAmount;
+      } else if (category === InvoiceCategory.DP) {
+        if (!dpPercentage)
+          throw new ApiError("dpPercentage required for DP", 400);
+        invoiceAmount = Math.floor(totalOrderAmount * (dpPercentage / 100));
+      } else if (category === InvoiceCategory.REMAINING_BALANCE) {
+        const totalInvoiced = order.invoices.reduce((sum, inv) => {
+          if (inv.status !== "CANCELLED") return sum + Number(inv.totalAmount);
+          return sum;
+        }, 0);
+        invoiceAmount = totalOrderAmount - totalInvoiced;
+        if (invoiceAmount <= 0) throw new ApiError("Order sudah lunas.", 400);
+      } else if (category === InvoiceCategory.INSTALLMENT) {
+        if (!customAmount) throw new ApiError("customAmount required", 400);
+        invoiceAmount = customAmount;
+      }
+    }
+
+    // 3. Mapping Data ke InvoiceItem
+    const invoiceItemsData = targetOrderProducts.map((op) => {
       const customData = op.customization
         ? (op.customization as Prisma.InputJsonValue)
         : Prisma.JsonNull;
 
       return {
         productId: op.productId,
-        quantity: op.quantity,
+        quantity: op.quantityToBill, // PENTING: Pakai quantityToBill
         price: op.unitPrice,
         variantId: op.variantId,
         remarks: op.remarks,
-        customization: customData, // Type-safe assignment
+        customization: customData,
       };
     });
-    // 4. TRANSACTION: Create -> Generate Number -> Update
+
+    // 4. TRANSACTION
     const result = await this.prisma.$transaction(async (tx) => {
-      // A. Create Invoice (ID Auto Increment terbentuk di sini)
-      // Note: invoiceNumber masih kosong/null dulu
+      // A. Create Invoice
       const createdInvoice = await tx.invoice.create({
         data: {
           orderId: order.id,
@@ -105,7 +163,6 @@ export class InvoiceService {
           category: category,
           method: method || undefined,
           dueDate: dueDate ? new Date(dueDate) : undefined,
-          // GUNAKAN createMany UNTUK PERFORMANCE & TYPE SAFETY YANG LEBIH BAIK
           items: {
             createMany: {
               data: invoiceItemsData,
@@ -114,38 +171,26 @@ export class InvoiceService {
         },
       });
 
+      // B. Generate Invoice Number & Update
       const id = createdInvoice.id;
       const clientCode = order.client.custCode
         ? order.client.custCode.toUpperCase()
         : "NOC";
-
       const date = new Date();
-      const month = ("0" + (date.getMonth() + 1)).slice(-2); // "01" - "12"
-      const year = date.getFullYear(); // "2023"
-
+      const month = ("0" + (date.getMonth() + 1)).slice(-2);
+      const year = date.getFullYear();
       const formattedInvoiceNumber = `INV/${id}/${clientCode}/${month}/${year}`;
 
-      // C. Update Invoice dengan Nomor yang sudah digenerate
       const updatedInvoice = await tx.invoice.update({
         where: { id: id },
-        data: {
-          invoiceNumber: formattedInvoiceNumber,
-        },
+        data: { invoiceNumber: formattedInvoiceNumber },
         include: {
           items: {
             include: {
               product: { select: { name: true, sku: true } },
             },
           },
-          client: {
-            select: {
-              id: true,
-              custCode: true,
-              type: true,
-              b2b: { select: { companyName: true, email: true } },
-              b2c: { select: { name: true } },
-            },
-          },
+          client: { select: { id: true, custCode: true, type: true } },
           order: { select: { poNumber: true } },
         },
       });
@@ -185,8 +230,8 @@ export class InvoiceService {
     page?: number;
     take?: number;
     search?: string;
-    status?: string; // Filter Status (UNPAID, PAID, etc)
-    category?: string; // Filter Kategori (DP, FULL_PAYMENT)
+    status?: string;
+    category?: string;
     startDate?: string;
     endDate?: string;
   }) {
@@ -283,8 +328,8 @@ export class InvoiceService {
       return {
         id: inv.id,
         invoiceNumber: inv.invoiceNumber,
-        invoiceDate: inv.createdAt, // Tanggal buat
-        dueDate: inv.dueDate, // Jatuh tempo
+        invoiceDate: inv.createdAt,
+        dueDate: inv.dueDate,
         poNumber: inv.order?.poNumber || "-",
         clientName: clientName,
         totalAmount: Number(inv.totalAmount),
@@ -308,7 +353,7 @@ export class InvoiceService {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
       include: {
-        // 1. Client Info (Lengkap)
+        // 1. Client Info (Untuk Header Invoice)
         client: {
           include: {
             b2b: { include: { department: true, pics: true } },
@@ -316,27 +361,48 @@ export class InvoiceService {
           },
         },
 
-        // 2. Order Info & Products (SUMBER DATA VARIAN & REMARKS)
+        // 2. Order Info (Untuk PO Number & Footer Sales)
         order: {
           select: {
             id: true,
             poNumber: true,
             dateOrder: true,
-            products: {
-              include: {
-                product: { select: { name: true, sku: true } },
-                variant: { select: { variantName: true, sku: true } }, // Ambil Nama Varian
+
+            // Ambil Data Sales & Bank Account (Untuk Tanda Tangan & Info Transfer)
+            sales: {
+              select: {
+                name: true,
+                phone: true,
+                signatureUrl: true,
+                bankAccounts: {
+                  select: {
+                    bankName: true,
+                    accountNumber: true,
+                    accountHolderName: true,
+                  },
+                },
               },
             },
+
+            // [OPTIMISASI] Kita hapus 'products' dari sini.
+            // Alasannya: Data produk yang valid untuk invoice ini (terutama Split Invoice)
+            // ada di 'invoice.items' di bawah.
           },
         },
 
-        // 3. Invoice Items (SUMBER DATA HARGA TAGIHAN)
+        // 3. Invoice Items (SUMBER UTAMA DATA TABLE)
         items: {
           include: {
+            // Ambil Nama Produk Master
             product: {
               select: { name: true, sku: true, materialType: true },
             },
+            // Ambil Nama Varian (Relasi langsung dari InvoiceItem)
+            variant: {
+              select: { variantName: true, sku: true },
+            },
+            // Field 'remarks' dan 'customization' otomatis terambil
+            // karena merupakan field native di tabel InvoiceItem
           },
         },
       },
