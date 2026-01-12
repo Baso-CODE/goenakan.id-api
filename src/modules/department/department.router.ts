@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { autoInjectable } from "tsyringe";
-import { DepartmentController } from "./departmen.controller";
 import { NextAuthMiddleware } from "../../middleware/nextAuth.middleware";
 import { verifyRole } from "../../middleware/role.middleware";
 import { validateBody } from "../../middleware/validation.middleware";
+import { DepartmentController } from "./departmen.controller";
 import { CreateDepartmentDTO } from "./dto/createDepartment.dto";
 import { UpdateDepartmentDTO } from "./dto/updateDepartment.dto";
 

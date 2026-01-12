@@ -25,9 +25,8 @@ export class InvoiceService {
       customAmount,
       dueDate,
       selectedItems,
+      notes,
     } = data;
-
-    console.log("📥 Data Invoice Masuk:", JSON.stringify(data, null, 2));
 
     // 0. Validasi User
     const userExists = await this.prisma.user.findUnique({
@@ -41,7 +40,7 @@ export class InvoiceService {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: {
-        products: true, // Pastikan ini mengambil data OrderProduct
+        products: true,
         client: true,
         invoices: true,
       },
@@ -51,63 +50,39 @@ export class InvoiceService {
       throw new ApiError("Order not found", 404);
     }
 
-    console.log(
-      "📦 Order Products DB:",
-      order.products.map((p) => ({ id: p.id, productId: p.productId })),
-    );
-
-    // --- LOGIC PENENTUAN ITEM & HARGA ---
-
     let invoiceAmount = 0;
-    let targetOrderProducts: any[] = []; // Gunakan any atau type intersection agar bisa attach quantityToBill
+    let targetOrderProducts: any[] = [];
 
-    // KONDISI A: SPLIT INVOICE (User memilih item tertentu)
     if (selectedItems && selectedItems.length > 0) {
-      // [FIX] Filter Logic: Cek terhadap productId (Master) ATAU id (OrderProduct)
-      // Ini menangani kasus jika frontend mengirim ID yang berbeda
       targetOrderProducts = order.products
         .filter((op) =>
           selectedItems.some(
-            (sel) =>
-              sel.productId === op.productId || // Cek ID Master Product
-              sel.productId === op.id, // Cek ID Order Product (Fallback)
+            (sel) => sel.productId === op.productId || sel.productId === op.id,
           ),
         )
         .map((op) => {
-          // Cari item yang cocok dari input selectedItems
           const selected = selectedItems.find(
             (sel) => sel.productId === op.productId || sel.productId === op.id,
           );
 
-          // Gunakan quantity dari frontend, atau fallback ke quantity asli order
-          // Pastikan dikonversi ke Number agar aman
           const quantityToBill = selected
             ? Number(selected.quantity)
             : op.quantity;
 
-          return { ...op, quantityToBill }; // Attach qty tagihan ke object
+          return { ...op, quantityToBill };
         });
 
       if (targetOrderProducts.length === 0) {
         console.warn(
           "⚠️ Warning: Tidak ada produk yang cocok dengan selectedItems!",
         );
-        // Opsi: Throw error jika ingin strict
-        // throw new ApiError("Item yang dipilih tidak ditemukan dalam order ini", 400);
       }
 
       // Hitung Total Amount
       invoiceAmount = targetOrderProducts.reduce((sum, item) => {
         return sum + Number(item.unitPrice) * item.quantityToBill;
       }, 0);
-
-      console.log(
-        `💰 Calculated Split Amount: ${invoiceAmount} for ${targetOrderProducts.length} items`,
-      );
-    }
-
-    // KONDISI B: STANDARD / GLOBAL INVOICE
-    else {
+    } else {
       targetOrderProducts = order.products.map((op) => ({
         ...op,
         quantityToBill: op.quantity,
@@ -142,7 +117,7 @@ export class InvoiceService {
 
       return {
         productId: op.productId,
-        quantity: op.quantityToBill, // PENTING: Pakai quantityToBill
+        quantity: op.quantityToBill,
         price: op.unitPrice,
         variantId: op.variantId,
         remarks: op.remarks,
@@ -168,6 +143,17 @@ export class InvoiceService {
               data: invoiceItemsData,
             },
           },
+          notes:
+            notes && notes.length > 0
+              ? {
+                  createMany: {
+                    data: notes.map((note) => ({
+                      categoryId: note.categoryId,
+                      content: note.content,
+                    })),
+                  },
+                }
+              : undefined,
         },
       });
 
@@ -403,6 +389,12 @@ export class InvoiceService {
             },
             // Field 'remarks' dan 'customization' otomatis terambil
             // karena merupakan field native di tabel InvoiceItem
+          },
+        },
+
+        notes: {
+          include: {
+            category: true,
           },
         },
       },

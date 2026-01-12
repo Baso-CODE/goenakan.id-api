@@ -42,6 +42,16 @@ class SelectedItemDTO {
   @Min(1)
   quantity!: number;
 }
+// DTO untuk setiap Note
+class InvoiceNoteInputDTO {
+  @IsNotEmpty()
+  @IsString()
+  categoryId!: string; // ID Kategori Catatan
+
+  @IsNotEmpty()
+  @IsString()
+  content!: string; // Isi Catatan
+}
 
 export class CreateInvoiceDTO {
   @IsNotEmpty()
@@ -88,4 +98,10 @@ export class CreateInvoiceDTO {
   @ValidateNested({ each: true }) // Validasi setiap item di array
   @Type(() => SelectedItemDTO) // Transform plain object ke instance class DTO
   selectedItems?: SelectedItemDTO[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => InvoiceNoteInputDTO)
+  notes?: InvoiceNoteInputDTO[];
 }

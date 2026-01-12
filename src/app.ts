@@ -12,6 +12,7 @@ import { CashflowRouter } from "./modules/cashflow/cashflow.router";
 import { ClientRouter } from "./modules/client/client.router";
 import { DepartmentRouter } from "./modules/department/department.router";
 import { InvoiceRouter } from "./modules/invoice/invoice.router";
+import { NoteRouter } from "./modules/notes/notes.router";
 import { OrderRouter } from "./modules/order/order.router";
 import { AttributeRouter } from "./modules/product/attributes/attributes.router";
 import { ProductCategoryRouter } from "./modules/product/category/categoryProduct.router";
@@ -55,6 +56,7 @@ export default class App {
     const orderRouter = container.resolve(OrderRouter);
     const invoiceRouter = container.resolve(InvoiceRouter);
     const cashflowRouter = container.resolve(CashflowRouter);
+    const noteRouter = container.resolve(NoteRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -75,6 +77,7 @@ export default class App {
     this.app.use("/orders", orderRouter.getRouter());
     this.app.use("/invoices", invoiceRouter.getRouter());
     this.app.use("/cashflows", cashflowRouter.getRouter());
+    this.app.use("/invoice-notes", noteRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);
