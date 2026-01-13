@@ -5,16 +5,6 @@ import { PaginationService } from "../pagination/pagination.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateOrderDTO } from "./dto/createOrder.dto";
 
-type OrderProductInput = {
-  productId: string;
-  variantId: string | null;
-  quantity: number;
-  unitPrice: number;
-  subtotal: number;
-  customization?: string;
-  remarks?: string;
-};
-
 export interface OrderExportQuery {
   startDate?: string;
   endDate?: string;
@@ -428,8 +418,6 @@ export class OrderService {
 
     return formValues;
   }
-
-  // src/modules/order/order.service.ts (atau lokasi file service kamu)
 
   async getOrderForDetail(id: string) {
     // 1. Ambil Data Order
@@ -867,5 +855,100 @@ export class OrderService {
     // 8. GENERATE BUFFER
     const buffer = await workbook.xlsx.writeBuffer();
     return buffer as unknown as Buffer;
+  }
+
+  async getOrderForTracking(id: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      include: {
+        // 1. Client Info (Untuk Header)
+        client: {
+          include: {
+            b2b: { select: { companyName: true } },
+            b2c: { select: { name: true } },
+          },
+        },
+
+        // 2. Products (Master Data untuk Partial Shipment)
+        products: {
+          include: {
+            product: { select: { name: true, sku: true } }, // Nama barang
+
+            // Relasi History Produksi per Item
+            productionTrackers: {
+              include: {
+                vendor: { select: { companyName: true } }, // Nama Pabrik
+              },
+              orderBy: { startDate: "desc" },
+            },
+          },
+        },
+
+        // 3. Shipments (History Pengiriman Inbound & Outbound)
+        shipments: {
+          include: {
+            vendor: { select: { companyName: true } }, // Nama Ekspedisi
+
+            // Detail Item apa saja yg ada di dalam shipment ini
+            items: {
+              include: {
+                orderProduct: {
+                  include: {
+                    product: { select: { name: true } }, // Nama barang di shipment
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { departureDate: "desc" }, // Urutkan yang terbaru
+        },
+      },
+    });
+
+    if (!order) {
+      throw new ApiError(`Order with ID ${id} not found`, 404);
+    }
+
+    // Mapping Data agar mudah dikonsumsi Frontend
+    // Terutama bagian "Remaining Qty" untuk Production & Shipment logic
+
+    const productsFormatted = order.products.map((p) => {
+      // Hitung total yg sudah diproduksi
+      const producedQty = p.productionTrackers.reduce(
+        (sum, t) => sum + (t.status === "COMPLETED" ? t.quantity : 0),
+        0,
+      );
+
+      return {
+        id: p.id, // ID OrderProduct Pivot
+        productId: p.productId,
+        productName: p.product.name,
+        sku: p.product.sku,
+        quantity: p.quantity, // Total Order
+
+        // History Produksi
+        productionTrackers: p.productionTrackers.map((t) => ({
+          id: t.id,
+          vendorId: t.vendorId,
+          quantity: t.quantity,
+          startDate: t.startDate,
+          endDate: t.endDate,
+          status: t.status,
+          vendor: t.vendor,
+        })),
+
+        // Helper fields
+        producedQuantity: producedQty,
+        remainingProduction: Math.max(0, p.quantity - producedQty),
+      };
+    });
+
+    return {
+      id: order.id,
+      poNumber: order.poNumber,
+      client: order.client,
+      products: productsFormatted,
+      shipments: order.shipments, // Raw data shipments sudah cukup lengkap
+    };
   }
 }

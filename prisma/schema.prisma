@@ -85,6 +85,30 @@ enum QuotationStatus {
   REJECTED
 }
 
+enum ProductionStatus {
+  PENDING
+  IN_PRODUCTION
+  COMPLETED
+}
+
+enum ShipmentType {
+  INBOUND
+  OUTBOUND
+}
+
+enum ShipmentStatus {
+  PREPARED
+  DISPATCHED
+  ARRIVED
+  CANCELLED
+}
+
+enum ShippingMethod {
+  LAND
+  SEA
+  AIR
+}
+
 // ===============================================
 // USER TABLE
 // ===============================================
@@ -561,10 +585,12 @@ model Vendor {
   isActive    Boolean  @default(true)
 
   // === RELATIONS ===
-  vendorItems  VendorVendorItem[]
-  cashflowCost CashflowCost[]
-  orderVendors OrderVendor[]
-  contacts     VendorContact[]
+  vendorItems    VendorVendorItem[]
+  cashflowCost   CashflowCost[]
+  orderVendors   OrderVendor[]
+  contacts       VendorContact[]
+  productionJobs ProductionTracker[]
+  shipments      Shipment[]
 
   @@map("vendors")
 }
@@ -692,32 +718,35 @@ model Order {
   purchaseChannelId String?
   purchaseChannel   PurchaseChannel? @relation(fields: [purchaseChannelId], references: [id])
 
-  client          Client            @relation(fields: [clientId], references: [id])
-  sales           Sales             @relation(fields: [salesId], references: [id])
-  products        OrderProduct[]
-  vendors         OrderVendor[]
-  cashflows       Cashflow[]
-  inboundOutbound InboundOutbound[]
-  invoices        Invoice[]
-  deliveryNotes   DeliveryNote[]
-  quotations      Quotation[]
-  cashflowSummary CashflowSummary[]
+  client             Client              @relation(fields: [clientId], references: [id])
+  sales              Sales               @relation(fields: [salesId], references: [id])
+  products           OrderProduct[]
+  vendors            OrderVendor[]
+  cashflows          Cashflow[]
+  productionTrackers ProductionTracker[]
+  shipments          Shipment[]
+  invoices           Invoice[]
+  deliveryNotes      DeliveryNote[]
+  quotations         Quotation[]
+  cashflowSummary    CashflowSummary[]
 
   @@map("orders")
 }
 
 model OrderProduct {
-  id            String          @id @default(uuid())
-  orderId       String
-  productId     String
-  quantity      Int
-  unitPrice     Decimal
-  customization Json?
-  remarks       String?
-  order         Order           @relation(fields: [orderId], references: [id])
-  product       Product         @relation(fields: [productId], references: [id])
-  variantId     String?
-  variant       ProductVariant? @relation(fields: [variantId], references: [id])
+  id                 String              @id @default(uuid())
+  orderId            String
+  productId          String
+  quantity           Int
+  unitPrice          Decimal
+  customization      Json?
+  remarks            String?
+  order              Order               @relation(fields: [orderId], references: [id])
+  product            Product             @relation(fields: [productId], references: [id])
+  variantId          String?
+  variant            ProductVariant?     @relation(fields: [variantId], references: [id])
+  productionTrackers ProductionTracker[]
+  shipmentItems      ShipmentItem[]
 
   @@map("order_products")
 }
@@ -752,15 +781,91 @@ model Cashflow {
   @@map("cashflows")
 }
 
-model InboundOutbound {
-  id      String    @id @default(uuid())
-  orderId String
-  type    InOutType
-  date    DateTime
-  remarks String
-  order   Order     @relation(fields: [orderId], references: [id])
+// model InboundOutbound {
+//   id      String    @id @default(uuid())
+//   orderId String
+//   type    InOutType
+//   date    DateTime
+//   remarks String
+//   order   Order     @relation(fields: [orderId], references: [id])
 
-  @@map("inbound_outbound")
+//   @@map("inbound_outbound")
+// }
+
+// ===============================================
+// PRODUCTION TRACKING (NEW)
+// Mencatat waktu produksi barang di pabrik/vendor
+// ===============================================
+
+model ProductionTracker {
+  id             String @id @default(uuid())
+  orderId        String
+  orderProductId String
+  vendorId       String
+
+  quantity  Int
+  startDate DateTime?
+  endDate   DateTime?
+  status    ProductionStatus @default(PENDING)
+  remarks   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  order        Order        @relation(fields: [orderId], references: [id])
+  orderProduct OrderProduct @relation(fields: [orderProductId], references: [id])
+  vendor       Vendor       @relation(fields: [vendorId], references: [id])
+
+  @@map("production_trackers")
+}
+
+// ===============================================
+// LOGISTICS / SHIPMENT SYSTEM (NEW)
+// Mencatat pergerakan barang (Inbound & Outbound)
+// ===============================================
+
+model Shipment {
+  id       String  @id @default(uuid())
+  orderId  String
+  vendorId String?
+
+  trackingNumber String?
+  courierLink    String?
+  type           ShipmentType
+  method         ShippingMethod
+  status         ShipmentStatus @default(PREPARED)
+
+  origin        String?
+  destination   String?
+  departureDate DateTime?
+  arrivalDate   DateTime?
+
+  remarks String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  order  Order          @relation(fields: [orderId], references: [id])
+  vendor Vendor?        @relation(fields: [vendorId], references: [id])
+  items  ShipmentItem[]
+
+  @@map("shipments")
+}
+
+model ShipmentItem {
+  id             String @id @default(uuid())
+  shipmentId     String
+  orderProductId String
+
+  quantity Int
+
+  // Relations
+  shipment     Shipment     @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  orderProduct OrderProduct @relation(fields: [orderProductId], references: [id])
+
+  @@map("shipment_items")
 }
 
 model DeliveryNote {

@@ -1,7 +1,7 @@
-import { injectable } from "tsyringe";
-import { OrderExportQuery, OrderService } from "./order.service";
 import { NextFunction, Request, Response } from "express";
+import { injectable } from "tsyringe";
 import { CreateOrderDTO } from "./dto/createOrder.dto";
+import { OrderExportQuery, OrderService } from "./order.service";
 
 @injectable()
 export class OrderController {
@@ -109,6 +109,20 @@ export class OrderController {
       );
 
       res.send(excelBuffer);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getForTracking = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const result = await this.orderService.getOrderForTracking(id);
+
+      res.status(200).json({
+        message: "Order tracking data retrieved",
+        data: result,
+      });
     } catch (error) {
       next(error);
     }
