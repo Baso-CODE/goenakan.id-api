@@ -37,6 +37,11 @@ export class LogisticsRouter {
       this.nextAuthMiddleware.verifyNextAuthToken,
       this.shipmentController.create,
     );
+    this.router.get(
+      "/shipments/:id",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      this.shipmentController.getOne,
+    );
     this.router.patch(
       "/shipments/:id/arrive",
       this.nextAuthMiddleware.verifyNextAuthToken,

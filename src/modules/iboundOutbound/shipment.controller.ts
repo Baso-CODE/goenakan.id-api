@@ -59,4 +59,17 @@ export class ShipmentController {
       next(error);
     }
   };
+
+  getOne = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const result = await this.shipmentService.getShipmentById(id);
+      res.status(200).json({
+        message: "Shipment details retrieved",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 }

@@ -826,15 +826,15 @@ model ProductionTracker {
 // ===============================================
 
 model Shipment {
-  id       String  @id @default(uuid())
-  orderId  String
-  vendorId String?
-
-  trackingNumber String?
-  courierLink    String?
-  type           ShipmentType
-  method         ShippingMethod
-  status         ShipmentStatus @default(PREPARED)
+  id                 String         @id @default(uuid())
+  orderId            String
+  vendorId           String?
+  deliveryNoteNumber String?
+  trackingNumber     String?
+  courierLink        String?
+  type               ShipmentType
+  method             ShippingMethod
+  status             ShipmentStatus @default(PREPARED)
 
   origin        String?
   destination   String?

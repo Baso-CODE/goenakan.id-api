@@ -82,6 +82,10 @@ export class CreateShipmentDTO {
   @IsString()
   remarks?: string;
 
+  @IsOptional()
+  @IsString()
+  deliveryNoteNumber?: string;
+
   // === ITEM YANG DIKIRIM (ARRAY) ===
   @IsArray()
   @ValidateNested({ each: true })
