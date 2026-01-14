@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
     libstdc++-12-dev
 
 # Copy file dependency dulu (untuk caching agar build cepat)
-COPY package.json bun.lockb ./
+COPY package.json bun.lock ./
 COPY prisma ./prisma/
 
 # Install dependencies
