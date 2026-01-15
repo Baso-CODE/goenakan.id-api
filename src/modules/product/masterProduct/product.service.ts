@@ -139,27 +139,34 @@ export class ProductService {
       }
 
       // --- LOGIC VIDEO (DIPERBAIKI) ---
-      if (files.videos) {
-        // UBAH: Gunakan loop 'let i' agar bisa akses index metadata
-        for (let i = 0; i < files.videos.length; i++) {
-          const file = files.videos[i];
-
-          // AMBIL: Metadata sesuai urutan index file
+      if (files.videos && files.videos.length > 0) {
+        // 1. Buat array of Promises (jangan di-await dulu)
+        const videoUploadPromises = files.videos.map(async (file, i) => {
           const metadata = videosMetadata?.[i] || {};
 
+          // Upload ke Cloudinary
           const uploadResult = await this.cloudinary.upload(file, {
-            folder: "products",
+            folder: "products/videos",
             resource_type: "video",
+            // Tambahkan ini untuk video agar loading lebih cepat saat diputar nanti
+            eager_async: true,
           });
 
-          uploadedVideos.push({
+          return {
             url: uploadResult.secure_url,
             publicId: uploadResult.public_id,
             title: metadata.title || productCore.name || "Product Video",
             isFeatured: metadata.isFeatured || false,
             altText: metadata.altText || productCore.name || "Product Video",
-          });
-        }
+          };
+        });
+
+        // 2. Jalankan semua upload video secara bersamaan
+        // Ini akan memangkas waktu secara signifikan
+        const results = await Promise.all(videoUploadPromises);
+
+        // 3. Masukkan ke array utama
+        uploadedVideos.push(...results);
       }
     } catch (error) {
       throw new ApiError("Failed to upload media files to Cloudinary", 500);
@@ -210,18 +217,6 @@ export class ProductService {
           skipDuplicates: true,
         });
       }
-
-      // Ambil semua attributeValue agar bisa generate variantName
-      const allAttributeValues = await this.prisma.attributeValue.findMany({
-        where: {
-          id: {
-            in: attributes.flatMap((attr) => attr.valueIds),
-          },
-        },
-        include: {
-          attribute: true,
-        },
-      });
 
       // 3. AUTO GENERATE VARIANTS
       if (attributes.length > 0) {

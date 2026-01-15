@@ -39,6 +39,16 @@ export class CloudinaryService {
     return new Promise((resolve, reject) => {
       const readableStream = this.bufferToStream(file.buffer);
 
+      // Tentukan tipe upload berdasarkan ukuran file atau tipe resource
+      const isLargeVideo = options.resource_type === "video";
+
+      // PENTING: Untuk video, gunakan chunk_size agar upload lebih stabil
+      // Cloudinary merekomendasikan chunk upload untuk file > 100MB,
+      // tapi untuk video > 20MB juga membantu mencegah timeout.
+      if (isLargeVideo) {
+        options.chunk_size = 6000000; // Sekitar 6MB per chunk
+      }
+
       const uploadStream = cloudinary.uploader.upload_stream(
         options,
         (error?: UploadApiErrorResponse, result?: UploadApiResponse) => {
@@ -52,7 +62,6 @@ export class CloudinaryService {
       readableStream.pipe(uploadStream);
     });
   };
-
   public remove = async (secureUrl: string): Promise<any> => {
     try {
       const publicId = this.extractPublicIdFromUrl(secureUrl);
