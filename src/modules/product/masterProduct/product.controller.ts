@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
 import { CreateProductDTO } from "./dto/createProduct.dto";
+import { ProductSeoDTO } from "./dto/productSEO.dto";
 import { UpdateProductAttributesDTO } from "./dto/updateAttributes.dto";
 import { UpdateProductCoreDTO } from "./dto/updateProduct.dto";
 import { UpdateProductImageDTO } from "./dto/updateProductImage.dto";
@@ -10,7 +11,6 @@ import {
   UpdateProductVariantsDTO,
 } from "./dto/updateVariantsProduct.dto";
 import { ProductExportQuery, ProductService } from "./product.service";
-import { ProductSeoDTO } from "./dto/productSEO.dto";
 
 // Tipe untuk req.files dari multer.fields
 interface ProductFiles {
@@ -145,18 +145,24 @@ export class ProductController {
   };
 
   // === ADD VIDEO ===
+  // ... kode lainnya ...
+
+  // === ADD VIDEO (UPDATED FOR DIRECT UPLOAD) ===
   addVideo = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;
-      const file = req.file as Express.Multer.File;
-      const { title } = req.body;
-      const video = await this.productService.addVideo(id, file, title);
+
+      const payload = req.body;
+
+      const video = await this.productService.addVideo(id, payload);
+
       res.status(201).send(video);
     } catch (error) {
       next(error);
     }
   };
 
+  // ... kode lainnya ...
   // === DELETE VIDEO ===
   deleteVideo = async (req: Request, res: Response, next: NextFunction) => {
     try {

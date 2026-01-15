@@ -3,15 +3,12 @@ import { Router } from "express";
 import { autoInjectable } from "tsyringe";
 import { ProductController } from "./product.controller";
 
-import { CreateProductDTO } from "./dto/createProduct.dto";
-
 import multer from "multer";
+import { debugMiddleware } from "../../../middleware/debugMiddleware";
 import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
 import { parseFormData } from "../../../middleware/parseFormData.middleware";
 import { verifyRole } from "../../../middleware/role.middleware";
-import { validateBody } from "../../../middleware/validation.middleware";
 import { transformVariantFiles } from "../../../middleware/transformVariantFiles";
-import { debugMiddleware } from "../../../middleware/debugMiddleware";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -122,7 +119,6 @@ export class ProductRouter {
       "/:id/video",
       auth,
       verifyRole(requiredRole),
-      upload.single("video"),
       this.productController.addVideo,
     );
     this.router.delete(

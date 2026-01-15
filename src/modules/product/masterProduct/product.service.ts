@@ -498,20 +498,42 @@ export class ProductService {
   }
 
   // === ADD VIDEO ===
-  async addVideo(id: string, file: Express.Multer.File, title?: string) {
-    const upload = await this.cloudinary.upload(file, {
-      folder: "products",
-      resource_type: "video",
+  // Di dalam ProductService
+
+  // Kita definisikan tipe datanya langsung di sini biar simpel
+  async addVideo(
+    id: string,
+    data: {
+      url: string;
+      publicId?: string;
+      title?: string;
+      altText?: string;
+      isFeatured?: boolean;
+    },
+  ) {
+    // 1. Cek apakah produk ada
+    const product = await this.prisma.product.findUnique({
+      where: { id },
     });
-    const video = await this.prisma.productVideo.create({
+
+    if (!product) {
+      throw new ApiError("Product not found", 404);
+    }
+
+    // 2. Simpan ke Database (Pakai data dari parameter)
+    await this.prisma.productVideo.create({
       data: {
         productId: id,
-        url: upload.secure_url,
-        publicId: upload.public_id,
-        title: title || "Product Video",
+        url: data.url,
+        publicId: data.publicId || `manual_${Date.now()}`,
+        title: data.title || product.name, // Default ke nama produk jika kosong
+        altText: data.altText || product.name,
+        isFeatured: data.isFeatured || false,
       },
     });
-    return video;
+
+    // 3. Kembalikan data produk terbaru (agar UI refresh)
+    return this.getProductById(id);
   }
 
   // === DELETE VIDEO ===
