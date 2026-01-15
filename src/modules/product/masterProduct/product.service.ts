@@ -64,6 +64,7 @@ export class ProductService {
       );
     }
 
+    // --- Validasi Price Tiers (Tidak Berubah) ---
     if (data.priceTiers && data.priceTiers.length > 0) {
       const sortedTiers = data.priceTiers.sort(
         (a, b) => a.minQuantity - b.minQuantity,
@@ -92,16 +93,19 @@ export class ProductService {
         }
       }
     }
-    // Destructure dengan default ke array kosong
+
+    // Destructure Data
     const {
       attributes = [],
       priceTiers = [],
       imagesMetadata = [],
-      videosMetadata = [],
-      variantImagesMetadata = [],
 
+      videosMetadata = [], // ✅ INI SEKARANG BERISI URL DARI FRONTEND
+
+      variantImagesMetadata = [],
       ...productCore
     } = data;
+
     let uploadedImages: {
       url: string;
       publicId: string;
@@ -109,16 +113,21 @@ export class ProductService {
       altText: string;
     }[] = [];
 
-    let uploadedVideos: {
-      url: string;
-      publicId: string;
-      title: string;
-      isFeatured: boolean;
-      altText: string;
-    }[] = [];
+    // ✅ UBAH DI SINI:
+    // Tidak perlu array kosong, langsung map dari data frontend
+    // Karena video sudah diupload frontend, kita tinggal simpan link-nya.
+    const uploadedVideos = videosMetadata.map((meta) => ({
+      url: meta.url,
+      // Gunakan publicId dari frontend. Jika tidak ada (kasus jarang), buat dummy.
+      publicId: meta.publicId || `fe_upload_${Date.now()}_${Math.random()}`,
+      title: meta.title || productCore.name || "Product Video",
+      isFeatured: meta.isFeatured || false,
+      altText: meta.altText || productCore.name || "Product Video",
+    }));
 
-    // ============ MEDIA UPLOAD ============
+    // ============ MEDIA UPLOAD (IMAGE ONLY) ============
     try {
+      // Logic Upload Gambar Utama (Masih Backend Upload)
       if (files.images) {
         for (let i = 0; i < files.images.length; i++) {
           const file = files.images[i];
@@ -138,38 +147,10 @@ export class ProductService {
         }
       }
 
-      // --- LOGIC VIDEO (DIPERBAIKI) ---
-      if (files.videos && files.videos.length > 0) {
-        // 1. Buat array of Promises (jangan di-await dulu)
-        const videoUploadPromises = files.videos.map(async (file, i) => {
-          const metadata = videosMetadata?.[i] || {};
-
-          // Upload ke Cloudinary
-          const uploadResult = await this.cloudinary.upload(file, {
-            folder: "products/videos",
-            resource_type: "video",
-            // Tambahkan ini untuk video agar loading lebih cepat saat diputar nanti
-            eager_async: true,
-          });
-
-          return {
-            url: uploadResult.secure_url,
-            publicId: uploadResult.public_id,
-            title: metadata.title || productCore.name || "Product Video",
-            isFeatured: metadata.isFeatured || false,
-            altText: metadata.altText || productCore.name || "Product Video",
-          };
-        });
-
-        // 2. Jalankan semua upload video secara bersamaan
-        // Ini akan memangkas waktu secara signifikan
-        const results = await Promise.all(videoUploadPromises);
-
-        // 3. Masukkan ke array utama
-        uploadedVideos.push(...results);
-      }
+      // ❌ LOGIC UPLOAD VIDEO YANG LAMA DIHAPUS TOTAL DI SINI ❌
+      // Kita tidak lagi memproses files.videos
     } catch (error) {
-      throw new ApiError("Failed to upload media files to Cloudinary", 500);
+      throw new ApiError("Failed to upload image files to Cloudinary", 500);
     }
     // ======================================
 
@@ -187,7 +168,6 @@ export class ProductService {
                     data: priceTiers.map((tier) => ({
                       minQuantity: tier.minQuantity,
                       maxQuantity: tier.maxQuantity ?? null,
-
                       price: tier.price.toString(),
                     })),
                   },
@@ -220,7 +200,6 @@ export class ProductService {
 
       // 3. AUTO GENERATE VARIANTS
       if (attributes.length > 0) {
-        // Ambil semua attributeValue DAN nama attributenya (Warna, Ukuran, dll)
         const allAttributeValues = await this.prisma.attributeValue.findMany({
           where: {
             id: {
@@ -228,7 +207,7 @@ export class ProductService {
             },
           },
           include: {
-            attribute: true, // PENTING: Include nama atribut induknya
+            attribute: true,
           },
         });
 
@@ -242,7 +221,6 @@ export class ProductService {
             .map((valueId) => {
               const val = allAttributeValues.find((x) => x.id === valueId);
               if (val && val.attribute) {
-                // Gabungkan Nama Atribut + Nilainya
                 return `${val.attribute.name}: ${val.value}`;
               }
               return "";
@@ -273,34 +251,24 @@ export class ProductService {
           };
         });
 
-        // Batch Insert Variants
         for (const variant of variantCreates) {
           await tx.productVariant.create({ data: variant });
         }
       }
 
+      // 4. UPLOAD VARIANT IMAGES (Masih Backend Upload)
       if (files.variantImages && variantImagesMetadata.length > 0) {
-        // ✅ PERBAIKI DI SINI
         const variants = await tx.productVariant.findMany({
           where: { productId: product.id },
           orderBy: { createdAt: "asc" },
         });
 
-        // Iterasi melalui metadata yang dikirim frontend
         for (const variantMeta of variantImagesMetadata) {
-          // ✅ VARIANT IMAGES METADATA DARI DATA
           const variantIndex = variantMeta.variantIndex;
           const variant = variants[variantIndex];
           if (!variant) continue;
 
-          // Ambil file yang dipetakan berdasarkan index varian
-          // files.variantImages adalah object map { '0': [File], '1': [File], ... }
           const filesForVariant = files.variantImages[variantIndex] || [];
-
-          // Tambahkan console log untuk memastikan filesForVariant ditemukan
-          console.log(
-            `Processing Variant Index ${variantIndex}: Found ${filesForVariant.length} files.`,
-          );
 
           if (filesForVariant.length === 0) continue;
 
@@ -328,7 +296,8 @@ export class ProductService {
           }
         }
       }
-      // 5. INSERT PRODUCT IMAGES
+
+      // 5. INSERT PRODUCT IMAGES (Hasil upload backend di atas)
       if (uploadedImages.length > 0) {
         await tx.productImage.createMany({
           data: uploadedImages.map((img) => ({
@@ -338,7 +307,9 @@ export class ProductService {
         });
       }
 
-      // 6. INSERT PRODUCT VIDEOS
+      // 6. INSERT PRODUCT VIDEOS (Hasil Direct Upload Frontend)
+      // Bagian ini tidak berubah strukturnya, tapi sumber datanya (uploadedVideos)
+      // sekarang berasal dari mapping metadata, bukan hasil upload backend.
       if (uploadedVideos.length > 0) {
         await tx.productVideo.createMany({
           data: uploadedVideos.map((video) => ({

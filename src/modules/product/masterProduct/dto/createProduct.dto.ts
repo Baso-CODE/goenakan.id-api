@@ -71,12 +71,22 @@ export class CreateProductImageDTO {
 }
 
 export class CreateProductVideoDTO {
+  // ✅ WAJIB: URL hasil upload dari Frontend (Cloudinary)
+  @IsString()
+  @IsNotEmpty()
+  url!: string;
+  @IsString()
+  @IsOptional()
+  publicId?: string;
+
   @IsOptional()
   @IsString()
   title?: string;
+
   @IsOptional()
   @IsString()
   altText?: string;
+
   @IsOptional()
   @IsBoolean()
   isFeatured?: boolean = false;
