@@ -1,6 +1,6 @@
-import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import * as argon2 from "argon2";
+import "dotenv/config";
 
 const prisma = new PrismaClient();
 
@@ -18,8 +18,16 @@ async function main() {
     type: argon2.argon2id,
   });
 
-  await prisma.user.create({
-    data: {
+  // 2. Gunakan UPSERT (Update jika ada, Create jika belum ada)
+  // Pastikan 'email' bersifat unique di schema.prisma kamu
+  await prisma.user.upsert({
+    where: { email: "superadmin@goenakan.id" },
+    update: {
+      password: hashedPassword, // <-- Paksa update password jadi yang baru
+      role: "SUPER_ADMIN",
+      name: "Super Admin", // Opsional: reset nama juga
+    },
+    create: {
       name: "Super Admin",
       email: "superadmin@goenakan.id",
       password: hashedPassword,
@@ -27,9 +35,8 @@ async function main() {
     },
   });
 
-  console.log("🚀 SUPER_ADMIN has been created!");
+  console.log("🚀 SUPER_ADMIN password has been synced to: superadmin123");
 }
-
 main()
   .catch((e) => console.error(e))
   .finally(async () => await prisma.$disconnect());
