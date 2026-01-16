@@ -142,9 +142,6 @@ export class ProductController {
     }
   };
 
-  // === ADD VIDEO ===
-  // ... kode lainnya ...
-
   // === ADD VIDEO (UPDATED FOR DIRECT UPLOAD) ===
   addVideo = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -160,7 +157,6 @@ export class ProductController {
     }
   };
 
-  // ... kode lainnya ...
   // === DELETE VIDEO ===
   deleteVideo = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -344,6 +340,17 @@ export class ProductController {
       const { id } = req.params;
       const result = await this.productService.getProductSEO(id);
       res.status(200).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  generateSku = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { name } = req.body;
+      const sku = await this.productService.generateSku(name);
+
+      res.status(200).json({ sku });
     } catch (error) {
       next(error);
     }

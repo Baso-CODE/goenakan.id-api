@@ -497,9 +497,6 @@ export class ProductService {
     return updatedProduct;
   }
 
-  // === ADD VIDEO ===
-  // Di dalam ProductService
-
   // Kita definisikan tipe datanya langsung di sini biar simpel
   async addVideo(
     id: string,
@@ -1444,5 +1441,51 @@ export class ProductService {
 
     // Return null atau object kosong jika belum ada, agar frontend tidak error
     return seoData || {};
+  }
+
+  async generateSku(productName: string): Promise<string> {
+    if (!productName) {
+      throw new ApiError("Product Name is required to generate SKU", 400);
+    }
+
+    const words = productName.trim().split(/\s+/);
+    let prefix = "";
+
+    if (words.length >= 2) {
+      prefix = (words[0][0] + words[1][0]).toUpperCase();
+    } else if (words.length === 1 && words[0].length >= 2) {
+      prefix = words[0].substring(0, 2).toUpperCase();
+    } else {
+      prefix = (words[0][0] + "X").toUpperCase();
+    }
+
+    const lastProduct = await this.prisma.product.findFirst({
+      where: {
+        sku: {
+          startsWith: prefix,
+        },
+      },
+      orderBy: {
+        sku: "desc",
+      },
+      select: {
+        sku: true,
+      },
+    });
+
+    let nextSequence = 1;
+
+    if (lastProduct && lastProduct.sku) {
+      const numericPart = lastProduct.sku.replace(prefix, "");
+      const lastNumber = parseInt(numericPart, 10);
+
+      if (!isNaN(lastNumber)) {
+        nextSequence = lastNumber + 1;
+      }
+    }
+
+    const newSku = `${prefix}${nextSequence.toString().padStart(4, "0")}`;
+
+    return newSku;
   }
 }

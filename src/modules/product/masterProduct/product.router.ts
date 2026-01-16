@@ -177,6 +177,11 @@ export class ProductRouter {
       this.nextAuthMiddleware.verifyNextAuthToken,
       this.productController.getProductSEO,
     );
+    this.router.post(
+      "/generate-sku",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      this.productController.generateSku,
+    );
   };
 
   getRouter(): Router {
