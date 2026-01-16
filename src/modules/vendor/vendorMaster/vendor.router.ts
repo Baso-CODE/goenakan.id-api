@@ -19,18 +19,16 @@ export class VendorRouter {
   }
 
   private initializeRoutes = (): void => {
-    // === PUBLIC ROUTE: Get All Active Items ===
     this.router.get("/", this.vendorController.getAllVendors);
 
-    // === PROTECTED ROUTES ===
     this.router.get(
-      "/:id",
+      "/export/excel",
       this.nextAuthMiddleware.verifyNextAuthToken,
       verifyRole(["SUPER_ADMIN"]),
-      this.vendorController.getVendorById,
+      this.vendorController.exportVendors,
     );
 
-    // === PROTECTED ROUTES ===
+    // Order Add (Pindahkan ke atas)
     this.router.get(
       "/order/add",
       this.nextAuthMiddleware.verifyNextAuthToken,
@@ -45,12 +43,18 @@ export class VendorRouter {
       this.vendorController.getVendorsByOrder,
     );
 
-    // === PROTECTED ROUTES ===
     this.router.get(
       "/detail/:id",
       this.nextAuthMiddleware.verifyNextAuthToken,
       verifyRole(["SUPER_ADMIN"]),
       this.vendorController.getVendorByIdDetail,
+    );
+
+    this.router.get(
+      "/:id",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.vendorController.getVendorById,
     );
 
     this.router.post(
@@ -74,13 +78,6 @@ export class VendorRouter {
       this.nextAuthMiddleware.verifyNextAuthToken,
       verifyRole(["SUPER_ADMIN"]),
       this.vendorController.deleteVendor,
-    );
-
-    this.router.get(
-      "/export/excel",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
-      this.vendorController.exportVendors,
     );
   };
 

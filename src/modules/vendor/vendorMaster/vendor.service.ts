@@ -54,6 +54,7 @@ export class VendorService {
           subDistrict: data.subDistrict ?? "",
           postalCode: data.postalCode ?? "",
           address: data.address,
+          trackingUrl: data.trackingUrl || null,
           isActive: data.isActive ?? true,
         },
       });
@@ -328,6 +329,7 @@ export class VendorService {
             postalCode: vendorData.postalCode ?? existing.postalCode,
             address: vendorData.address ?? existing.address,
             isActive: vendorData.isActive ?? existing.isActive,
+            trackingUrl: vendorData.trackingUrl ?? existing.trackingUrl,
           },
         });
 

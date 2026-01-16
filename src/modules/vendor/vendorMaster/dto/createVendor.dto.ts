@@ -1,14 +1,14 @@
-import {
-  IsNotEmpty,
-  IsString,
-  IsOptional,
-  IsBoolean,
-  IsArray,
-  ArrayNotEmpty,
-  ValidateNested,
-  IsUUID,
-} from "class-validator";
 import { Type } from "class-transformer";
+import {
+  ArrayNotEmpty,
+  IsArray,
+  IsBoolean,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  ValidateNested,
+} from "class-validator";
 
 export class VendorContactDTO {
   @IsNotEmpty()
@@ -65,6 +65,10 @@ export class CreateVendorDTO {
   @IsArray()
   @ArrayNotEmpty()
   itemIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  trackingUrl?: string;
 
   @IsOptional()
   @IsArray()
