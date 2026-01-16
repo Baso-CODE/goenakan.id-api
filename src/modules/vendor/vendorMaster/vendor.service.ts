@@ -202,27 +202,50 @@ export class VendorService {
     if (!vendor) throw new ApiError("Vendor not found", 404);
 
     return {
+      // 1. Data Utama
       id: vendor.id,
       companyName: vendor.companyName,
       picName: vendor.picName,
-      country: vendor.country,
-      address: vendor.address,
       isActive: vendor.isActive,
-      vendorItems: vendor.vendorItems.map((vi) => ({
+      trackingUrl: vendor.trackingUrl, // ✅ Tambahkan ini
+
+      // 2. Data Alamat Lengkap
+      country: vendor.country,
+      province: vendor.province,
+      city: vendor.city,
+      district: vendor.district,
+      subDistrict: vendor.subDistrict,
+      postalCode: vendor.postalCode,
+      address: vendor.address,
+
+      // 3. Items (Flattened)
+      // Kita ubah nama jadi 'items' agar frontend lebih mudah
+      items: vendor.vendorItems.map((vi) => ({
         id: vi.item.id,
         name: vi.item.name,
         description: vi.item.description,
-        category: vi.item.category,
+        category: vi.item.category
+          ? {
+              id: vi.item.category.id,
+              name: vi.item.category.name,
+              type: vi.item.category.type,
+            }
+          : null,
       })),
+
+      // 4. Contacts
       contacts: vendor.contacts.map((c) => ({
-        id: c.id,
-        contactId: c.contactId,
-        isPrimary: c.isPrimary,
-        platform: c.platform,
+        id: c.id, // ID tabel pivot
+        contactId: c.contactId, // ID kontak/username
+        platform: {
+          id: c.platform.id,
+          name: c.platform.name,
+          slug: c.platform.slug,
+          icon: c.platform.icon,
+        },
       })),
     };
   }
-
   // === GET BY ID (Complete Vendor Detail) ===
   async getVendorByIdDetail(id: string) {
     try {
