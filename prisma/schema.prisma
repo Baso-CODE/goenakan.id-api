@@ -569,21 +569,21 @@ model Article {
 // ===============================================
 
 model Vendor {
-  id          String   @id @default(uuid())
-  companyName String
-  slug        String   @unique
-  picName     String
-  country     String?
-  province    String?
-  city        String?
-  district    String?
-  subDistrict String?
-  postalCode  String?
-  address     String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  isActive    Boolean  @default(true)
-
+  id             String              @id @default(uuid())
+  companyName    String
+  slug           String              @unique
+  picName        String
+  country        String?
+  province       String?
+  city           String?
+  district       String?
+  subDistrict    String?
+  postalCode     String?
+  address        String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  isActive       Boolean             @default(true)
+  trackingUrl    String?             @db.Text
   // === RELATIONS ===
   vendorItems    VendorVendorItem[]
   cashflowCost   CashflowCost[]

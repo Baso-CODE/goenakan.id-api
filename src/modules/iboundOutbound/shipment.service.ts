@@ -10,57 +10,62 @@ export class ShipmentService {
 
   // 1. INPUT MANUAL ADMIN (Buat Shipment/Resi Baru + Auto Generate Surat Jalan)
   async createShipment(data: CreateShipmentDTO) {
-    // A. Validasi Order & Ambil Data untuk Format Nomor
+    // 1. Validasi Order (Untuk ambil PO Number)
     const order = await this.prisma.order.findUnique({
       where: { id: data.orderId },
-      select: { id: true, poNumber: true }, // Ambil PO Number agar surat jalan rapi
+      select: { id: true, poNumber: true },
     });
-
     if (!order) throw new ApiError("Order not found", 404);
 
-    // B. Logic Auto Generate Delivery Note Number
-    // Format: DN/Sequence/PO/DD/MM/YYYY
-    // Contoh: DN/15/PO-202601-001/14/01/2026
+    // 2. Validasi Vendor & AMBIL TRACKING URL
+    const vendor = await this.prisma.vendor.findUnique({
+      where: { id: data.vendorId },
+      select: { id: true, trackingUrl: true },
+    });
 
-    // 1. Hitung jumlah shipment yang sudah ada untuk mendapatkan nomor urut (Sequence)
+    if (!vendor) throw new ApiError("Vendor (Ekspedisi) not found", 404);
+
+    // 3. Logic Auto Generate Delivery Note Number (Tetap dipertahankan)
     const totalShipments = await this.prisma.shipment.count();
     const nextSequence = totalShipments + 1;
-
-    // 2. Ambil Tanggal Hari Ini
     const now = new Date();
     const day = String(now.getDate()).padStart(2, "0");
     const month = String(now.getMonth() + 1).padStart(2, "0");
     const year = now.getFullYear();
 
-    // 3. Susun Format String
-    // Jika Anda benar-benar ingin UUID order, ganti `order.poNumber` dengan `order.id`
-    // Tapi saran saya gunakan PO Number agar mudah dibaca manusia.
     const generatedDN = `DN/${nextSequence}/${order.poNumber}/${day}/${month}/${year}`;
 
-    // C. Create Transaction: Header + Items
+    // 4. Create Shipment
     const shipment = await this.prisma.shipment.create({
       data: {
         orderId: data.orderId,
-        type: data.type, // INBOUND / OUTBOUND
+        type: data.type,
         vendorId: data.vendorId,
-
-        // === [AUTO GENERATED FIELD] ===
         deliveryNoteNumber: generatedDN,
-        // ==============================
 
-        // Tracking Info
-        trackingNumber: data.trackingNumber,
-        courierLink: data.courierLink,
+        // === LOGIC TRACKING BARU ===
+        trackingNumber: data.trackingNumber, // No Resi (Input Manual)
+
+        // Link diambil otomatis dari Vendor.
+        // Jika vendor tidak punya link, biarkan null atau string kosong.
+        courierLink: vendor.trackingUrl || null,
+        // ===========================
+
         method: data.method,
+        status: "DISPATCHED",
 
-        // Route & Time
-        origin: data.origin,
-        destination: data.destination,
+        // Tanggal & Remarks
         departureDate: new Date(data.departureDate),
-        status: "DISPATCHED", // Default langsung 'OTW' saat diinput
         remarks: data.remarks,
 
-        // === PARTIAL SHIPMENT LOGIC ===
+        // === FIELD YANG DIABAIKAN (OPTIONAL) ===
+        // Kita isi null jika dari frontend tidak dikirim,
+        // atau kita bisa hapus baris ini jika Prisma sudah set optional.
+        origin: data.origin || null,
+        destination: data.destination || null,
+        // =======================================
+
+        // Items Relation
         items: {
           create: data.items.map((item) => ({
             orderProductId: item.orderProductId,
