@@ -28,8 +28,6 @@ export class ProductController {
   // === CREATE PRODUCT ===
   createProduct = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // Setelah parseFormData dijalankan, req.body sudah berupa objek dengan tipe data yang benar (bukan string)
-      console.log("Request Body:", req.body);
       const data: CreateProductDTO = req.body;
 
       const files: ProductFiles = (req.files as unknown as ProductFiles) || {};

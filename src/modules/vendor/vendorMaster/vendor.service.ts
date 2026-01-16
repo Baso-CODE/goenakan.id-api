@@ -1,11 +1,11 @@
+import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
 import { ApiError } from "../../../utils/api-error";
+import { SlugService } from "../../../utils/genereateSlug";
+import { PaginationService } from "../../pagination/pagination.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateVendorDTO } from "./dto/createVendor.dto";
 import { UpdateVendorDTO } from "./dto/updateVendor.dto";
-import { PaginationService } from "../../pagination/pagination.service";
-import { SlugService } from "../../../utils/genereateSlug";
-import * as ExcelJS from "exceljs";
 export interface VendorExportQuery {
   startDate?: string;
   endDate?: string;
@@ -522,5 +522,53 @@ export class VendorService {
     // 4. MENGHASILKAN BUFFER DAN MENGEMBALIKAN
     const buffer = await workbook.xlsx.writeBuffer();
     return buffer as unknown as Buffer;
+  }
+
+  async getVendorsByOrder(orderId: string, type?: "PRODUCT" | "SERVICE") {
+    try {
+      const whereCondition: any = {
+        isActive: true,
+        orderVendors: {
+          some: {
+            orderId: orderId,
+          },
+        },
+      };
+
+      if (type) {
+        whereCondition.vendorItems = {
+          some: {
+            item: {
+              category: {
+                type: type,
+              },
+            },
+          },
+        };
+      }
+
+      const vendors = await this.prisma.vendor.findMany({
+        where: whereCondition,
+        orderBy: { companyName: "asc" },
+        select: {
+          id: true,
+          companyName: true,
+          vendorItems: {
+            include: {
+              item: {
+                include: {
+                  category: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      return vendors;
+    } catch (error) {
+      console.error("❌ Error in getVendorsByOrder:", error);
+      throw new Error("Failed to fetch vendors for order.");
+    }
   }
 }

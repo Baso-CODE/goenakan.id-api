@@ -45,39 +45,44 @@ export class OrderService {
         throw new ApiError(`Product with ID ${item.productId} not found`, 404);
       }
 
-      let finalPrice = 0;
+      // === PERUBAHAN DISINI ===
+      // Logika: Gunakan harga manual dari FE jika ada. Jika 0, baru hitung otomatis.
+      let finalPrice = item.price ? Number(item.price) : 0;
 
-      // Logika Harga (Custom vs Base Price/Tier)
-      if (product.isCustom) {
-        if (!item.variantId) {
-          throw new ApiError(
-            `Variant is required for custom product: ${product.name}`,
-            400,
+      if (finalPrice === 0) {
+        // --- LOGIKA HITUNG OTOMATIS (FALLBACK) ---
+        if (product.isCustom) {
+          if (!item.variantId) {
+            throw new ApiError(
+              `Variant is required for custom product: ${product.name}`,
+              400,
+            );
+          }
+          const variant = product.productVariants.find(
+            (v) => v.id === item.variantId,
           );
-        }
-        const variant = product.productVariants.find(
-          (v) => v.id === item.variantId,
-        );
-        if (!variant || !variant.price) {
-          throw new ApiError(
-            `Invalid variant for product: ${product.name}`,
-            400,
-          );
-        }
-        finalPrice = Number(variant.price);
-      } else {
-        finalPrice = product.basePrice;
-        if (product.priceTiers && product.priceTiers.length > 0) {
-          const applicableTier = product.priceTiers.find(
-            (t) => item.quantity >= t.minQuantity,
-          );
-          if (applicableTier) {
-            finalPrice = Number(applicableTier.price);
+          if (!variant || !variant.price) {
+            throw new ApiError(
+              `Invalid variant for product: ${product.name}`,
+              400,
+            );
+          }
+          finalPrice = Number(variant.price);
+        } else {
+          finalPrice = product.basePrice;
+          if (product.priceTiers && product.priceTiers.length > 0) {
+            const applicableTier = product.priceTiers.find(
+              (t) => item.quantity >= t.minQuantity,
+            );
+            if (applicableTier) {
+              finalPrice = Number(applicableTier.price);
+            }
           }
         }
+        // --- END LOGIKA OTOMATIS ---
       }
 
-      // Tambah ke Total Amount Order
+      // Hitung Subtotal berdasarkan finalPrice (baik manual maupun otomatis)
       const subtotal = finalPrice * item.quantity;
       totalAmount += subtotal;
 
@@ -85,7 +90,7 @@ export class OrderService {
       const productData: any = {
         product: { connect: { id: item.productId } },
         quantity: item.quantity,
-        unitPrice: finalPrice,
+        unitPrice: finalPrice, // Ini sekarang dinamis (manual atau auto)
         variant: item.variantId
           ? { connect: { id: item.variantId } }
           : undefined,
@@ -100,7 +105,6 @@ export class OrderService {
         productData.remarks = item.remarks;
       }
 
-      // PUSH ke array (JANGAN create dulu)
       orderProductsData.push(productData);
     }
     // --- AKHIR LOOP PRODUCT ---

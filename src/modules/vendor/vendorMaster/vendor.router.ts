@@ -38,6 +38,13 @@ export class VendorRouter {
       this.vendorController.getAllVendorsForOrder,
     );
 
+    this.router.get(
+      "/by-order/:orderId",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.vendorController.getVendorsByOrder,
+    );
+
     // === PROTECTED ROUTES ===
     this.router.get(
       "/detail/:id",

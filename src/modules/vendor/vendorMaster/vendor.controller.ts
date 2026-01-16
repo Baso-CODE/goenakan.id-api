@@ -19,6 +19,24 @@ export class VendorController {
     }
   };
 
+  getVendorsByOrder = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { orderId } = req.params;
+
+      const type = req.query.type as "PRODUCT" | "SERVICE" | undefined;
+
+      const vendors = await this.vendorService.getVendorsByOrder(orderId, type);
+
+      res.status(200).json({ data: vendors });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   // === GET ALL VENDORS FOR ORDER ===
   getAllVendorsForOrder = async (
     req: Request,
