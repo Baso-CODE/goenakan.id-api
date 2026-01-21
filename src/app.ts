@@ -10,6 +10,7 @@ import { errorMiddleware } from "./middleware/error.middleware";
 import { AuthRouter } from "./modules/auth/auth.router";
 import { CashflowRouter } from "./modules/cashflow/cashflow.router";
 import { ClientRouter } from "./modules/client/client.router";
+import { FaqRouter } from "./modules/content/faq/faq.router";
 import { DepartmentRouter } from "./modules/department/department.router";
 import { LogisticsRouter } from "./modules/iboundOutbound/logistic.router";
 import { InvoiceRouter } from "./modules/invoice/invoice.router";
@@ -59,6 +60,7 @@ export default class App {
     const cashflowRouter = container.resolve(CashflowRouter);
     const noteRouter = container.resolve(NoteRouter);
     const logisticsRouter = container.resolve(LogisticsRouter);
+    const faqsRouter = container.resolve(FaqRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -81,6 +83,7 @@ export default class App {
     this.app.use("/cashflows", cashflowRouter.getRouter());
     this.app.use("/invoice-notes", noteRouter.getRouter());
     this.app.use("/logistics", logisticsRouter.getRouter());
+    this.app.use("/content/faqs", faqsRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

@@ -991,3 +991,39 @@ model Currency {
 
   @@map("currencies")
 }
+
+// ===============================================
+// WEBSITE CONTENT: FAQ SECTION
+// ===============================================
+
+model FaqCategory {
+  id           String   @id @default(uuid())
+  name         String
+  slug         String   @unique
+  description  String?
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  faqs Faq[]
+
+  @@map("faq_categories")
+}
+
+model Faq {
+  id           String   @id @default(uuid())
+  question     String
+  answer       String   @db.Text
+  displayOrder Int      @default(0)
+  isFeatured   Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relasi ke Kategori
+  categoryId String
+  category   FaqCategory @relation(fields: [categoryId], references: [id])
+
+  @@map("faqs")
+}
