@@ -1,12 +1,12 @@
 import { injectable } from "tsyringe";
 
-import { CreateSalesBankDTO, CreateSalesDTO } from "./dto/createSales.dto";
-import { ApiError } from "../../utils/api-error";
-import { PrismaService } from "../prisma/prisma.service";
-import { PaginationService } from "../pagination/pagination.service";
-import { UpdateCoreData, UpdateSalesDTO } from "./dto/updateSales.dto";
-import { CloudinaryService } from "../cloudinary/cloudinary.service";
 import * as ExcelJS from "exceljs";
+import { ApiError } from "../../utils/api-error";
+import { CloudinaryService } from "../cloudinary/cloudinary.service";
+import { PaginationService } from "../pagination/pagination.service";
+import { PrismaService } from "../prisma/prisma.service";
+import { CreateSalesBankDTO, CreateSalesDTO } from "./dto/createSales.dto";
+import { UpdateCoreData, UpdateSalesDTO } from "./dto/updateSales.dto";
 
 export interface SalesExportQuery {
   startDate?: string;
