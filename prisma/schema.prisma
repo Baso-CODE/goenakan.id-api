@@ -15,6 +15,16 @@ datasource db {
 // ENUMS & MASTER TABLES
 // ===============================================
 
+enum QuotationStatus {
+  DRAFT
+  SENT
+  FOLLOW_UP
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
 enum Role {
   SUPER_ADMIN
   ADMIN_ARTICLE
@@ -77,12 +87,6 @@ enum DeliveryStatus {
   SENT
   PENDING
   CANCELLED
-}
-
-enum QuotationStatus {
-  SENT
-  ACCEPTED
-  REJECTED
 }
 
 enum ProductionStatus {
@@ -885,32 +889,85 @@ model DeliveryNote {
 
 model Quotation {
   id              String          @id @default(uuid())
-  clientId        String
-  orderId         String?
   quotationNumber String          @unique
-  date            DateTime
-  totalAmount     Decimal
-  status          QuotationStatus
-  notes           String
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  client          Client          @relation(fields: [clientId], references: [id])
-  order           Order?          @relation(fields: [orderId], references: [id])
-  items           QuotationItem[]
+  date            DateTime        @default(now())
+  validUntil      DateTime?
+  status          QuotationStatus @default(DRAFT)
+
+  // === HYBRID CLIENT LOGIC ===
+  // Jika ambil dari DB: isi clientId
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id])
+
+  // Jika input manual: isi field di bawah ini
+  manualClientName    String?
+  manualClientCompany String?
+  manualClientEmail   String?
+  manualClientPhone   String?
+  manualClientAddress String? @db.Text
+
+  // === FINANCIALS ===
+  subTotal       Decimal  @default(0)
+  taxAmount      Decimal? @default(0)
+  discountAmount Decimal? @default(0)
+  totalAmount    Decimal  @default(0)
+
+  notes         String? @db.Text
+  internalNotes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // === RELATIONS ===
+  orderId   String?
+  order     Order?              @relation(fields: [orderId], references: [id])
+  items     QuotationItem[]
+  followUps QuotationFollowUp[]
 
   @@map("quotations")
 }
 
+model QuotationFollowUp {
+  id          String   @id @default(uuid())
+  quotationId String
+  date        DateTime @default(now()) // Tanggal Follow up dilakukan
+
+  method     String? // Misal: "WhatsApp", "Email", "Phone Call", "Meeting"
+  notes      String? @db.Text // Hasil follow up: "Client minta diskon", "Masih meeting internal", dll
+  nextAction String? // Rencana selanjutnya: "Hubungi lagi minggu depan"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+  @@map("quotation_follow_ups")
+}
+
 model QuotationItem {
-  id            String    @id @default(uuid())
-  quotationId   String
-  productId     String
-  quantity      Int
-  price         Decimal
-  customization Json
-  remarks       String
-  quotation     Quotation @relation(fields: [quotationId], references: [id])
-  product       Product   @relation(fields: [productId], references: [id])
+  id          String @id @default(uuid())
+  quotationId String
+
+  // === HYBRID PRODUCT LOGIC ===
+  // Jika ambil dari DB: isi productId
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+
+  // Field ini WAJIB diisi baik ambil dari DB maupun Manual.
+  // Jika dari DB, backend otomatis mengcopy nama & deskripsi saat create.
+  productName String
+  description String? @db.Text
+
+  // Perhitungan
+  quantity   Int
+  unitPrice  Decimal
+  discount   Decimal? @default(0)
+  totalPrice Decimal // (quantity * unitPrice) - discount
+
+  customization Json? // Jika ada request khusus (warna, ukuran custom)
+  remarks       String? // Catatan per item
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
 
   @@map("quotation_items")
 }

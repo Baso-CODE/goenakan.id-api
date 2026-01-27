@@ -21,6 +21,7 @@ import { AttributeRouter } from "./modules/product/attributes/attributes.router"
 import { ProductCategoryRouter } from "./modules/product/category/categoryProduct.router";
 import { ProductRouter } from "./modules/product/masterProduct/product.router";
 import { PurchaseChannelRouter } from "./modules/purchaseChannel/purchaseChannel.router";
+import { QuotationRouter } from "./modules/quotation/quotation.router";
 import { SalesRouter } from "./modules/sales/sales.router";
 import { VendorCategoryRouter } from "./modules/vendor/categoryVendor/categoryVendor.router";
 import { ItemVendorRouter } from "./modules/vendor/itemVendor/itemVendor.router";
@@ -63,6 +64,7 @@ export default class App {
     const logisticsRouter = container.resolve(LogisticsRouter);
     const faqsRouter = container.resolve(FaqRouter);
     const heroRouter = container.resolve(HeroRouter);
+    const quotationRouter = container.resolve(QuotationRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -85,6 +87,7 @@ export default class App {
     this.app.use("/cashflows", cashflowRouter.getRouter());
     this.app.use("/invoice-notes", noteRouter.getRouter());
     this.app.use("/logistics", logisticsRouter.getRouter());
+    this.app.use("/quotations", quotationRouter.getRouter());
     this.app.use("/content/faqs", faqsRouter.getRouter());
     this.app.use("/content/heros", heroRouter.getRouter());
   }
