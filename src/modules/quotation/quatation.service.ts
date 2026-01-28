@@ -200,12 +200,8 @@ export class QuotationService {
 
     if (!existing) throw new ApiError("Quotation not found", 404);
 
-    // Logic Update Items (Full Replacement Strategy)
-    // Jika user mengirim 'items', kita hapus semua item lama dan buat baru.
-    // Ini lebih aman untuk kalkulasi ulang total harga.
-
     let updateData: any = { ...data };
-    delete updateData.items; // Kita handle items secara terpisah di transaksi
+    delete updateData.items;
 
     if (data.items && data.items.length > 0) {
       return await this.prisma.$transaction(async (tx) => {
