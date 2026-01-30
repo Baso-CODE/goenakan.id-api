@@ -158,8 +158,6 @@ export class OrderAnalyticsService {
     return { data: formattedData, meta };
   }
 
-  // --- HELPER METHODS (TIDAK BERUBAH) ---
-
   private calculateTotalDuration(shipments: any[]): number {
     return shipments.reduce((acc, s) => {
       if (s.departureDate && s.arrivalDate) {

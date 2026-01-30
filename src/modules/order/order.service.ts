@@ -881,7 +881,7 @@ export class OrderService {
             // Relasi History Produksi per Item
             productionTrackers: {
               include: {
-                vendor: { select: { companyName: true } }, // Nama Pabrik
+                vendor: { select: { companyName: true, trackingUrl: true } }, // Nama Pabrik
               },
               orderBy: { startDate: "desc" },
             },
@@ -891,7 +891,7 @@ export class OrderService {
         // 3. Shipments (History Pengiriman Inbound & Outbound)
         shipments: {
           include: {
-            vendor: { select: { companyName: true } }, // Nama Ekspedisi
+            vendor: { select: { companyName: true, trackingUrl: true } }, // Nama Ekspedisi
 
             // Detail Item apa saja yg ada di dalam shipment ini
             items: {

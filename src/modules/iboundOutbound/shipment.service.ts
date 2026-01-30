@@ -105,7 +105,7 @@ export class ShipmentService {
     return await this.prisma.shipment.findMany({
       where: { orderId },
       include: {
-        vendor: { select: { companyName: true } },
+        vendor: { select: { companyName: true, trackingUrl: true } },
         items: {
           include: {
             orderProduct: {

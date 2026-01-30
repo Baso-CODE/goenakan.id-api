@@ -1102,3 +1102,25 @@ model HeroSlide {
 
   @@map("hero_slides")
 }
+
+model PopupBanner {
+  id                   String @id @default(uuid())
+  title                String
+  desktopImageUrl      String
+  desktopImagePublicId String
+
+  mobileImageUrl      String
+  mobileImagePublicId String
+
+  altText String?
+  linkUrl String?
+
+  isActive  Boolean   @default(true)
+  startDate DateTime?
+  endDate   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("popup_banners")
+}

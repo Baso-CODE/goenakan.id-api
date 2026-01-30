@@ -117,9 +117,6 @@ export class UpdateQuotationDTO {
   @IsString()
   internalNotes?: string;
 
-  // Note: Update Items biasanya logicnya kompleks (add/remove/update).
-  // Untuk DTO Update ini, kita asumsikan user mengirim ulang ARRAY BARU
-  // yang akan me-replace items lama (Full Replacement Strategy).
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

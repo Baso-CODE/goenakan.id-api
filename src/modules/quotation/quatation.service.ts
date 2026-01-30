@@ -94,13 +94,21 @@ export class QuotationService {
   // 2. GET BY ID (DETAIL)
   // ==========================================
   async getQuotationById(id: string) {
+    // 1. Ambil data dengan Deep Nested Include
     const quotation = await this.prisma.quotation.findUnique({
       where: { id },
       include: {
-        client: true, // Detail client DB
-        items: true, // List barang
+        // Include Client beserta detail B2B / B2C nya
+        client: {
+          include: {
+            b2b: {
+              include: { pics: true }, // Opsional: ambil PIC jika perlu
+            },
+            b2c: true,
+          },
+        },
+        items: true,
         followUps: {
-          // History Follow up
           orderBy: { date: "desc" },
         },
       },
@@ -108,7 +116,62 @@ export class QuotationService {
 
     if (!quotation) throw new ApiError("Quotation not found", 404);
 
-    return quotation;
+    // 2. Logic Penyeragaman Data Client (Data Transformation)
+    // Tujuannya agar Frontend tidak pusing ngecek if-else terlalu banyak
+    let clientDetail = null;
+
+    if (quotation.clientId && quotation.client) {
+      // === KASUS 1: CLIENT DARI DATABASE ===
+
+      if (quotation.client.type === "B2B" && quotation.client.b2b) {
+        // Ambil data B2B
+        const b2b = quotation.client.b2b;
+        clientDetail = {
+          source: "DATABASE",
+          type: "B2B",
+          id: quotation.client.id,
+          name: b2b.companyName,
+          email: b2b.email || "",
+          phone: b2b.phone || "",
+          address: b2b.fullAddress,
+          city: b2b.city,
+          picName: b2b.pics?.[0]?.name || "-", // Ambil PIC pertama jika ada
+        };
+      } else if (quotation.client.type === "B2C" && quotation.client.b2c) {
+        // Ambil data B2C
+        const b2c = quotation.client.b2c;
+        clientDetail = {
+          source: "DATABASE",
+          type: "B2C",
+          id: quotation.client.id,
+          name: b2c.name,
+          email: "-", // Schema B2C Anda tidak ada email, sesuaikan jika ada
+          phone: b2c.phone || "",
+          address: b2c.fullAddress,
+          city: b2c.city,
+          picName: b2c.name, // B2C PIC-nya ya orang itu sendiri
+        };
+      }
+    } else {
+      // === KASUS 2: CLIENT MANUAL ===
+      clientDetail = {
+        source: "MANUAL",
+        type: "MANUAL",
+        id: null,
+        name: quotation.manualClientName || "Unknown",
+        email: quotation.manualClientEmail || "",
+        phone: quotation.manualClientPhone || "",
+        address: quotation.manualClientAddress || "",
+        city: "-",
+        picName: quotation.manualClientName,
+      };
+    }
+
+    // 3. Return data asli quotation + field baru 'clientInfo' yang sudah rapi
+    return {
+      ...quotation,
+      clientInfo: clientDetail,
+    };
   }
 
   // ==========================================
