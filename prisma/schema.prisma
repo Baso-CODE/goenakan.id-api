@@ -1124,3 +1124,24 @@ model PopupBanner {
 
   @@map("popup_banners")
 }
+
+model ClientLogo {
+  id   String @id @default(uuid())
+  name String
+
+  // === IMAGE ===
+  imageUrl      String
+  imagePublicId String
+
+  // === CONFIG ===
+  altText    String?
+  websiteUrl String?
+
+  displayOrder Int     @default(0)
+  isActive     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("client_logos")
+}

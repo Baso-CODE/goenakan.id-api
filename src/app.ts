@@ -11,6 +11,7 @@ import { AuthRouter } from "./modules/auth/auth.router";
 import { CashflowRouter } from "./modules/cashflow/cashflow.router";
 import { ClientRouter } from "./modules/client/client.router";
 import { PopupBannerRouter } from "./modules/content/banner/banner.router";
+import { ClientLogoRouter } from "./modules/content/clientLogo/clientLogo.router";
 import { FaqRouter } from "./modules/content/faq/faq.router";
 import { HeroRouter } from "./modules/content/hero/hero.router";
 import { DepartmentRouter } from "./modules/department/department.router";
@@ -67,6 +68,7 @@ export default class App {
     const heroRouter = container.resolve(HeroRouter);
     const quotationRouter = container.resolve(QuotationRouter);
     const bannerRouter = container.resolve(PopupBannerRouter);
+    const clientLogoRouter = container.resolve(ClientLogoRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -93,6 +95,7 @@ export default class App {
     this.app.use("/content/popup-banners", bannerRouter.getRouter());
     this.app.use("/content/faqs", faqsRouter.getRouter());
     this.app.use("/content/heros", heroRouter.getRouter());
+    this.app.use("/content/client-logos", clientLogoRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);
