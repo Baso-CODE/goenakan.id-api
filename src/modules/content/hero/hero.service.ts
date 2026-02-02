@@ -98,12 +98,8 @@ export class HeroService {
       resource_type: "image",
     });
 
-    // ✅ FIX MANUAL: Paksa konversi tipe data di sini
-    // FormData mengirim "1" -> Kita ubah jadi 1 (Int)
     const displayOrderInt = data.displayOrder ? Number(data.displayOrder) : 0;
 
-    // FormData mengirim "true" -> Kita ubah jadi true (Boolean)
-    // Kita handle kondisi jika datanya string "true" atau boolean true
     const isActiveBool = String(data.isActive) === "true";
 
     // 2. Simpan ke Database

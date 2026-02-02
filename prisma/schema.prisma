@@ -1145,3 +1145,14 @@ model ClientLogo {
 
   @@map("client_logos")
 }
+
+model AppSetting {
+  id          String  @id @default(uuid())
+  googleAdsId String?
+  gtmId       String?
+  pixelId     String?
+
+  updatedAt DateTime @updatedAt
+
+  @@map("app_settings")
+}
