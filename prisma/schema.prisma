@@ -845,7 +845,7 @@ model Shipment {
   departureDate DateTime?
   arrivalDate   DateTime?
 
-  remarks String? @db.Text
+  notes ShipmentNote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -870,6 +870,34 @@ model ShipmentItem {
   orderProduct OrderProduct @relation(fields: [orderProductId], references: [id])
 
   @@map("shipment_items")
+}
+
+model ShipmentNoteCategory {
+  id        String   @id @default(uuid())
+  name      String // Nama Kategori
+  templates Json? // Template preset (Array of { title, content })
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  notes ShipmentNote[]
+
+  @@map("shipment_note_categories")
+}
+
+// Tabel Transaksi Catatan per Shipment
+model ShipmentNote {
+  id         String @id @default(uuid())
+  shipmentId String
+  categoryId String
+  content    String @db.Text
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  shipment Shipment             @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  category ShipmentNoteCategory @relation(fields: [categoryId], references: [id])
+
+  @@map("shipment_notes")
 }
 
 model DeliveryNote {
