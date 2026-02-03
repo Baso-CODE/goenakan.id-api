@@ -15,6 +15,7 @@ import { ClientLogoRouter } from "./modules/content/clientLogo/clientLogo.router
 import { FaqRouter } from "./modules/content/faq/faq.router";
 import { HeroRouter } from "./modules/content/hero/hero.router";
 import { AppSettingRouter } from "./modules/content/setting/setting.router";
+import { CurrencyRouter } from "./modules/currency/currency.router";
 import { DepartmentRouter } from "./modules/department/department.router";
 import { LogisticsRouter } from "./modules/iboundOutbound/logistic.router";
 import { InvoiceRouter } from "./modules/invoice/invoice.router";
@@ -71,6 +72,7 @@ export default class App {
     const bannerRouter = container.resolve(PopupBannerRouter);
     const clientLogoRouter = container.resolve(ClientLogoRouter);
     const appSettingRouter = container.resolve(AppSettingRouter);
+    const currencyRouter = container.resolve(CurrencyRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -99,6 +101,7 @@ export default class App {
     this.app.use("/content/heros", heroRouter.getRouter());
     this.app.use("/content/client-logos", clientLogoRouter.getRouter());
     this.app.use("/app-settings", appSettingRouter.getRouter());
+    this.app.use("/currencies", currencyRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

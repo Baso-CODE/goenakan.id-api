@@ -147,10 +147,12 @@ export class InvoiceService {
             notes && notes.length > 0
               ? {
                   createMany: {
-                    data: notes.map((note) => ({
-                      categoryId: note.categoryId,
-                      content: note.content,
-                    })),
+                    data: notes.flatMap((note) =>
+                      note.contents.map((text) => ({
+                        categoryId: note.categoryId,
+                        content: text,
+                      })),
+                    ),
                   },
                 }
               : undefined,

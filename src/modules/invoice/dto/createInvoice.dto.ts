@@ -46,11 +46,12 @@ class SelectedItemDTO {
 class InvoiceNoteInputDTO {
   @IsNotEmpty()
   @IsString()
-  categoryId!: string; // ID Kategori Catatan
+  categoryId!: string;
 
-  @IsNotEmpty()
-  @IsString()
-  content!: string; // Isi Catatan
+  @IsArray()
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  contents!: string[];
 }
 
 export class CreateInvoiceDTO {

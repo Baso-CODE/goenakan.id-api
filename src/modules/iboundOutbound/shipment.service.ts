@@ -42,30 +42,17 @@ export class ShipmentService {
         type: data.type,
         vendorId: data.vendorId,
         deliveryNoteNumber: generatedDN,
-
-        // === LOGIC TRACKING BARU ===
-        trackingNumber: data.trackingNumber, // No Resi (Input Manual)
-
-        // Link diambil otomatis dari Vendor.
-        // Jika vendor tidak punya link, biarkan null atau string kosong.
+        trackingNumber: data.trackingNumber,
         courierLink: vendor.trackingUrl || null,
-        // ===========================
-
         method: data.method,
         status: "DISPATCHED",
 
-        // Tanggal & Remarks
         departureDate: new Date(data.departureDate),
         remarks: data.remarks,
 
-        // === FIELD YANG DIABAIKAN (OPTIONAL) ===
-        // Kita isi null jika dari frontend tidak dikirim,
-        // atau kita bisa hapus baris ini jika Prisma sudah set optional.
         origin: data.origin || null,
         destination: data.destination || null,
-        // =======================================
 
-        // Items Relation
         items: {
           create: data.items.map((item) => ({
             orderProductId: item.orderProductId,
