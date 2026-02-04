@@ -20,6 +20,7 @@ import { DepartmentRouter } from "./modules/department/department.router";
 import { LogisticsRouter } from "./modules/iboundOutbound/logistic.router";
 import { InvoiceRouter } from "./modules/invoice/invoice.router";
 import { NoteRouter } from "./modules/notes/notes.router";
+import { ShipmentNoteCategoryRouter } from "./modules/notesShipment/notesShipmentCategory.router";
 import { OrderRouter } from "./modules/order/order.router";
 import { AttributeRouter } from "./modules/product/attributes/attributes.router";
 import { ProductCategoryRouter } from "./modules/product/category/categoryProduct.router";
@@ -66,6 +67,9 @@ export default class App {
     const cashflowRouter = container.resolve(CashflowRouter);
     const noteRouter = container.resolve(NoteRouter);
     const logisticsRouter = container.resolve(LogisticsRouter);
+    const notesShipmentCategoryRouter = container.resolve(
+      ShipmentNoteCategoryRouter,
+    );
     const faqsRouter = container.resolve(FaqRouter);
     const heroRouter = container.resolve(HeroRouter);
     const quotationRouter = container.resolve(QuotationRouter);
@@ -102,6 +106,10 @@ export default class App {
     this.app.use("/content/client-logos", clientLogoRouter.getRouter());
     this.app.use("/app-settings", appSettingRouter.getRouter());
     this.app.use("/currencies", currencyRouter.getRouter());
+    this.app.use(
+      "/shipment-notes-categories",
+      notesShipmentCategoryRouter.getRouter(),
+    );
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

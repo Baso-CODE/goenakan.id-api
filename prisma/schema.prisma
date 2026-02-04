@@ -874,8 +874,8 @@ model ShipmentItem {
 
 model ShipmentNoteCategory {
   id        String   @id @default(uuid())
-  name      String // Nama Kategori
-  templates Json? // Template preset (Array of { title, content })
+  name      String
+  templates Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

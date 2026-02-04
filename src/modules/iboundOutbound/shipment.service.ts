@@ -25,7 +25,7 @@ export class ShipmentService {
 
     if (!vendor) throw new ApiError("Vendor (Ekspedisi) not found", 404);
 
-    // 3. Logic Auto Generate Delivery Note Number (Tetap dipertahankan)
+    // 3. Logic Auto Generate Delivery Note Number
     const totalShipments = await this.prisma.shipment.count();
     const nextSequence = totalShipments + 1;
     const now = new Date();
@@ -43,12 +43,26 @@ export class ShipmentService {
         vendorId: data.vendorId,
         deliveryNoteNumber: generatedDN,
         trackingNumber: data.trackingNumber,
-        courierLink: vendor.trackingUrl || null,
+        courierLink: vendor.trackingUrl || data.courierLink || null,
         method: data.method,
         status: "DISPATCHED",
 
         departureDate: new Date(data.departureDate),
-        remarks: data.remarks,
+
+        // --- LOGIC NOTES BARU (PENGGANTI REMARKS) ---
+        notes:
+          data.notes && data.notes.length > 0
+            ? {
+                createMany: {
+                  data: data.notes.flatMap((note) =>
+                    note.contents.map((text) => ({
+                      categoryId: note.categoryId,
+                      content: text,
+                    })),
+                  ),
+                },
+              }
+            : undefined,
 
         origin: data.origin || null,
         destination: data.destination || null,
@@ -62,6 +76,7 @@ export class ShipmentService {
       },
       include: {
         items: { include: { orderProduct: { include: { product: true } } } },
+        notes: { include: { category: true } }, // Sertakan notes saat return
       },
     });
 
@@ -75,15 +90,34 @@ export class ShipmentService {
     });
     if (!shipment) throw new ApiError("Shipment not found", 404);
 
-    return await this.prisma.shipment.update({
-      where: { id: shipmentId },
-      data: {
-        status: "ARRIVED",
-        arrivalDate: new Date(data.arrivalDate),
-        remarks: data.remarks
-          ? `${shipment.remarks || ""} | ${data.remarks}`
-          : shipment.remarks,
-      },
+    // Gunakan transaksi agar update status dan penambahan notes aman
+    return await this.prisma.$transaction(async (tx) => {
+      // 1. Tambahkan notes baru jika ada (Append mode)
+      if (data.notes && data.notes.length > 0) {
+        await tx.shipmentNote.createMany({
+          data: data.notes.flatMap((note) =>
+            note.contents.map((text) => ({
+              shipmentId: shipmentId,
+              categoryId: note.categoryId,
+              content: text,
+            })),
+          ),
+        });
+      }
+
+      // 2. Update status dan tanggal sampai
+      return await tx.shipment.update({
+        where: { id: shipmentId },
+        data: {
+          status: "ARRIVED",
+          arrivalDate: new Date(data.arrivalDate),
+        },
+        include: {
+          notes: {
+            include: { category: true },
+          },
+        },
+      });
     });
   }
 

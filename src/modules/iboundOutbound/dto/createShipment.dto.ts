@@ -24,16 +24,28 @@ export enum ShippingMethod {
   AIR = "AIR",
 }
 
+// --- SUB-DTO: SHIPMENT NOTES (Multi-content logic) ---
+export class ShipmentNoteInputDTO {
+  @IsNotEmpty()
+  @IsUUID()
+  categoryId!: string; // ID Kategori dari tabel ShipmentNoteCategory
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  contents!: string[]; // Array string untuk menampung banyak pilihan template/manual
+}
+
 // --- SUB-DTO: DETAIL ITEM (PARTIAL SHIPMENT LOGIC) ---
 export class ShipmentItemInputDTO {
   @IsNotEmpty()
   @IsUUID()
-  orderProductId!: string; // ID Produk dari Order
+  orderProductId!: string;
 
   @IsNotEmpty()
   @IsInt()
   @Min(1)
-  quantity!: number; // Admin input: Berapa qty yang dikirim di resi ini?
+  quantity!: number;
 }
 
 // --- MAIN DTO: CREATE SHIPMENT HEADER ---
@@ -44,43 +56,35 @@ export class CreateShipmentDTO {
 
   @IsOptional()
   @IsUUID()
-  vendorId?: string; // ID Ekspedisi (JNE, Cargo, dll). Optional jika pakai kurir sendiri.
+  vendorId?: string;
 
   @IsNotEmpty()
   @IsEnum(ShipmentType)
-  type!: ShipmentType; // INBOUND atau OUTBOUND
+  type!: ShipmentType;
 
   @IsNotEmpty()
   @IsEnum(ShippingMethod)
-  method!: ShippingMethod; // LAND, SEA, AIR
-
-  // === INFORMASI TRACKING ===
-  @IsOptional()
-  @IsString()
-  trackingNumber?: string; // No. Resi
+  method!: ShippingMethod;
 
   @IsOptional()
   @IsString()
-  // @IsUrl() // Boleh dinyalakan jika admin wajib input link valid
-  courierLink?: string; // Link cek resi
-
-  // === RUTE (PENTING UNTUK MULTI-LEG) ===
-  @IsOptional()
-  @IsString()
-  origin?: string; // e.g. "Gudang Guangzhou"
+  trackingNumber?: string;
 
   @IsOptional()
   @IsString()
-  destination?: string; // e.g. "Gudang Jakarta"
+  courierLink?: string;
 
-  // === WAKTU ===
+  @IsOptional()
+  @IsString()
+  origin?: string;
+
+  @IsOptional()
+  @IsString()
+  destination?: string;
+
   @IsNotEmpty()
   @IsDateString()
-  departureDate!: string; // Input Admin: Kapan barang jalan?
-
-  @IsOptional()
-  @IsString()
-  remarks?: string;
+  departureDate!: string;
 
   @IsOptional()
   @IsString()
@@ -91,4 +95,11 @@ export class CreateShipmentDTO {
   @ValidateNested({ each: true })
   @Type(() => ShipmentItemInputDTO)
   items!: ShipmentItemInputDTO[];
+
+  // === SHIPMENT NOTES (ARRAY OF CATEGORIES WITH CONTENTS) ===
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ShipmentNoteInputDTO)
+  notes?: ShipmentNoteInputDTO[]; // Pengganti remarks
 }
