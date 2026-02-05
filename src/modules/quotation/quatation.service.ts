@@ -14,10 +14,6 @@ export class QuotationService {
     private readonly pagination: PaginationService,
   ) {}
 
-  // ==========================================
-  // HELPER: GENERATE QUOTATION NUMBER
-  // Format: QUO-20231027-1234
-  // ==========================================
   private generateQuotationNumber(): string {
     const date = new Date();
     const year = date.getFullYear();
@@ -102,7 +98,7 @@ export class QuotationService {
         client: {
           include: {
             b2b: {
-              include: { pics: true }, // Opsional: ambil PIC jika perlu
+              include: { pics: true },
             },
             b2c: true,
           },
@@ -111,20 +107,22 @@ export class QuotationService {
         followUps: {
           orderBy: { date: "desc" },
         },
+        // === TAMBAHAN: Include Notes & Kategorinya ===
+        notes: {
+          include: {
+            category: true, // Agar dapet info: "Payment Terms", "Internal", dll
+          },
+        },
       },
     });
 
     if (!quotation) throw new ApiError("Quotation not found", 404);
 
     // 2. Logic Penyeragaman Data Client (Data Transformation)
-    // Tujuannya agar Frontend tidak pusing ngecek if-else terlalu banyak
     let clientDetail = null;
 
     if (quotation.clientId && quotation.client) {
-      // === KASUS 1: CLIENT DARI DATABASE ===
-
       if (quotation.client.type === "B2B" && quotation.client.b2b) {
-        // Ambil data B2B
         const b2b = quotation.client.b2b;
         clientDetail = {
           source: "DATABASE",
@@ -135,25 +133,23 @@ export class QuotationService {
           phone: b2b.phone || "",
           address: b2b.fullAddress,
           city: b2b.city,
-          picName: b2b.pics?.[0]?.name || "-", // Ambil PIC pertama jika ada
+          picName: b2b.pics?.[0]?.name || "-",
         };
       } else if (quotation.client.type === "B2C" && quotation.client.b2c) {
-        // Ambil data B2C
         const b2c = quotation.client.b2c;
         clientDetail = {
           source: "DATABASE",
           type: "B2C",
           id: quotation.client.id,
           name: b2c.name,
-          email: "-", // Schema B2C Anda tidak ada email, sesuaikan jika ada
+          email: "-",
           phone: b2c.phone || "",
           address: b2c.fullAddress,
           city: b2c.city,
-          picName: b2c.name, // B2C PIC-nya ya orang itu sendiri
+          picName: b2c.name,
         };
       }
     } else {
-      // === KASUS 2: CLIENT MANUAL ===
       clientDetail = {
         source: "MANUAL",
         type: "MANUAL",
@@ -167,13 +163,14 @@ export class QuotationService {
       };
     }
 
-    // 3. Return data asli quotation + field baru 'clientInfo' yang sudah rapi
+    // 3. Return data
+    // Frontend QuotationForm akan menerima array 'notes' ini
+    // dan mengubahnya menjadi format grouped di defaultValues (useMemo)
     return {
       ...quotation,
       clientInfo: clientDetail,
     };
   }
-
   // ==========================================
   // 3. CREATE QUOTATION
   // ==========================================
@@ -198,7 +195,7 @@ export class QuotationService {
 
       return {
         productId: item.productId || null,
-        productName: item.productName, // Snapshot nama produk
+        productName: item.productName,
         description: item.description,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
@@ -209,8 +206,7 @@ export class QuotationService {
       };
     });
 
-    // 3. Hitung Grand Total (Simple logic: Subtotal = TotalAmount for now)
-    // Nanti bisa dikembangkan tambah PPN (Tax) di sini
+    // 3. Hitung Grand Total
     const totalAmount = subTotal;
 
     // 4. Generate Nomor
@@ -222,7 +218,7 @@ export class QuotationService {
         quotationNumber,
         date: data.date || new Date(),
         validUntil: data.validUntil,
-        status: "DRAFT", // Default status
+        status: "DRAFT",
 
         // Client Info
         clientId: data.clientId || null,
@@ -236,8 +232,21 @@ export class QuotationService {
         subTotal,
         totalAmount,
 
-        notes: data.notes,
-        internalNotes: data.internalNotes,
+        // --- UPDATE: LOGIC NOTES BARU (RELATIONAL) ---
+        // Menggunakan flatMap untuk memecah array contents menjadi baris database
+        notes:
+          data.notes && data.notes.length > 0
+            ? {
+                createMany: {
+                  data: data.notes.flatMap((note) =>
+                    note.contents.map((text) => ({
+                      categoryId: note.categoryId,
+                      content: text,
+                    })),
+                  ),
+                },
+              }
+            : undefined,
 
         // Nested Create Items
         items: {
@@ -246,37 +255,45 @@ export class QuotationService {
       },
       include: {
         items: true,
+        // Sertakan notes & category saat return data agar bisa langsung ditampilkan
+        notes: {
+          include: {
+            category: true,
+          },
+        },
       },
     });
 
     return newQuotation;
   }
-
   // ==========================================
   // 4. UPDATE QUOTATION
   // ==========================================
   async updateQuotation(id: string, data: UpdateQuotationDTO) {
     const existing = await this.prisma.quotation.findUnique({
       where: { id },
-      include: { items: true },
     });
 
     if (!existing) throw new ApiError("Quotation not found", 404);
 
-    let updateData: any = { ...data };
-    delete updateData.items;
+    const { items, notes, ...headerData } = data;
 
-    if (data.items && data.items.length > 0) {
-      return await this.prisma.$transaction(async (tx) => {
-        // 1. Hapus Item Lama
+    return await this.prisma.$transaction(async (tx) => {
+      // Default gunakan nilai lama jika item tidak diupdate
+      let newSubTotal = existing.subTotal;
+      let newTotalAmount = existing.totalAmount;
+
+      // === LOGIC A: UPDATE ITEMS ===
+      if (items && items.length > 0) {
         await tx.quotationItem.deleteMany({ where: { quotationId: id } });
 
-        // 2. Hitung Ulang Total dari Item Baru
-        let newSubTotal = 0;
-        const newItems = data.items!.map((item) => {
+        let calculatedSubTotal = 0;
+
+        const itemsPayload = items.map((item) => {
           const lineTotal =
             item.quantity * item.unitPrice - (item.discount || 0);
-          newSubTotal += lineTotal;
+          calculatedSubTotal += lineTotal;
+
           return {
             quotationId: id,
             productId: item.productId || null,
@@ -291,29 +308,49 @@ export class QuotationService {
           };
         });
 
-        // 3. Buat Item Baru
-        await tx.quotationItem.createMany({ data: newItems });
+        await tx.quotationItem.createMany({ data: itemsPayload });
 
-        // 4. Update Header Quotation (termasuk Total Baru)
-        return await tx.quotation.update({
-          where: { id },
-          data: {
-            ...updateData,
-            subTotal: newSubTotal,
-            totalAmount: newSubTotal, // + Tax jika ada logic tax
-          },
-          include: { items: true },
-        });
-      });
-    } else {
-      // Jika tidak ada update items, update field header saja
-      return await this.prisma.quotation.update({
+        // Update Variable Total dengan nilai baru hasil kalkulasi
+        newSubTotal = new Prisma.Decimal(calculatedSubTotal);
+        newTotalAmount = newSubTotal;
+      }
+
+      // === LOGIC B: UPDATE NOTES ===
+      if (notes) {
+        await tx.quotationNote.deleteMany({ where: { quotationId: id } });
+
+        if (notes.length > 0) {
+          await tx.quotationNote.createMany({
+            data: notes.flatMap((note) =>
+              note.contents.map((text) => ({
+                quotationId: id,
+                categoryId: note.categoryId,
+                content: text,
+              })),
+            ),
+          });
+        }
+      }
+
+      const updatePayload: Prisma.QuotationUncheckedUpdateInput = {
+        ...headerData,
+        subTotal: newSubTotal,
+        totalAmount: newTotalAmount,
+        ...(headerData.status && { status: headerData.status as any }),
+      };
+
+      return await tx.quotation.update({
         where: { id },
-        data: updateData,
+        data: updatePayload,
+        include: {
+          items: true,
+          notes: {
+            include: { category: true },
+          },
+        },
       });
-    }
+    });
   }
-
   // ==========================================
   // 5. DELETE QUOTATION
   // ==========================================

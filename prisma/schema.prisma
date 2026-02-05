@@ -922,12 +922,9 @@ model Quotation {
   validUntil      DateTime?
   status          QuotationStatus @default(DRAFT)
 
-  // === HYBRID CLIENT LOGIC ===
-  // Jika ambil dari DB: isi clientId
   clientId String?
   client   Client? @relation(fields: [clientId], references: [id])
 
-  // Jika input manual: isi field di bawah ini
   manualClientName    String?
   manualClientCompany String?
   manualClientEmail   String?
@@ -940,8 +937,7 @@ model Quotation {
   discountAmount Decimal? @default(0)
   totalAmount    Decimal  @default(0)
 
-  notes         String? @db.Text
-  internalNotes String? @db.Text
+  notes QuotationNote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -955,14 +951,43 @@ model Quotation {
   @@map("quotations")
 }
 
+model QuotationNoteCategory {
+  id        String @id @default(uuid())
+  name      String
+  templates Json?
+
+  isPublic Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  notes QuotationNote[]
+
+  @@map("quotation_note_categories")
+}
+
+model QuotationNote {
+  id          String @id @default(uuid())
+  quotationId String
+  categoryId  String
+  content     String @db.Text
+
+  createdAt DateTime @default(now())
+
+  quotation Quotation             @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  category  QuotationNoteCategory @relation(fields: [categoryId], references: [id])
+
+  @@map("quotation_notes")
+}
+
 model QuotationFollowUp {
   id          String   @id @default(uuid())
   quotationId String
-  date        DateTime @default(now()) // Tanggal Follow up dilakukan
+  date        DateTime @default(now())
 
-  method     String? // Misal: "WhatsApp", "Email", "Phone Call", "Meeting"
-  notes      String? @db.Text // Hasil follow up: "Client minta diskon", "Masih meeting internal", dll
-  nextAction String? // Rencana selanjutnya: "Hubungi lagi minggu depan"
+  method     String?
+  notes      String? @db.Text
+  nextAction String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -976,13 +1001,9 @@ model QuotationItem {
   id          String @id @default(uuid())
   quotationId String
 
-  // === HYBRID PRODUCT LOGIC ===
-  // Jika ambil dari DB: isi productId
   productId String?
   product   Product? @relation(fields: [productId], references: [id])
 
-  // Field ini WAJIB diisi baik ambil dari DB maupun Manual.
-  // Jika dari DB, backend otomatis mengcopy nama & deskripsi saat create.
   productName String
   description String? @db.Text
 
@@ -990,10 +1011,10 @@ model QuotationItem {
   quantity   Int
   unitPrice  Decimal
   discount   Decimal? @default(0)
-  totalPrice Decimal // (quantity * unitPrice) - discount
+  totalPrice Decimal
 
-  customization Json? // Jika ada request khusus (warna, ukuran custom)
-  remarks       String? // Catatan per item
+  customization Json?
+  remarks       String?
 
   quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
 

@@ -3,6 +3,7 @@ import {
   IsArray,
   IsDate,
   IsEmail,
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
@@ -10,23 +11,35 @@ import {
 } from "class-validator";
 import { CreateQuotationItemDTO } from "./quotation-item.dto";
 
-// === CREATE ===
+// ===============================================
+// SUB-DTO: NOTE INPUT (Multi-Select Logic)
+// ===============================================
+export class QuotationNoteInputDTO {
+  @IsNotEmpty()
+  @IsUUID()
+  categoryId!: string; // ID dari Master Category (e.g. "Terms", "Internal")
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  contents!: string[]; // Array isi note: ["DP 50%", "Tempo 14 Hari"]
+}
+
+// ===============================================
+// CREATE DTO
+// ===============================================
 export class CreateQuotationDTO {
-  // === TANGGAL ===
   @IsOptional()
   @Type(() => Date)
   @IsDate()
-  date?: Date; // Bisa backdate, default now() di service
+  date?: Date;
 
   @IsOptional()
   @Type(() => Date)
   @IsDate()
-  validUntil?: Date; // Tanggal kadaluarsa
+  validUntil?: Date;
 
-  // === HYBRID CLIENT ===
-  // Note: Service nanti yang memvalidasi bahwa minimal SALAH SATU
-  // dari clientId atau manualClientName harus terisi.
-
+  // === CLIENT INFO (Hybrid) ===
   @IsOptional()
   @IsUUID()
   clientId?: string;
@@ -57,17 +70,18 @@ export class CreateQuotationDTO {
   @Type(() => CreateQuotationItemDTO)
   items!: CreateQuotationItemDTO[];
 
-  // === NOTES ===
+  // === NOTES (NEW STRUCTURE) ===
+  // Menggantikan field string 'notes' & 'internalNotes' yang lama
   @IsOptional()
-  @IsString()
-  notes?: string; // Catatan untuk client
-
-  @IsOptional()
-  @IsString()
-  internalNotes?: string; // Catatan internal
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => QuotationNoteInputDTO)
+  notes?: QuotationNoteInputDTO[];
 }
 
-// === UPDATE ===
+// ===============================================
+// UPDATE DTO
+// ===============================================
 export class UpdateQuotationDTO {
   @IsOptional()
   @Type(() => Date)
@@ -108,15 +122,14 @@ export class UpdateQuotationDTO {
   @IsString()
   manualClientAddress?: string;
 
-  // Update Notes
+  // Update Notes (NEW STRUCTURE)
   @IsOptional()
-  @IsString()
-  notes?: string;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => QuotationNoteInputDTO)
+  notes?: QuotationNoteInputDTO[];
 
-  @IsOptional()
-  @IsString()
-  internalNotes?: string;
-
+  // Update Items
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

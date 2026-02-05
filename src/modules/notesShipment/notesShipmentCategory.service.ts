@@ -71,7 +71,7 @@ export class ShipmentNoteCategoryService {
       where: { id },
       data: {
         name: data.name,
-        // --- PERBAIKAN DI SINI ---
+
         templates: templatesUpdate,
       },
     });

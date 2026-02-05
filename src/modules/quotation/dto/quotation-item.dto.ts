@@ -10,15 +10,10 @@ import {
 } from "class-validator";
 
 export class CreateQuotationItemDTO {
-  // === HYBRID PRODUCT ===
-  // Opsional: Jika user pilih dari database
   @IsOptional()
   @IsUUID()
   productId?: string;
 
-  // Wajib: Nama produk (Snapshot).
-  // Jika pilih DB, Frontend harus auto-fill ini dari data produk.
-  // Jika manual, user ketik sendiri.
   @IsNotEmpty()
   @IsString()
   productName!: string;
@@ -44,11 +39,10 @@ export class CreateQuotationItemDTO {
   @IsNumber()
   @Min(0)
   @Type(() => Number)
-  discount?: number; // Diskon per item (opsional)
+  discount?: number;
 
-  // === LAINNYA ===
   @IsOptional()
-  customization?: any; // JSON object untuk request custom (warna/size)
+  customization?: any;
 
   @IsOptional()
   @IsString()

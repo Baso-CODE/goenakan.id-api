@@ -27,6 +27,7 @@ import { ProductCategoryRouter } from "./modules/product/category/categoryProduc
 import { ProductRouter } from "./modules/product/masterProduct/product.router";
 import { PurchaseChannelRouter } from "./modules/purchaseChannel/purchaseChannel.router";
 import { QuotationRouter } from "./modules/quotation/quotation.router";
+import { QuotationNoteCategoryRouter } from "./modules/quotation/quotationNoteCategory/quotationNoteCategory.router";
 import { SalesRouter } from "./modules/sales/sales.router";
 import { VendorCategoryRouter } from "./modules/vendor/categoryVendor/categoryVendor.router";
 import { ItemVendorRouter } from "./modules/vendor/itemVendor/itemVendor.router";
@@ -77,6 +78,9 @@ export default class App {
     const clientLogoRouter = container.resolve(ClientLogoRouter);
     const appSettingRouter = container.resolve(AppSettingRouter);
     const currencyRouter = container.resolve(CurrencyRouter);
+    const quotationNoteCategoryRouter = container.resolve(
+      QuotationNoteCategoryRouter,
+    );
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -109,6 +113,10 @@ export default class App {
     this.app.use(
       "/shipment-notes-categories",
       notesShipmentCategoryRouter.getRouter(),
+    );
+    this.app.use(
+      "/quotation-notes-categories",
+      quotationNoteCategoryRouter.getRouter(),
     );
   }
   private handleError(): void {
