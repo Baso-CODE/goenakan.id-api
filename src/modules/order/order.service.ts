@@ -69,7 +69,7 @@ export class OrderService {
           }
           finalPrice = Number(variant.price);
         } else {
-          finalPrice = product.basePrice;
+          finalPrice = Number(product.basePrice);
           if (product.priceTiers && product.priceTiers.length > 0) {
             const applicableTier = product.priceTiers.find(
               (t) => item.quantity >= t.minQuantity,
@@ -239,7 +239,7 @@ export class OrderService {
         }
         finalPrice = Number(variant.price);
       } else {
-        finalPrice = product.basePrice;
+        finalPrice = Number(product.basePrice);
         if (product.priceTiers && product.priceTiers.length > 0) {
           const applicableTier = product.priceTiers.find(
             (t) => item.quantity >= t.minQuantity,
@@ -865,7 +865,7 @@ export class OrderService {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
-        // 1. Client Info (Untuk Header)
+        // 1. Client Info
         client: {
           include: {
             b2b: { select: { companyName: true } },
@@ -873,38 +873,49 @@ export class OrderService {
           },
         },
 
-        // 2. Products (Master Data untuk Partial Shipment)
+        // 2. Products (Master Data)
         products: {
           include: {
-            product: { select: { name: true, sku: true } }, // Nama barang
-
-            // Relasi History Produksi per Item
+            product: { select: { name: true, sku: true } },
             productionTrackers: {
               include: {
-                vendor: { select: { companyName: true, trackingUrl: true } }, // Nama Pabrik
+                vendor: { select: { companyName: true, trackingUrl: true } },
               },
               orderBy: { startDate: "desc" },
             },
           },
         },
 
-        // 3. Shipments (History Pengiriman Inbound & Outbound)
+        // 3. Shipments (UPDATED HERE)
         shipments: {
           include: {
-            vendor: { select: { companyName: true, trackingUrl: true } }, // Nama Ekspedisi
+            // A. Vendor Info
+            vendor: { select: { companyName: true, trackingUrl: true } },
 
-            // Detail Item apa saja yg ada di dalam shipment ini
+            // B. Items dalam shipment
             items: {
               include: {
                 orderProduct: {
                   include: {
-                    product: { select: { name: true } }, // Nama barang di shipment
+                    product: { select: { name: true } },
                   },
                 },
               },
             },
+
+            // C. HISTORY TRACKING (PENTING: Untuk Timeline UI)
+            history: {
+              orderBy: { date: "desc" }, // Urutkan dari yg paling baru (Atas ke Bawah)
+            },
+
+            // D. NOTES (PENTING: Untuk menampilkan catatan kondisi/dokumen)
+            notes: {
+              include: {
+                category: true, // Ambil nama kategorinya (misal: "Kondisi Fisik", "Dokumen")
+              },
+            },
           },
-          orderBy: { departureDate: "desc" }, // Urutkan yang terbaru
+          orderBy: { departureDate: "desc" },
         },
       },
     });
@@ -913,24 +924,19 @@ export class OrderService {
       throw new ApiError(`Order with ID ${id} not found`, 404);
     }
 
-    // Mapping Data agar mudah dikonsumsi Frontend
-    // Terutama bagian "Remaining Qty" untuk Production & Shipment logic
-
+    // Mapping Data Products (Logic sisa produksi)
     const productsFormatted = order.products.map((p) => {
-      // Hitung total yg sudah diproduksi
       const producedQty = p.productionTrackers.reduce(
         (sum, t) => sum + (t.status === "COMPLETED" ? t.quantity : 0),
         0,
       );
 
       return {
-        id: p.id, // ID OrderProduct Pivot
+        id: p.id,
         productId: p.productId,
         productName: p.product.name,
         sku: p.product.sku,
-        quantity: p.quantity, // Total Order
-
-        // History Produksi
+        quantity: p.quantity,
         productionTrackers: p.productionTrackers.map((t) => ({
           id: t.id,
           vendorId: t.vendorId,
@@ -940,8 +946,6 @@ export class OrderService {
           status: t.status,
           vendor: t.vendor,
         })),
-
-        // Helper fields
         producedQuantity: producedQty,
         remainingProduction: Math.max(0, p.quantity - producedQty),
       };
@@ -952,7 +956,7 @@ export class OrderService {
       poNumber: order.poNumber,
       client: order.client,
       products: productsFormatted,
-      shipments: order.shipments, // Raw data shipments sudah cukup lengkap
+      shipments: order.shipments, // Data shipment sekarang sudah lengkap dengan history & notes
     };
   }
 }

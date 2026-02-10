@@ -12,7 +12,6 @@ import {
   ValidateNested,
 } from "class-validator";
 
-// Enum harus sama dengan di Prisma Schema
 export enum ShipmentType {
   INBOUND = "INBOUND",
   OUTBOUND = "OUTBOUND",
@@ -24,19 +23,19 @@ export enum ShippingMethod {
   AIR = "AIR",
 }
 
-// --- SUB-DTO: SHIPMENT NOTES (Multi-content logic) ---
+// --- SUB-DTO: SHIPMENT NOTES ---
 export class ShipmentNoteInputDTO {
   @IsNotEmpty()
   @IsUUID()
-  categoryId!: string; // ID Kategori dari tabel ShipmentNoteCategory
+  categoryId!: string;
 
   @IsArray()
   @IsString({ each: true })
   @IsNotEmpty({ each: true })
-  contents!: string[]; // Array string untuk menampung banyak pilihan template/manual
+  contents!: string[];
 }
 
-// --- SUB-DTO: DETAIL ITEM (PARTIAL SHIPMENT LOGIC) ---
+// --- SUB-DTO: DETAIL ITEM ---
 export class ShipmentItemInputDTO {
   @IsNotEmpty()
   @IsUUID()
@@ -56,7 +55,7 @@ export class CreateShipmentDTO {
 
   @IsOptional()
   @IsUUID()
-  vendorId?: string;
+  vendorId?: string; // Optional karena mungkin pakai kurir internal
 
   @IsNotEmpty()
   @IsEnum(ShipmentType)
@@ -66,6 +65,14 @@ export class CreateShipmentDTO {
   @IsEnum(ShippingMethod)
   method!: ShippingMethod;
 
+  @IsNotEmpty() // Wajib diisi (Contoh: "Guangzhou", "Tokyo", "Jakarta")
+  @IsString()
+  origin!: string;
+
+  @IsNotEmpty() // Wajib diisi (Contoh: "Jakarta HQ", "Surabaya Branch")
+  @IsString()
+  destination!: string;
+
   @IsOptional()
   @IsString()
   trackingNumber?: string;
@@ -74,32 +81,20 @@ export class CreateShipmentDTO {
   @IsString()
   courierLink?: string;
 
-  @IsOptional()
-  @IsString()
-  origin?: string;
-
-  @IsOptional()
-  @IsString()
-  destination?: string;
-
   @IsNotEmpty()
   @IsDateString()
   departureDate!: string;
 
-  @IsOptional()
-  @IsString()
-  deliveryNoteNumber?: string;
-
-  // === ITEM YANG DIKIRIM (ARRAY) ===
+  // === ITEM YANG DIKIRIM ===
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ShipmentItemInputDTO)
   items!: ShipmentItemInputDTO[];
 
-  // === SHIPMENT NOTES (ARRAY OF CATEGORIES WITH CONTENTS) ===
+  // === INITIAL NOTES ===
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ShipmentNoteInputDTO)
-  notes?: ShipmentNoteInputDTO[]; // Pengganti remarks
+  notes?: ShipmentNoteInputDTO[];
 }

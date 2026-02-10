@@ -14,13 +14,48 @@ export class QuotationService {
     private readonly pagination: PaginationService,
   ) {}
 
-  private generateQuotationNumber(): string {
-    const date = new Date();
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    const random = Math.floor(1000 + Math.random() * 9000); // 4 digit random
-    return `QUO-${year}${month}${day}-${random}`;
+  // Helper: Konversi Bulan ke Romawi
+  private getRomanMonth(date: Date): string {
+    const months = [
+      "I",
+      "II",
+      "III",
+      "IV",
+      "V",
+      "VI",
+      "VII",
+      "VIII",
+      "IX",
+      "X",
+      "XI",
+      "XII",
+    ];
+    return months[date.getMonth()];
+  }
+
+  // Helper: Generate Kode Singkatan Nama Manual
+  private generateManualClientCode(name: string): string {
+    // 1. Bersihkan Title (PT, CV, Mr, Mrs, dll) dan spasi berlebih
+    const cleanName = name
+      .replace(/^(PT\.?|CV\.?|UD\.?|Mr\.?|Mrs\.?|Ms\.?|Bpk\.?|Ibu\.?)\s*/i, "")
+      .replace(/[^a-zA-Z\s]/g, "") // Hapus karakter aneh
+      .trim();
+
+    const words = cleanName.split(/\s+/);
+    let code = "";
+
+    if (words.length >= 3) {
+      // Kasus: PT. ALUNA MUSIK INDONESIA -> (A)LUNA (M)USIK (I)NDONESIA -> AMI
+      code = words[0][0] + words[1][0] + words[2][0];
+    } else if (words.length === 2) {
+      // Kasus: Nadya Yuniar -> (N)adya (Y)unia(r) -> NYR
+      code = words[0][0] + words[1][0] + words[1].slice(-1);
+    } else if (words.length === 1) {
+      // Kasus: Google -> GOO
+      code = words[0].substring(0, 3);
+    }
+
+    return code.toUpperCase();
   }
 
   // ==========================================
@@ -209,8 +244,34 @@ export class QuotationService {
     // 3. Hitung Grand Total
     const totalAmount = subTotal;
 
-    // 4. Generate Nomor
-    const quotationNumber = this.generateQuotationNumber();
+    // A. Sequence (0001)
+    const totalQuotations = await this.prisma.quotation.count();
+    const sequence = String(totalQuotations + 1).padStart(4, "0");
+
+    // B. Client Code Logic
+    let clientCode = "NOC"; // Default fallback
+    if (data.clientId) {
+      // Jika Client Existing, ambil dari database
+      const client = await this.prisma.client.findUnique({
+        where: { id: data.clientId },
+        select: { custCode: true },
+      });
+      if (client?.custCode) {
+        clientCode = client.custCode;
+      }
+    } else if (data.manualClientName) {
+      // Jika Manual, generate singkatan (AMI, BAA, NYR)
+      clientCode = this.generateManualClientCode(data.manualClientName);
+    }
+
+    // C. Date Parts
+    const now = new Date();
+    const year = now.getFullYear();
+    const romanMonth = this.getRomanMonth(now);
+
+    // D. Gabungkan
+    const quotationNumber = `QTN_${sequence}_${clientCode}_${romanMonth}_${year}`;
+    // ============================================================
 
     // 5. Simpan ke Database
     const newQuotation = await this.prisma.quotation.create({

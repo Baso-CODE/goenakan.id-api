@@ -37,22 +37,34 @@ export class LogisticsRouter {
       this.nextAuthMiddleware.verifyNextAuthToken,
       this.shipmentController.create,
     );
+
+    // 2. Get Detail Shipment (Tetap sama)
     this.router.get(
       "/shipments/:id",
       this.nextAuthMiddleware.verifyNextAuthToken,
       this.shipmentController.getOne,
     );
+
+    // 3. UPDATE STATUS TRACKING (Dulu markArrived, sekarang addHistory)
     this.router.patch(
-      "/shipments/:id/arrive",
+      "/shipments/:id/status",
       this.nextAuthMiddleware.verifyNextAuthToken,
-      this.shipmentController.markArrived,
+      this.shipmentController.addHistory,
     );
+
+    // 4. UPDATE INFO HEADER (Endpoint BARU)
+    this.router.patch(
+      "/shipments/:id/info",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      this.shipmentController.updateInfo,
+    );
+
+    // 5. Get List History per Order (Tetap sama)
     this.router.get(
       "/shipments/order/:orderId",
       this.nextAuthMiddleware.verifyNextAuthToken,
       this.shipmentController.getHistoryByOrder,
     );
-
     // === ANALYTICS (DASHBOARD) ===
     this.router.get(
       "/analytics/summary",

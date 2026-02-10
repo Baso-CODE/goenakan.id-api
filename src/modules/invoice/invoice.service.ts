@@ -28,7 +28,6 @@ export class InvoiceService {
       notes,
     } = data;
 
-    // 0. Validasi User
     const userExists = await this.prisma.user.findUnique({
       where: { id: userId },
     });
@@ -36,7 +35,6 @@ export class InvoiceService {
       throw new ApiError("User tidak valid. Silakan login ulang.", 401);
     }
 
-    // 1. Ambil Data Order
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: {
@@ -50,6 +48,40 @@ export class InvoiceService {
       throw new ApiError("Order not found", 404);
     }
 
+    // ============================================================
+    // LOGIC GENERATE INVOICE NUMBER (Updated)
+    // ============================================================
+
+    // A. Hitung Sequence (0001, 0002, dst)
+    const totalInvoices = await this.prisma.invoice.count();
+    const sequence = String(totalInvoices + 1).padStart(4, "0");
+
+    const clientCode = order.client.custCode || "NOC";
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const romanMonths = [
+      "I",
+      "II",
+      "III",
+      "IV",
+      "V",
+      "VI",
+      "VII",
+      "VIII",
+      "IX",
+      "X",
+      "XI",
+      "XII",
+    ];
+    const romanMonth = romanMonths[now.getMonth()];
+
+    // D. Gabungkan String
+    const formattedInvoiceNumber = `INV_${sequence}_${clientCode}_${romanMonth}_${year}`;
+
+    // ============================================================
+    // LOGIC HITUNG AMOUNT (Tidak Berubah)
+    // ============================================================
     let invoiceAmount = 0;
     let targetOrderProducts: any[] = [];
 
@@ -71,12 +103,6 @@ export class InvoiceService {
 
           return { ...op, quantityToBill };
         });
-
-      if (targetOrderProducts.length === 0) {
-        console.warn(
-          "⚠️ Warning: Tidak ada produk yang cocok dengan selectedItems!",
-        );
-      }
 
       // Hitung Total Amount
       invoiceAmount = targetOrderProducts.reduce((sum, item) => {
@@ -127,9 +153,9 @@ export class InvoiceService {
 
     // 4. TRANSACTION
     const result = await this.prisma.$transaction(async (tx) => {
-      // A. Create Invoice
       const createdInvoice = await tx.invoice.create({
         data: {
+          invoiceNumber: formattedInvoiceNumber,
           orderId: order.id,
           clientId: order.clientId,
           userId: userId,
@@ -157,21 +183,6 @@ export class InvoiceService {
                 }
               : undefined,
         },
-      });
-
-      // B. Generate Invoice Number & Update
-      const id = createdInvoice.id;
-      const clientCode = order.client.custCode
-        ? order.client.custCode.toUpperCase()
-        : "NOC";
-      const date = new Date();
-      const month = ("0" + (date.getMonth() + 1)).slice(-2);
-      const year = date.getFullYear();
-      const formattedInvoiceNumber = `INV/${id}/${clientCode}/${month}/${year}`;
-
-      const updatedInvoice = await tx.invoice.update({
-        where: { id: id },
-        data: { invoiceNumber: formattedInvoiceNumber },
         include: {
           items: {
             include: {
@@ -183,12 +194,11 @@ export class InvoiceService {
         },
       });
 
-      return updatedInvoice;
+      return createdInvoice;
     });
 
     return result;
   }
-
   async payInvoice(invoiceId: number, data: PayInvoiceDTO) {
     // 1. Cek Invoice
     const invoice = await this.prisma.invoice.findUnique({

@@ -1,12 +1,12 @@
-import { injectable } from "tsyringe";
 import * as ExcelJS from "exceljs";
+import { injectable } from "tsyringe";
 
-import { CreateClientDTO, ClientType } from "./dto/createClient.dto";
-import { UpdateClientDTO } from "./dto/updateClient.dto";
-import { PrismaService } from "../prisma/prisma.service";
 import { ApiError } from "../../utils/api-error";
 import { PaginationService } from "../pagination/pagination.service";
+import { PrismaService } from "../prisma/prisma.service";
+import { ClientType, CreateClientDTO } from "./dto/createClient.dto";
 import { ClientListQueryDTO } from "./dto/queryExportClient.dto";
+import { UpdateClientDTO } from "./dto/updateClient.dto";
 
 @injectable()
 export class ClientService {
@@ -17,7 +17,7 @@ export class ClientService {
 
   // === CREATE CLIENT ===
   async createClient(data: CreateClientDTO) {
-    const prefix = data.type === ClientType.B2B ? "CUST-B2B" : "CUST-B2C";
+    const prefix = data.type === ClientType.B2B ? "B" : "C";
 
     // GET LAST CLIENT
     const lastClient = await this.prisma.client.findFirst({
@@ -34,7 +34,7 @@ export class ClientService {
       }
     }
 
-    const custCode = `${prefix}-${String(nextNumber).padStart(3, "0")}`;
+    const custCode = `${prefix}${String(nextNumber).padStart(5, "0")}`;
 
     // ==================================================
     // ====================== B2B ========================

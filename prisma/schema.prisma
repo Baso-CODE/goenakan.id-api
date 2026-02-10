@@ -272,7 +272,7 @@ model Product {
   sku          String   @unique // SKU
   slug         String   @unique
   description  String?
-  basePrice    Int
+  basePrice    Decimal
   isCustom     Boolean  @default(false)
   materialType String?
   createdAt    DateTime @default(now())
@@ -307,18 +307,16 @@ model ProductSEO {
   id String @id @default(uuid())
 
   // Field SEO Standar
-  metaTitle       String? // Judul yang muncul di Google (biasanya max 60 chars)
-  metaDescription String? // Deskripsi di bawah judul (biasanya max 160 chars)
-  keywords        String? // Kata kunci (bisa dipisah koma)
-  canonicalUrl    String? // Jika ada URL duplikat, arahkan ke sini
+  metaTitle       String?
+  metaDescription String?
+  keywords        String?
+  canonicalUrl    String?
 
-  // Open Graph (Untuk tampilan saat share di Facebook/WhatsApp/Twitter)
   ogTitle       String?
   ogDescription String?
-  ogImage       String? // URL gambar thumbnail khusus share sosmed
+  ogImage       String?
 
-  // Structured Data (JSON-LD) - Opsional tapi bagus untuk Rich Snippet
-  structuredData String? @db.Text // Menyimpan schema.org dalam format JSON string
+  structuredData String? @db.Text
 
   // Relasi balik ke Product
   productId String  @unique // @unique menandakan relasi One-to-One
@@ -830,7 +828,7 @@ model ProductionTracker {
 // ===============================================
 
 model Shipment {
-  id                 String         @id @default(uuid())
+  id                 String            @id @default(uuid())
   orderId            String
   vendorId           String?
   deliveryNoteNumber String?
@@ -838,12 +836,12 @@ model Shipment {
   courierLink        String?
   type               ShipmentType
   method             ShippingMethod
-  status             ShipmentStatus @default(PREPARED)
-
-  origin        String?
-  destination   String?
-  departureDate DateTime?
-  arrivalDate   DateTime?
+  status             String            @default("PENDING")
+  history            ShipmentHistory[]
+  origin             String?
+  destination        String?
+  departureDate      DateTime?
+  arrivalDate        DateTime?
 
   notes ShipmentNote[]
 
@@ -856,6 +854,19 @@ model Shipment {
   items  ShipmentItem[]
 
   @@map("shipments")
+}
+
+model ShipmentHistory {
+  id         String   @id @default(cuid())
+  shipmentId String
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  status String
+  note   String?
+  city   String?
+  date   DateTime @default(now())
+
+  createdAt DateTime @default(now())
 }
 
 model ShipmentItem {
