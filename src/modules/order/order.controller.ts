@@ -16,7 +16,6 @@ export class OrderController {
       next(error);
     }
   };
-
   updateOrder = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;
@@ -56,9 +55,6 @@ export class OrderController {
       next(error);
     }
   };
-
-  // order.controller.ts
-
   getAllOrder = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { page, take, search, salesCategory, startDate, endDate } =
@@ -87,7 +83,6 @@ export class OrderController {
       next(error);
     }
   };
-
   exportOrders = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const query: OrderExportQuery = {
@@ -113,7 +108,6 @@ export class OrderController {
       next(error);
     }
   };
-
   getForTracking = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;
@@ -122,6 +116,53 @@ export class OrderController {
       res.status(200).json({
         message: "Order tracking data retrieved",
         data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+  getSampleOrders = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { page, take, search, startDate, endDate } = req.query;
+
+      const result = await this.orderService.getAllOrders({
+        page: page && !isNaN(Number(page)) ? Number(page) : 1,
+        take: take && !isNaN(Number(take)) ? Number(take) : 10,
+        search: search ? String(search) : undefined,
+        startDate: startDate ? String(startDate) : undefined,
+        endDate: endDate ? String(endDate) : undefined,
+        salesCategory: "SAMPLE",
+      });
+
+      res.status(200).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getSampleStats = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await this.orderService.getSampleStats();
+      res.status(200).json({
+        message: "Sample statistics retrieved",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  generatePoNumber = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const poNumber = await this.orderService.generatePoNumberAPI();
+
+      res.status(200).json({
+        message: "PO Number generated successfully",
+        poNumber: poNumber,
       });
     } catch (error) {
       next(error);

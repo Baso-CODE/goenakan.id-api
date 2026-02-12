@@ -29,9 +29,8 @@ export class OrderService {
     } = data;
 
     let totalAmount = 0;
-    const orderProductsData: any[] = []; // Array untuk menampung semua product
+    const orderProductsData: any[] = [];
 
-    // 1. LOOP PRODUCT: Siapkan data product & hitung total amount
     for (const item of products) {
       const product = await this.prisma.product.findUnique({
         where: { id: item.productId },
@@ -45,12 +44,9 @@ export class OrderService {
         throw new ApiError(`Product with ID ${item.productId} not found`, 404);
       }
 
-      // === PERUBAHAN DISINI ===
-      // Logika: Gunakan harga manual dari FE jika ada. Jika 0, baru hitung otomatis.
       let finalPrice = item.price ? Number(item.price) : 0;
 
       if (finalPrice === 0) {
-        // --- LOGIKA HITUNG OTOMATIS (FALLBACK) ---
         if (product.isCustom) {
           if (!item.variantId) {
             throw new ApiError(
@@ -79,18 +75,15 @@ export class OrderService {
             }
           }
         }
-        // --- END LOGIKA OTOMATIS ---
       }
 
-      // Hitung Subtotal berdasarkan finalPrice (baik manual maupun otomatis)
       const subtotal = finalPrice * item.quantity;
       totalAmount += subtotal;
 
-      // Siapkan object untuk Prisma Create
       const productData: any = {
         product: { connect: { id: item.productId } },
         quantity: item.quantity,
-        unitPrice: finalPrice, // Ini sekarang dinamis (manual atau auto)
+        unitPrice: finalPrice,
         variant: item.variantId
           ? { connect: { id: item.variantId } }
           : undefined,
@@ -107,9 +100,7 @@ export class OrderService {
 
       orderProductsData.push(productData);
     }
-    // --- AKHIR LOOP PRODUCT ---
 
-    // 2. SIAPKAN VENDOR (Di luar loop product agar tidak duplikat)
     const vendorsToConnect: any[] = [];
     if (vendorIds && vendorIds.length > 0) {
       const vendors = await this.prisma.vendor.findMany({
@@ -118,7 +109,7 @@ export class OrderService {
       });
 
       for (const v of vendors) {
-        const phone = v.contacts.length > 0 ? v.contacts[0].contactId : "-"; // Asumsi contactId menyimpan phone/email string? Sesuaikan fieldnya
+        const phone = v.contacts.length > 0 ? v.contacts[0].contactId : "-";
 
         vendorsToConnect.push({
           vendor: { connect: { id: v.id } },
@@ -129,7 +120,6 @@ export class OrderService {
       }
     }
 
-    // 3. EKSEKUSI DATABASE TRANSACTION (Create Order Sekali Saja)
     const newOrder = await this.prisma.$transaction(async (tx) => {
       const connectRelations: any = {};
 
@@ -149,18 +139,16 @@ export class OrderService {
           salesCategory: orderCore.salesCategory,
           poNumber: orderCore.poNumber,
           shippingAddress: orderCore.shippingAddress,
-          totalAmount: totalAmount, // Total yang sudah dihitung di loop
+          totalAmount: totalAmount,
 
           client: { connect: { id: orderCore.clientId } },
           sales: { connect: { id: orderCore.salesId } },
           ...connectRelations,
 
-          // Masukkan array items yang sudah dikumpulkan
           products: {
             create: orderProductsData,
           },
 
-          // Masukkan array vendors yang sudah dikumpulkan
           vendors: {
             create: vendorsToConnect,
           },
@@ -182,13 +170,13 @@ export class OrderService {
 
     return newOrder;
   }
-  // === UPDATE ORDER ===
+
   async updateOrder(id: string, data: CreateOrderDTO) {
     const {
       vendorIds,
       products,
-      clientB2BPICId, // <-- Tangkap field baru
-      purchaseChannelId, // <-- Tangkap field baru
+      clientB2BPICId,
+      purchaseChannelId,
       ...orderCore
     } = data;
 
@@ -201,7 +189,6 @@ export class OrderService {
       throw new ApiError(`Order with ID ${id} not found`, 404);
     }
 
-    // 2. Hitung Ulang Total & Siapkan Data Produk Baru
     let totalAmount = 0;
     const orderProductsData: any[] = [];
 
@@ -220,7 +207,6 @@ export class OrderService {
 
       let finalPrice = 0;
 
-      // Logika Harga Custom vs Standard
       if (product.isCustom) {
         if (!item.variantId) {
           throw new ApiError(
@@ -253,7 +239,6 @@ export class OrderService {
       const subtotal = finalPrice * item.quantity;
       totalAmount += subtotal;
 
-      // Siapkan payload produk
       const productData: any = {
         product: { connect: { id: item.productId } },
         quantity: item.quantity,
@@ -263,7 +248,6 @@ export class OrderService {
           : undefined,
       };
 
-      // Handle Optional Fields
       if (item.customization) {
         productData.customization = JSON.stringify({
           detail: item.customization,
@@ -274,11 +258,9 @@ export class OrderService {
         productData.remarks = item.remarks;
       }
 
-      // PUSH HARUS SELALU DIJALANKAN (Fix Bug Sebelumnya)
       orderProductsData.push(productData);
     }
 
-    // 3. Siapkan Data Vendor Baru
     const vendorsToConnect: any[] = [];
     if (vendorIds && vendorIds.length > 0) {
       const vendors = await this.prisma.vendor.findMany({
@@ -299,21 +281,15 @@ export class OrderService {
       }
     }
 
-    // 4. TRANSACTION: Update Order
     const updatedOrder = await this.prisma.$transaction(async (tx) => {
-      // Hapus detail lama agar bersih dan diganti yang baru
       await tx.orderProduct.deleteMany({ where: { orderId: id } });
       await tx.orderVendor.deleteMany({ where: { orderId: id } });
 
-      // Siapkan object untuk update relasi opsional
-      // Prisma update syntax: { connect: { id: ... } } atau { disconnect: true }
       const updateRelations: any = {};
 
       if (clientB2BPICId) {
         updateRelations.pic = { connect: { id: clientB2BPICId } };
       } else {
-        // Jika user mengosongkan PIC (misal ganti dari B2B ke B2C, atau hapus pilihan)
-        // Kita disconnect agar field di DB jadi null
         updateRelations.pic = { disconnect: true };
       }
 
@@ -337,7 +313,6 @@ export class OrderService {
           client: { connect: { id: orderCore.clientId } },
           sales: { connect: { id: orderCore.salesId } },
 
-          // Masukkan update PIC & Channel
           ...updateRelations,
 
           products: {
@@ -350,8 +325,8 @@ export class OrderService {
         include: {
           products: true,
           vendors: true,
-          pic: true, // Return data PIC baru
-          purchaseChannel: true, // Return data Channel baru
+          pic: true,
+          purchaseChannel: true,
         },
       });
 
@@ -367,8 +342,6 @@ export class OrderService {
       include: {
         products: true,
         vendors: true,
-        // Tidak perlu include 'pic' atau 'purchaseChannel' full object
-        // karena kita hanya butuh ID-nya yang sudah ada di table order.
       },
     });
 
@@ -385,15 +358,11 @@ export class OrderService {
       salesId: order.salesId,
       shippingAddress: order.shippingAddress,
 
-      // === TAMBAHAN BARU (Supaya muncul di form edit) ===
-      // Pastikan field ini dikirim balik ke frontend
       clientB2BPICId: order.clientB2BPICId || "",
       purchaseChannelId: order.purchaseChannelId || "",
 
-      // Vendor IDs (Array of string)
       vendorIds: order.vendors.map((v) => v.vendorId),
 
-      // Products Mapping
       products: order.products.map((p) => {
         let customVal = "";
         if (
@@ -424,7 +393,6 @@ export class OrderService {
   }
 
   async getOrderForDetail(id: string) {
-    // 1. Ambil Data Order
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
@@ -865,7 +833,6 @@ export class OrderService {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
-        // 1. Client Info
         client: {
           include: {
             b2b: { select: { companyName: true } },
@@ -958,5 +925,64 @@ export class OrderService {
       products: productsFormatted,
       shipments: order.shipments, // Data shipment sekarang sudah lengkap dengan history & notes
     };
+  }
+
+  async getSampleStats() {
+    const aggregate = await this.prisma.order.aggregate({
+      where: {
+        salesCategory: "SAMPLE",
+      },
+      _count: {
+        id: true,
+      },
+      _sum: {
+        totalAmount: true,
+      },
+    });
+
+    const totalCount = aggregate._count.id;
+    const totalCost = Number(aggregate._sum.totalAmount) || 0;
+
+    const sampleClients = await this.prisma.order.findMany({
+      where: { salesCategory: "SAMPLE" },
+      select: { clientId: true },
+      distinct: ["clientId"],
+    });
+
+    const sampleClientIds = sampleClients.map((o) => o.clientId);
+    const totalUniqueSampleClients = sampleClientIds.length;
+
+    let convertedClientsCount = 0;
+
+    if (totalUniqueSampleClients > 0) {
+      const convertedClients = await this.prisma.order.groupBy({
+        by: ["clientId"],
+        where: {
+          clientId: { in: sampleClientIds },
+          salesCategory: "SALES",
+        },
+      });
+
+      convertedClientsCount = convertedClients.length;
+    }
+
+    const conversionRate =
+      totalUniqueSampleClients > 0
+        ? (convertedClientsCount / totalUniqueSampleClients) * 100
+        : 0;
+
+    return {
+      totalCount,
+      totalCost,
+      conversionRate: parseFloat(conversionRate.toFixed(2)),
+    };
+  }
+
+  async generatePoNumberAPI(): Promise<string> {
+    const totalOrders = await this.prisma.order.count();
+
+    const sequence = String(totalOrders + 1).padStart(4, "0");
+
+    return `GI-PO${sequence}`;
   }
 }

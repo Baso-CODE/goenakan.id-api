@@ -19,12 +19,25 @@ export class OrderRouter {
   }
 
   private initializeRoutes = (): void => {
-    // 1. Static Routes (Harus diatas dynamic :id)
     this.router.get(
       "/all",
       this.nextAuthMiddleware.verifyNextAuthToken,
       verifyRole(["SUPER_ADMIN"]),
       this.orderController.getAllOrder,
+    );
+
+    this.router.get(
+      "/samples",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.orderController.getSampleOrders,
+    );
+
+    this.router.get(
+      "/stats/sample",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.orderController.getSampleStats,
     );
 
     this.router.get(
@@ -34,17 +47,19 @@ export class OrderRouter {
       this.orderController.exportOrders,
     );
 
-    // 2. Dynamic Routes (Order By ID)
+    this.router.get(
+      "/generate-po",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.orderController.generatePoNumber,
+    );
 
-    // === [NEW ROUTE] KHUSUS TRACKING ===
-    // URL: http://localhost:8000/orders/:id/tracking
     this.router.get(
       "/:id/tracking",
       this.nextAuthMiddleware.verifyNextAuthToken,
       verifyRole(["SUPER_ADMIN"]),
-      this.orderController.getForTracking, // <--- Pastikan method ini ada di Controller
+      this.orderController.getForTracking,
     );
-    // ===================================
 
     this.router.get(
       "/:id/edit-data",
@@ -53,8 +68,6 @@ export class OrderRouter {
       this.orderController.getOrderByIdUpdate,
     );
 
-    // Route Generic /:id sebaiknya ditaruh paling bawah di antara route GET :id lainnya
-    // agar tidak menimpa route spesifik seperti /:id/tracking
     this.router.get(
       "/:id",
       this.nextAuthMiddleware.verifyNextAuthToken,
