@@ -17,6 +17,7 @@ import { HeroRouter } from "./modules/content/hero/hero.router";
 import { AppSettingRouter } from "./modules/content/setting/setting.router";
 import { CurrencyRouter } from "./modules/currency/currency.router";
 import { DepartmentRouter } from "./modules/department/department.router";
+import { FinanceRouter } from "./modules/finance/finance.router";
 import { LogisticsRouter } from "./modules/iboundOutbound/logistic.router";
 import { InvoiceRouter } from "./modules/invoice/invoice.router";
 import { NoteRouter } from "./modules/notes/notes.router";
@@ -81,6 +82,7 @@ export default class App {
     const quotationNoteCategoryRouter = container.resolve(
       QuotationNoteCategoryRouter,
     );
+    const financeRouter = container.resolve(FinanceRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -118,6 +120,7 @@ export default class App {
       "/quotation-notes-categories",
       quotationNoteCategoryRouter.getRouter(),
     );
+    this.app.use("/finance", financeRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

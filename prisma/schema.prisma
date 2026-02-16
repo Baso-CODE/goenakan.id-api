@@ -113,6 +113,11 @@ enum ShippingMethod {
   AIR
 }
 
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
 // ===============================================
 // USER TABLE
 // ===============================================
@@ -125,9 +130,10 @@ model User {
   role      Role     @default(ADMIN_ARTICLE)
   createdAt DateTime @default(now())
 
-  articles Article[]
-  invoices Invoice[]
-  sessions Session[]
+  articles            Article[]
+  invoices            Invoice[]
+  sessions            Session[]
+  financeTransactions FinanceTransaction[]
 
   @@map("users")
 }
@@ -673,17 +679,18 @@ model ContactPlatform {
 // ===============================================
 
 model Sales {
-  id                String      @id @default(uuid())
-  prefix            String
-  name              String
-  phone             String
-  signatureUrl      String?
-  signaturePublicId String?
-  isActive          Boolean     @default(true)
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
-  orders            Order[]
-  bankAccounts      SalesBank[]
+  id                  String               @id @default(uuid())
+  prefix              String
+  name                String
+  phone               String
+  signatureUrl        String?
+  signaturePublicId   String?
+  isActive            Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  orders              Order[]
+  bankAccounts        SalesBank[]
+  financeTransactions FinanceTransaction[]
 
   @@map("sales")
 }
@@ -1215,4 +1222,44 @@ model AppSetting {
   updatedAt DateTime @updatedAt
 
   @@map("app_settings")
+}
+
+model FinanceCategory {
+  id          String          @id @default(uuid())
+  name        String          @unique // Contoh: "Gaji Karyawan", "Listrik", "Sewa Gedung"
+  slug        String          @unique
+  type        TransactionType
+  description String?
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  transactions FinanceTransaction[]
+
+  @@map("finance_categories")
+}
+
+model FinanceTransaction {
+  id              String          @id @default(uuid())
+  transactionDate DateTime        @default(now())
+  type            TransactionType
+  amount          Decimal         @default(0)
+  referenceNumber String?
+  description     String          @db.Text
+
+  method PaymentMethod?
+
+  createdBy String
+  user      User   @relation(fields: [createdBy], references: [id])
+
+  categoryId String
+  category   FinanceCategory @relation(fields: [categoryId], references: [id])
+
+  salesId String?
+  sales   Sales?  @relation(fields: [salesId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("finance_transactions")
 }
