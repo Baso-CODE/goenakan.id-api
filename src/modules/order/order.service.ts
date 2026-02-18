@@ -985,4 +985,158 @@ export class OrderService {
 
     return `GI-PO${sequence}`;
   }
+
+  // ===============================================
+  // ANALYTICS & CHART DATA
+  // ===============================================
+  async getSalesAnalytics(year?: number) {
+    const currentYear = year || new Date().getFullYear();
+
+    const months = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "Mei",
+      "Jun",
+      "Jul",
+      "Ags",
+      "Sep",
+      "Okt",
+      "Nov",
+      "Des",
+    ];
+
+    const orders = await this.prisma.order.findMany({
+      where: {
+        dateOrder: {
+          gte: new Date(`${currentYear}-01-01`),
+          lte: new Date(`${currentYear}-12-31`),
+        },
+      },
+      select: {
+        dateOrder: true,
+        totalAmount: true,
+
+        cashflowSummary: {
+          select: {
+            profitLoss: true,
+          },
+        },
+      },
+    });
+
+    const chartData = months.map((month) => ({
+      name: month,
+      orders: 0,
+      profit: 0,
+      revenue: 0,
+    }));
+
+    orders.forEach((order) => {
+      const monthIndex = new Date(order.dateOrder).getMonth();
+
+      chartData[monthIndex].orders += 1;
+
+      if (order.cashflowSummary && order.cashflowSummary.length > 0) {
+        chartData[monthIndex].profit += Number(
+          order.cashflowSummary[0].profitLoss,
+        );
+      } else {
+        const revenue = Number(order.totalAmount);
+        chartData[monthIndex].revenue += revenue;
+
+        chartData[monthIndex].profit += revenue * 0.2;
+      }
+    });
+
+    return chartData;
+  }
+
+  // ===============================================
+  // METRICS / DASHBOARD SUMMARY
+  // ===============================================
+  async getSalesMetrics() {
+    const now = new Date();
+
+    const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfCurrentMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+    );
+
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+
+    // --- HELPER FUNCTION UNTUK QUERY AGREGAT ---
+    const getMetricsByDateRange = async (start: Date, end: Date) => {
+      const orderAgg = await this.prisma.order.aggregate({
+        where: {
+          dateOrder: { gte: start, lte: end },
+        },
+        _sum: { totalAmount: true },
+        _count: { id: true },
+      });
+
+      const expenseAgg = await this.prisma.financeTransaction.aggregate({
+        where: {
+          transactionDate: { gte: start, lte: end },
+          type: "EXPENSE",
+        },
+        _sum: { amount: true },
+      });
+
+      const otherIncomeAgg = await this.prisma.financeTransaction.aggregate({
+        where: {
+          transactionDate: { gte: start, lte: end },
+          type: "INCOME",
+        },
+        _sum: { amount: true },
+      });
+
+      const revenueFromOrders = Number(orderAgg._sum.totalAmount) || 0;
+      const revenueFromFinance = Number(otherIncomeAgg._sum.amount) || 0;
+      const totalSpending = Number(expenseAgg._sum.amount) || 0;
+
+      const totalRevenue = revenueFromOrders + revenueFromFinance;
+      const totalOrders = orderAgg._count.id;
+
+      const totalProfit = totalRevenue - totalSpending;
+
+      return { totalRevenue, totalProfit, totalOrders, totalSpending };
+    };
+
+    // 2. Eksekusi Query secara Paralel
+    const [current, last] = await Promise.all([
+      getMetricsByDateRange(startOfCurrentMonth, endOfCurrentMonth),
+      getMetricsByDateRange(startOfLastMonth, endOfLastMonth),
+    ]);
+
+    // 3. Hitung Persentase Perubahan
+    const calculatePercentage = (curr: number, prev: number) => {
+      if (prev === 0) return curr > 0 ? 100 : 0;
+      return ((curr - prev) / prev) * 100;
+    };
+
+    return {
+      totalRevenue: current.totalRevenue,
+      revenueChange: calculatePercentage(
+        current.totalRevenue,
+        last.totalRevenue,
+      ),
+
+      totalProfit: current.totalProfit,
+      profitChange: calculatePercentage(current.totalProfit, last.totalProfit),
+
+      totalOrders: current.totalOrders,
+      ordersChange: current.totalOrders - last.totalOrders, // Selisih jumlah (bukan %)
+
+      totalSpending: current.totalSpending,
+      spendingChange: calculatePercentage(
+        current.totalSpending,
+        last.totalSpending,
+      ),
+    };
+  }
 }

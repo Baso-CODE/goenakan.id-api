@@ -75,6 +75,13 @@ export class FinanceRouter {
     // ==========================================================
 
     this.router.get(
+      "/debt-receivables",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN", "ADMIN_INVOICE"]), // Sesuaikan role
+      this.financeController.getDebtReceivables,
+    );
+
+    this.router.get(
       "/transactions",
       this.nextAuthMiddleware.verifyNextAuthToken,
       verifyRole(["SUPER_ADMIN"]),

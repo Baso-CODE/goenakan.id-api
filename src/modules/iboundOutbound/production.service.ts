@@ -12,8 +12,6 @@ export class ProductionService {
 
   // 1. MULAI PRODUKSI
   async startProduction(data: CreateProductionDTO) {
-    console.log("ini adalah data", data);
-
     // Validasi Order & Product
     const orderProduct = await this.prisma.orderProduct.findUnique({
       where: {

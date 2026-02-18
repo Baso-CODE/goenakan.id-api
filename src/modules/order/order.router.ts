@@ -55,6 +55,20 @@ export class OrderRouter {
     );
 
     this.router.get(
+      "/analytics/charts",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN", "ADMIN_INVOICE"]),
+      this.orderController.getChartData,
+    );
+
+    this.router.get(
+      "/analytics/metrics",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN", "ADMIN_INVOICE"]),
+      this.orderController.getMetrics,
+    );
+
+    this.router.get(
       "/:id/tracking",
       this.nextAuthMiddleware.verifyNextAuthToken,
       verifyRole(["SUPER_ADMIN"]),

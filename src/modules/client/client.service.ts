@@ -328,8 +328,6 @@ export class ClientService {
   }
 
   async updateClient(id: string, data: UpdateClientDTO) {
-    console.log("ini adlaah data update client", data);
-
     const existing = await this.prisma.client.findUnique({
       where: { id },
       include: {

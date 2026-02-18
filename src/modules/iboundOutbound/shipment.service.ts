@@ -197,8 +197,6 @@ export class ShipmentService {
   // =================================================================
   // 4. GET DATA (Query Updated)
   // =================================================================
-
-  // Get History List per Order (Untuk tampilan tabel list)
   async getShipmentHistoryByOrder(orderId: string) {
     return await this.prisma.shipment.findMany({
       where: { orderId },

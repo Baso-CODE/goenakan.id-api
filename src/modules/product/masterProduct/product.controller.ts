@@ -198,8 +198,6 @@ export class ProductController {
         attributeValueIds: req.body.attributeValueIds,
       };
 
-      console.log("Ini adlaah data", dto);
-
       const result = await this.productService.updateProductAttributes(dto);
       res.status(200).send(result);
     } catch (error) {
@@ -351,6 +349,22 @@ export class ProductController {
       const sku = await this.productService.generateSku(name);
 
       res.status(200).json({ sku });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getTopSelling = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { limit, startDate, endDate } = req.query;
+
+      const result = await this.productService.getTopSellingProducts({
+        limit: limit ? Number(limit) : 5,
+        startDate: startDate as string,
+        endDate: endDate as string,
+      });
+
+      res.status(200).json({ data: result });
     } catch (error) {
       next(error);
     }

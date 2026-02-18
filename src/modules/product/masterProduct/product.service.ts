@@ -24,7 +24,6 @@ export interface ProductExportQuery {
   categoryId?: string;
   isCustom?: "true" | "false" | "ALL";
 }
-// Tipe untuk file upload (menggunakan multer fields)
 interface ProductFiles {
   images?: Express.Multer.File[];
   videos?: Express.Multer.File[];
@@ -146,13 +145,9 @@ export class ProductService {
           });
         }
       }
-
-      // ❌ LOGIC UPLOAD VIDEO YANG LAMA DIHAPUS TOTAL DI SINI ❌
-      // Kita tidak lagi memproses files.videos
     } catch (error) {
       throw new ApiError("Failed to upload image files to Cloudinary", 500);
     }
-    // ======================================
 
     const newProduct = await this.prisma.$transaction(async (tx) => {
       // 1. CREATE PRODUCT
@@ -297,7 +292,6 @@ export class ProductService {
         }
       }
 
-      // 5. INSERT PRODUCT IMAGES (Hasil upload backend di atas)
       if (uploadedImages.length > 0) {
         await tx.productImage.createMany({
           data: uploadedImages.map((img) => ({
@@ -307,9 +301,6 @@ export class ProductService {
         });
       }
 
-      // 6. INSERT PRODUCT VIDEOS (Hasil Direct Upload Frontend)
-      // Bagian ini tidak berubah strukturnya, tapi sumber datanya (uploadedVideos)
-      // sekarang berasal dari mapping metadata, bukan hasil upload backend.
       if (uploadedVideos.length > 0) {
         await tx.productVideo.createMany({
           data: uploadedVideos.map((video) => ({
@@ -333,11 +324,9 @@ export class ProductService {
 
     const slug = data.name ? this.slug.create(data.name) : existing.slug;
 
-    // Build conditional OR array tanpa undefined
     const or: any[] = [{ slug }];
     if (data.sku) or.push({ sku: data.sku });
 
-    // Only run duplicate check if we have at least one condition to check
     if (or.length > 0) {
       const duplicate = await this.prisma.product.findFirst({
         where: {
@@ -517,19 +506,17 @@ export class ProductService {
       throw new ApiError("Product not found", 404);
     }
 
-    // 2. Simpan ke Database (Pakai data dari parameter)
     await this.prisma.productVideo.create({
       data: {
         productId: id,
         url: data.url,
         publicId: data.publicId || `manual_${Date.now()}`,
-        title: data.title || product.name, // Default ke nama produk jika kosong
+        title: data.title || product.name,
         altText: data.altText || product.name,
         isFeatured: data.isFeatured || false,
       },
     });
 
-    // 3. Kembalikan data produk terbaru (agar UI refresh)
     return this.getProductById(id);
   }
 
@@ -553,12 +540,10 @@ export class ProductService {
   }
 
   async updateProductVariants(
-    dto: UpdateProductVariantsDTO, // DTO dari frontend
-    files: UpdateProductVariantFiles, // Files dari Multer (varianImages)
+    dto: UpdateProductVariantsDTO,
+    files: UpdateProductVariantFiles,
   ) {
-    const { productId, variants } = dto; // ====================================
-    // 1. GET EXISTING VARIANTS (dan Product Core SKU)
-    // ====================================
+    const { productId, variants } = dto;
 
     const existingVariants = await this.prisma.productVariant.findMany({
       where: { productId },
@@ -578,9 +563,8 @@ export class ProductService {
 
     const incomingIds = variants
       .filter((v) => v.variantId && !v._isDeleted)
-      .map((v) => v.variantId); // ====================================
+      .map((v) => v.variantId);
     // 2. DELETE VARIANTS (Kode yang Anda sediakan)
-    // ====================================
 
     const idsToDelete = existingIds
       .filter((id) => !incomingIds.includes(id))
@@ -601,9 +585,9 @@ export class ProductService {
       await this.prisma.productVariant.deleteMany({
         where: { id: { in: idsToDelete } },
       });
-    } // ====================================
+    }
     // 3. GET NEXT VARIANT INDEX (Diperlukan untuk SKU baru)
-    // ====================================
+
     // Cari nomor urut varian tertinggi saat ini untuk produk ini
     const lastVariant = await this.prisma.productVariant.findFirst({
       where: { productId },
@@ -629,9 +613,8 @@ export class ProductService {
         where: { productId },
       });
       variantIndexCounter = remainingVariants + 1;
-    } // ====================================
+    }
     // 4. PROCESS EACH VARIANT (CREATE/UPDATE)
-    // ====================================
 
     for (let index = 0; index < variants.length; index++) {
       const v = variants[index];
@@ -639,48 +622,38 @@ export class ProductService {
       if (v._isDeleted) continue;
 
       let variantId = v.variantId;
-      let finalSku = v.sku; // ==========================================================
-      // A. CREATE NEW VARIANT
-      // ==========================================================
+      let finalSku = v.sku;
 
       if (!variantId) {
-        // Cek apakah SKU dari frontend kosong atau tidak disediakan
         if (!v.sku || v.sku.trim() === "") {
-          // GENERATE SKU BARU (menggunakan productCore.sku yang sudah diambil di awal)
           finalSku = `${productCore.sku}-VAR-${variantIndexCounter}`;
-          variantIndexCounter++; // Increment counter untuk varian baru berikutnya
-        } // Lakukan CREATE
+          variantIndexCounter++;
+        }
         const created = await this.prisma.productVariant.create({
           data: {
             productId,
-            sku: finalSku, // Menggunakan SKU yang digenerate/dari FE
+            sku: finalSku,
             price: v.price,
             stock: v.stock,
             variantName: v.variantName,
           },
         });
         variantId = created.id;
-      } // ==========================================================
-      // B. UPDATE EXISTING VARIANT
-      // ==========================================================
-      else {
-        // Jika v.sku kosong/null, JANGAN HILANGKAN SKU lama. Ambil dari existing.
+      } else {
         if (!v.sku || v.sku.trim() === "") {
           const existing = existingVariants.find((e) => e.id === variantId);
-          finalSku = existing?.sku ?? ""; // Gunakan SKU lama
+          finalSku = existing?.sku ?? "";
         }
         await this.prisma.productVariant.update({
           where: { id: variantId },
           data: {
-            sku: finalSku, // Menggunakan SKU yang dari FE, atau SKU lama yang dipertahankan
+            sku: finalSku,
             price: v.price,
             stock: v.stock,
             variantName: v.variantName,
           },
         });
-      } // ====================================
-      // 5. UPDATE VARIANT ATTRIBUTE VALUES
-      // ====================================
+      }
 
       await this.prisma.productVariantAttributeValue.deleteMany({
         where: { variantId },
@@ -692,9 +665,7 @@ export class ProductService {
           attributeValueId: avId,
         })),
         skipDuplicates: true,
-      }); // ====================================
-      // 6. HANDLE IMAGE FILES (UPLOAD NEW FILES)
-      // ====================================
+      });
 
       const FEImages = v.images;
       const allUploadedFiles = files.variantImages || [];
@@ -705,7 +676,7 @@ export class ProductService {
         const img = FEImages[i];
         if (img.fileIndex != null) {
           const file = allUploadedFiles[img.fileIndex];
-          if (!file) continue; // Asumsi this.cloudinary.upload mengembalikan { secure_url, public_id }
+          if (!file) continue;
 
           const upload = await this.cloudinary.upload(file, {
             folder: "products/variants",
@@ -718,9 +689,8 @@ export class ProductService {
             publicId: upload.public_id,
           });
         }
-      } // ====================================
+      }
       // 7. DELETE REMOVED IMAGES
-      // ====================================
 
       const dbImages = await this.prisma.productVariantImage.findMany({
         where: { variantId },
@@ -740,14 +710,12 @@ export class ProductService {
           await this.cloudinary.remove(img.publicId);
           await this.prisma.productVariantImage.delete({ where: { id } });
         }
-      } // ====================================
-      // 8. CREATE / UPDATE IMAGES
-      // ====================================
+      }
 
       for (let i = 0; i < FEImages.length; i++) {
         const img = FEImages[i];
 
-        if (img._isDeleted) continue; // CREATE NEW IMAGE
+        if (img._isDeleted) continue;
 
         if (!img.id) {
           const uploadInfo = uploadedResults.find((u) => u.tempIndex === i);
@@ -773,9 +741,8 @@ export class ProductService {
           });
         }
       }
-    } // ====================================
+    }
     // 9. RETURN UPDATED VARIANTS
-    // ====================================
 
     const updatedVariants = await this.prisma.productVariant.findMany({
       where: { productId },
@@ -1487,5 +1454,98 @@ export class ProductService {
     const newSku = `${prefix}${nextSequence.toString().padStart(4, "0")}`;
 
     return newSku;
+  }
+
+  // GET TOP SELLING PRODUCTS
+  async getTopSellingProducts(query?: {
+    limit?: number;
+    startDate?: string;
+    endDate?: string;
+  }) {
+    const limit = Number(query?.limit || 5);
+    const dateFilter: any = {};
+
+    // Filter tanggal jika ada (opsional)
+    if (query?.startDate || query?.endDate) {
+      dateFilter.createdAt = {};
+      if (query.startDate) {
+        dateFilter.createdAt.gte = new Date(query.startDate);
+      }
+      if (query.endDate) {
+        const end = new Date(query.endDate);
+        end.setDate(end.getDate() + 1); // +1 hari agar inklusif
+        dateFilter.createdAt.lt = end;
+      }
+    }
+
+    // 1. Group by productId dan hitung total quantity terjual
+    const topSelling = await this.prisma.orderProduct.groupBy({
+      by: ["productId"],
+      _sum: {
+        quantity: true,
+      },
+
+      where: {
+        order: {
+          ...dateFilter,
+        },
+      },
+      orderBy: {
+        _sum: {
+          quantity: "desc",
+        },
+      },
+      take: limit,
+    });
+
+    // 2. Ambil detail produk berdasarkan ID hasil grouping
+    const productIds = topSelling.map((item) => item.productId);
+
+    const products = await this.prisma.product.findMany({
+      where: {
+        id: { in: productIds },
+      },
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        basePrice: true,
+        category: {
+          select: { name: true },
+        },
+        images: {
+          take: 1,
+          orderBy: {
+            isFeatured: "desc",
+          },
+          select: { url: true },
+        },
+      },
+    });
+
+    // 3. Gabungkan data agregat dengan detail produk
+    const result = topSelling.map((item) => {
+      const product = products.find((p) => p.id === item.productId);
+
+      const totalSold = item._sum.quantity || 0;
+      const estimatedRevenue = Number(product?.basePrice || 0) * totalSold;
+
+      let status = "Stable";
+      if (totalSold > 100) status = "Trending";
+      if (totalSold < 10) status = "Slow";
+
+      return {
+        id: item.productId,
+        name: product?.name || "Unknown Product",
+        sku: product?.sku || "-",
+        category: product?.category?.name || "Uncategorized",
+        sold: totalSold,
+        revenue: estimatedRevenue,
+        image: product?.images[0]?.url || null,
+        status: status,
+      };
+    });
+
+    return result;
   }
 }

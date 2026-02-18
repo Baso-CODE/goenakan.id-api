@@ -222,4 +222,60 @@ export class FinanceTransactionService {
       where: { id },
     });
   }
+
+  async getDebtAndReceivablesSummary() {
+    const unpaidInvoices = await this.prisma.invoice.findMany({
+      where: {
+        status: { in: ["UNPAID", "OVERDUE"] },
+      },
+      select: {
+        totalAmount: true,
+        invoiceNumber: true,
+        dueDate: true,
+        client: {
+          select: {
+            b2b: { select: { companyName: true } },
+            b2c: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    const totalReceivables = unpaidInvoices.reduce(
+      (sum, inv) => sum + Number(inv.totalAmount),
+      0,
+    );
+
+    const totalVendorCostsAgg = await this.prisma.cashflowCost.aggregate({
+      _sum: { total: true },
+    });
+    const totalVendorBill = Number(totalVendorCostsAgg._sum.total || 0);
+
+    const totalPaidOutAgg = await this.prisma.cashflow.aggregate({
+      where: { type: "OUT" },
+      _sum: { amount: true },
+    });
+    const totalPaidOut = Number(totalPaidOutAgg._sum.amount || 0);
+
+    const totalPayables = Math.max(0, totalVendorBill - totalPaidOut);
+
+    return {
+      receivables: {
+        total: totalReceivables,
+        count: unpaidInvoices.length,
+        details: unpaidInvoices.map((inv) => ({
+          invoiceNumber: inv.invoiceNumber,
+          clientName:
+            inv.client.b2b?.companyName || inv.client.b2c?.name || "-",
+          amount: Number(inv.totalAmount),
+          dueDate: inv.dueDate,
+        })),
+      },
+      payables: {
+        total: totalPayables,
+        estimatedBill: totalVendorBill,
+        paidSoFar: totalPaidOut,
+      },
+    };
+  }
 }

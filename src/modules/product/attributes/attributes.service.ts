@@ -1,11 +1,11 @@
+import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
-import { PrismaService } from "../../prisma/prisma.service";
-import { PaginationService } from "../../pagination/pagination.service";
 import { ApiError } from "../../../utils/api-error";
 import { SlugService } from "../../../utils/genereateSlug";
-import { UpdateAttributeDTO } from "./dto/updateAttributes.dto";
+import { PaginationService } from "../../pagination/pagination.service";
+import { PrismaService } from "../../prisma/prisma.service";
 import { CreateAttributeDTO } from "./dto/createAttributes.dto";
-import * as ExcelJS from "exceljs";
+import { UpdateAttributeDTO } from "./dto/updateAttributes.dto";
 
 export interface AttributeExportQuery {
   startDate?: string;
@@ -121,8 +121,6 @@ export class AttributeService {
 
   // === UPDATE ATTRIBUTE ===
   async updateAttribute(id: string, data: UpdateAttributeDTO) {
-    console.log("ini adalah data", data);
-
     const existing = await this.prisma.attribute.findUnique({
       where: { id },
       include: { values: true },

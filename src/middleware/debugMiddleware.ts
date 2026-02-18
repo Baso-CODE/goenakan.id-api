@@ -9,7 +9,6 @@ export const debugMiddleware = (
 ) => {
   console.log("--- DEBUG MULTER OUTPUT (AFTER UPLOAD) ---"); // Tampilkan data non-file (string)
   console.log("req.body:", req.body); // Tampilkan file yang berhasil diunggah Multer
-  // req.files adalah objek yang berisi array file untuk setiap field
 
   console.log("req.files:", req.files);
   console.log("------------------------------------------"); // Lanjutkan ke middleware berikutnya

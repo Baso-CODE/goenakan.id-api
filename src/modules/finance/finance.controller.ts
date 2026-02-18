@@ -157,9 +157,6 @@ export class FinanceController {
     try {
       const body = req.body as CreateFinanceTransactionDTO;
 
-      // Mengambil ID User dari Token / Session yang di-inject oleh NextAuthMiddleware
-      // Sesuaikan `req.user.id` ini dengan struktur payload Auth di project Anda.
-      // Jika di project Anda object-nya bernama lain, ubah (req as any).user.id
       const userId = (req as any).user?.id || (req as any).user?.sub;
 
       if (!userId) {
@@ -213,6 +210,19 @@ export class FinanceController {
       res.status(200).json({
         message: "Transaksi keuangan berhasil dihapus",
       });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getDebtReceivables = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const data = await this.transactionService.getDebtAndReceivablesSummary();
+      res.status(200).json({ data });
     } catch (error) {
       next(error);
     }

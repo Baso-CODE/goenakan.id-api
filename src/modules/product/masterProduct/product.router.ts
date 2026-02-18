@@ -51,6 +51,13 @@ export class ProductRouter {
       this.productController.getAllProductsForOrder,
     );
 
+    this.router.get(
+      "/top-selling",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.productController.getTopSelling,
+    );
+
     // GET PRODUCT BY ID
     this.router.get(
       "/:id",

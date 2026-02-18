@@ -168,4 +168,25 @@ export class OrderController {
       next(error);
     }
   };
+
+  getChartData = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { year } = req.query;
+      const data = await this.orderService.getSalesAnalytics(
+        year ? Number(year) : undefined,
+      );
+      res.status(200).json({ data });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getMetrics = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await this.orderService.getSalesMetrics();
+      res.status(200).json({ data });
+    } catch (error) {
+      next(error);
+    }
+  };
 }
