@@ -1002,10 +1002,11 @@ model QuotationFollowUp {
   id          String   @id @default(uuid())
   quotationId String
   date        DateTime @default(now())
-
-  method     String?
-  notes      String? @db.Text
-  nextAction String?
+  // === FIELD BARU ===
+  name        String?
+  method      String?
+  notes       String?  @db.Text
+  nextAction  String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

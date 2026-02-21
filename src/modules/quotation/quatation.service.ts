@@ -81,14 +81,8 @@ export class QuotationService {
     if (query.search) {
       where.OR = [
         { quotationNumber: { contains: query.search } },
-
-        // --- PERBAIKAN PENCARIAN CLIENT (DB) ---
-        // Cek di tabel B2C (field: name)
         { client: { b2c: { name: { contains: query.search } } } },
-        // Cek di tabel B2B (field: companyName)
         { client: { b2b: { companyName: { contains: query.search } } } },
-
-        // Pencarian Manual Input
         { manualClientName: { contains: query.search } },
         { manualClientCompany: { contains: query.search } },
       ];
@@ -101,14 +95,20 @@ export class QuotationService {
       take,
       orderBy: { createdAt: "desc" },
       include: {
-        // --- PERBAIKAN SELECT CLIENT ---
         client: {
           include: {
-            // Ambil data B2C jika ada
             b2c: { select: { name: true, prefix: true } },
-            // Ambil data B2B jika ada
             b2b: { select: { companyName: true } },
           },
+        },
+
+        followUps: {
+          orderBy: { date: "asc" },
+          take: 3,
+          select: { name: true, date: true },
+        },
+        _count: {
+          select: { followUps: true },
         },
       },
     });
@@ -142,10 +142,9 @@ export class QuotationService {
         followUps: {
           orderBy: { date: "desc" },
         },
-        // === TAMBAHAN: Include Notes & Kategorinya ===
         notes: {
           include: {
-            category: true, // Agar dapet info: "Payment Terms", "Internal", dll
+            category: true,
           },
         },
       },
@@ -432,12 +431,16 @@ export class QuotationService {
     const quotation = await this.prisma.quotation.findUnique({
       where: { id: quotationId },
     });
-    if (!quotation) throw new ApiError("Quotation not found", 404);
 
-    // Simpan Follow Up
+    if (!quotation) {
+      throw new ApiError("Quotation not found", 404);
+    }
+
+    // 1. Simpan Follow Up ke Database
     const followUp = await this.prisma.quotationFollowUp.create({
       data: {
         quotationId,
+        name: data.name,
         date: data.date || new Date(),
         method: data.method,
         notes: data.notes,
@@ -445,8 +448,15 @@ export class QuotationService {
       },
     });
 
-    // Opsional: Otomatis ubah status Quotation jadi 'FOLLOW_UP' jika masih DRAFT/SENT
-    if (quotation.status === "DRAFT" || quotation.status === "SENT") {
+    // 2. Logika Update Status Quotation Otomatis
+    const actionName = data.name.toLowerCase();
+
+    if (actionName.includes("convert")) {
+      await this.prisma.quotation.update({
+        where: { id: quotationId },
+        data: { status: "ACCEPTED" },
+      });
+    } else if (quotation.status === "DRAFT" || quotation.status === "SENT") {
       await this.prisma.quotation.update({
         where: { id: quotationId },
         data: { status: "FOLLOW_UP" },
