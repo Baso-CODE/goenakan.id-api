@@ -112,25 +112,25 @@ export class CreateProductDTO {
 
   @IsOptional()
   @Type(() => Number)
-  @IsInt({ message: "Weight must be an integer (grams)" })
+  @IsNumber({}, { message: "Weight must be a valid number" })
   @Min(0)
   weight?: number;
 
   @IsOptional()
   @Type(() => Number)
-  @IsInt({ message: "Width must be an integer (cm)" })
+  @IsNumber({}, { message: "Width must be a valid number" })
   @Min(0)
   width?: number;
 
   @IsOptional()
   @Type(() => Number)
-  @IsInt({ message: "Height must be an integer (cm)" })
+  @IsNumber({}, { message: "Height must be a valid number" })
   @Min(0)
   height?: number;
 
   @IsOptional()
   @Type(() => Number)
-  @IsInt({ message: "Length must be an integer (cm)" })
+  @IsNumber({}, { message: "Length must be a valid number" })
   @Min(0)
   length?: number;
 

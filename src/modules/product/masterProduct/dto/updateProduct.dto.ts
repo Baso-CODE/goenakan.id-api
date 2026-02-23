@@ -1,11 +1,9 @@
-// product/dto/updateProductCore.dto.ts
 import { Type } from "class-transformer";
 import {
-  IsOptional,
-  IsString,
   IsBoolean,
   IsNumber,
-  IsInt,
+  IsOptional,
+  IsString,
   Min,
 } from "class-validator";
 
@@ -40,25 +38,25 @@ export class UpdateProductCoreDTO {
 
   @IsOptional()
   @Type(() => Number)
-  @IsInt()
+  @IsNumber({}, { message: "Weight must be a valid number" })
   @Min(0)
   weight?: number;
 
   @IsOptional()
   @Type(() => Number)
-  @IsInt()
+  @IsNumber({}, { message: "Width must be a valid number" })
   @Min(0)
   width?: number;
 
   @IsOptional()
   @Type(() => Number)
-  @IsInt()
+  @IsNumber({}, { message: "Height must be a valid number" }) // 🔥
   @Min(0)
   height?: number;
 
   @IsOptional()
   @Type(() => Number)
-  @IsInt()
+  @IsNumber({}, { message: "Length must be a valid number" })
   @Min(0)
   length?: number;
 }

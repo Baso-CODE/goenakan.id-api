@@ -283,10 +283,10 @@ model Product {
   materialType String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-  weight       Int?
-  width        Int?
-  height       Int?
-  length       Int?
+  weight       Float?
+  width        Float?
+  height       Float?
+  length       Float?
 
   // Relasi Category
   categoryId String

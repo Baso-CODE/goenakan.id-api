@@ -32,6 +32,12 @@ export class QuotationRouter {
       verifyRole(["SUPER_ADMIN", "ADMIN_INVOICE"]), // Sesuaikan Role
       this.quotationController.getAll,
     );
+    this.router.get(
+      "/print/:id",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN", "ADMIN_INVOICE"]),
+      this.quotationController.getForPrint,
+    );
 
     // Get Detail
     this.router.get(

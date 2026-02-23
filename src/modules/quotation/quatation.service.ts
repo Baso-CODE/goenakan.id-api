@@ -473,4 +473,65 @@ export class QuotationService {
       orderBy: { date: "desc" },
     });
   }
+
+  // Get Detail Quotation untuk Print / Preview
+  async getQuotationByIdForPrint(id: string) {
+    const quotation = await this.prisma.quotation.findUnique({
+      where: { id },
+      include: {
+        // 1. Data Client
+        client: {
+          include: {
+            b2b: {
+              include: { department: true },
+            },
+            b2c: true,
+          },
+        },
+
+        items: {
+          include: {
+            product: {
+              select: {
+                sku: true,
+                name: true,
+                description: true,
+                images: {
+                  select: {
+                    url: true,
+                    isFeatured: true,
+                  },
+                  orderBy: { isFeatured: "desc" },
+                  take: 1,
+                },
+              },
+            },
+          },
+        },
+
+        // 3. Notes (Syarat & Ketentuan)
+        notes: {
+          include: {
+            category: true,
+          },
+          orderBy: { createdAt: "asc" },
+        },
+
+        // 4. Data Sales dan PIC
+        order: {
+          include: {
+            sales: true,
+            pic: true,
+          },
+        },
+      },
+    });
+
+    // Jika data tidak ditemukan, lemparkan error 404
+    if (!quotation) {
+      throw new ApiError("Quotation not found", 404);
+    }
+
+    return quotation;
+  }
 }

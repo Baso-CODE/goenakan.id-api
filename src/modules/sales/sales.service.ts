@@ -174,6 +174,8 @@ export class SalesService {
     take?: number;
     search?: string;
     isActive?: string;
+    startDate?: string;
+    endDate?: string;
   }) {
     try {
       const page = Number(query.page) || 1;
@@ -194,6 +196,22 @@ export class SalesService {
       // 2. Logika Filter isActive
       if (query.isActive && query.isActive !== "ALL") {
         where.isActive = query.isActive === "true";
+      }
+
+      if (query.startDate || query.endDate) {
+        where.createdAt = {};
+
+        if (query.startDate) {
+          const start = new Date(query.startDate);
+          start.setHours(0, 0, 0, 0);
+          where.createdAt.gte = start;
+        }
+
+        if (query.endDate) {
+          const end = new Date(query.endDate);
+          end.setHours(23, 59, 59, 999);
+          where.createdAt.lte = end;
+        }
       }
 
       // === Total count for pagination ===

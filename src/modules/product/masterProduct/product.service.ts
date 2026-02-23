@@ -99,7 +99,7 @@ export class ProductService {
       priceTiers = [],
       imagesMetadata = [],
 
-      videosMetadata = [], // ✅ INI SEKARANG BERISI URL DARI FRONTEND
+      videosMetadata = [],
 
       variantImagesMetadata = [],
       ...productCore
@@ -112,12 +112,9 @@ export class ProductService {
       altText: string;
     }[] = [];
 
-    // ✅ UBAH DI SINI:
-    // Tidak perlu array kosong, langsung map dari data frontend
-    // Karena video sudah diupload frontend, kita tinggal simpan link-nya.
     const uploadedVideos = videosMetadata.map((meta) => ({
       url: meta.url,
-      // Gunakan publicId dari frontend. Jika tidak ada (kasus jarang), buat dummy.
+
       publicId: meta.publicId || `fe_upload_${Date.now()}_${Math.random()}`,
       title: meta.title || productCore.name || "Product Video",
       isFeatured: meta.isFeatured || false,
@@ -354,6 +351,10 @@ export class ProductService {
     if (data.materialType !== undefined)
       updateData.materialType = data.materialType;
     if (data.categoryId !== undefined) updateData.categoryId = data.categoryId;
+    if (data.weight !== undefined) updateData.weight = data.weight;
+    if (data.width !== undefined) updateData.width = data.width;
+    if (data.height !== undefined) updateData.height = data.height;
+    if (data.length !== undefined) updateData.length = data.length;
 
     const updated = await this.prisma.product.update({
       where: { id },

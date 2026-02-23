@@ -105,4 +105,20 @@ export class QuotationController {
       next(error);
     }
   };
+
+  // === GET FOR PRINT ===
+  getForPrint = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+
+      const result = await this.quotationService.getQuotationByIdForPrint(id);
+
+      res.status(200).json({
+        message: "Success fetch quotation for print",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 }

@@ -1,9 +1,9 @@
 import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
-import { SalesExportQuery, SalesService } from "./sales.service";
+import { CloudinaryService } from "../cloudinary/cloudinary.service";
 import { CreateSalesBankDTO, CreateSalesDTO } from "./dto/createSales.dto";
 import { UpdateSalesDTO } from "./dto/updateSales.dto";
-import { CloudinaryService } from "../cloudinary/cloudinary.service";
+import { SalesExportQuery, SalesService } from "./sales.service";
 @injectable()
 export class SalesController {
   constructor(
@@ -23,15 +23,19 @@ export class SalesController {
     }
   };
 
-  // === GET ALL SALESS ===
+  // === GET ALL SALES ===
   getAllSales = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { page, take, search, isActive } = req.query;
+      // 🔥 Ekstrak startDate dan endDate dari req.query
+      const { page, take, search, isActive, startDate, endDate } = req.query;
+
       const sales = await this.salesService.getAllSales({
         page: Number(page),
         take: Number(take),
         search: search as string,
         isActive: isActive as string,
+        startDate: startDate as string,
+        endDate: endDate as string,
       });
       res.status(200).json(sales);
     } catch (error) {

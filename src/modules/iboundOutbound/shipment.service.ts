@@ -227,6 +227,8 @@ export class ShipmentService {
         order: {
           include: {
             sales: true,
+
+            pic: true,
             client: {
               include: {
                 b2b: { include: { department: true } },
