@@ -691,6 +691,7 @@ model Sales {
   orders              Order[]
   bankAccounts        SalesBank[]
   financeTransactions FinanceTransaction[]
+  quotations          Quotation[]
 
   @@map("sales")
 }
@@ -963,6 +964,8 @@ model Quotation {
   // === RELATIONS ===
   orderId   String?
   order     Order?              @relation(fields: [orderId], references: [id])
+  salesId   String?
+  sales     Sales?              @relation(fields: [salesId], references: [id])
   items     QuotationItem[]
   followUps QuotationFollowUp[]
 
@@ -1084,7 +1087,7 @@ model CashflowCost {
   id           String   @id @default(uuid())
   cashflowId   String
   description  String
-  vendorId     String
+  vendorId     String?
   costPerUnit  Decimal
   quantity     Int
   total        Decimal
@@ -1094,7 +1097,7 @@ model CashflowCost {
   updatedAt    DateTime @updatedAt
 
   summary      CashflowSummary @relation(fields: [cashflowId], references: [id])
-  vendor       Vendor          @relation(fields: [vendorId], references: [id])
+  vendor       Vendor?         @relation(fields: [vendorId], references: [id])
   Currency     Currency?       @relation(fields: [currencyCode], references: [code])
   currencyCode String?
 

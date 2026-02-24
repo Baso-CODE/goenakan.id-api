@@ -39,6 +39,10 @@ export class CreateQuotationDTO {
   @IsDate()
   validUntil?: Date;
 
+  @IsOptional()
+  @IsUUID(4, { message: "Invalid Sales ID format" })
+  salesId?: string;
+
   // === CLIENT INFO (Hybrid) ===
   @IsOptional()
   @IsUUID()

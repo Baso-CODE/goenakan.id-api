@@ -292,7 +292,8 @@ export class CashflowService {
           data: costItems.map((item) => ({
             cashflowId: summaryId!,
             description: item.description,
-            vendorId: item.vendorId,
+            vendorId:
+              item.vendorId && item.vendorId !== "" ? item.vendorId : null,
             costPerUnit: item.costPerUnit,
             quantity: item.quantity,
             total: item.total,

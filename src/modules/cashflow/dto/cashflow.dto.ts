@@ -2,7 +2,7 @@
 
 export interface CashflowRevenueInput {
   description: string;
-  productId: string;
+  productId?: string;
   unitPrice: number;
   quantity: number;
   total: number; // Dalam IDR (Base Currency)
@@ -12,7 +12,7 @@ export interface CashflowRevenueInput {
 
 export interface CashflowCostInput {
   description: string;
-  vendorId: string;
+  vendorId?: string;
   costPerUnit: number; // Dalam mata uang asli (misal 5 USD)
   quantity: number;
   currency: string; // 'USD'

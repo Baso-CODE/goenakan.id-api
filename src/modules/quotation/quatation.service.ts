@@ -268,19 +268,16 @@ export class QuotationService {
     const year = now.getFullYear();
     const romanMonth = this.getRomanMonth(now);
 
-    // D. Gabungkan
     const quotationNumber = `QTN_${sequence}_${clientCode}_${romanMonth}_${year}`;
-    // ============================================================
 
-    // 5. Simpan ke Database
     const newQuotation = await this.prisma.quotation.create({
       data: {
         quotationNumber,
         date: data.date || new Date(),
         validUntil: data.validUntil,
         status: "DRAFT",
+        salesId: data.salesId || null,
 
-        // Client Info
         clientId: data.clientId || null,
         manualClientName: data.manualClientName,
         manualClientCompany: data.manualClientCompany,
@@ -288,12 +285,9 @@ export class QuotationService {
         manualClientPhone: data.manualClientPhone,
         manualClientAddress: data.manualClientAddress,
 
-        // Financials
         subTotal,
         totalAmount,
 
-        // --- UPDATE: LOGIC NOTES BARU (RELATIONAL) ---
-        // Menggunakan flatMap untuk memecah array contents menjadi baris database
         notes:
           data.notes && data.notes.length > 0
             ? {
@@ -321,6 +315,7 @@ export class QuotationService {
             category: true,
           },
         },
+        sales: true,
       },
     });
 
