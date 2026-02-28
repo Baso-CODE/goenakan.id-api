@@ -28,7 +28,7 @@ export class ClientService {
 
     let nextNumber = 1;
     if (lastClient?.custCode) {
-      const match = lastClient.custCode.match(/-(\d+)$/);
+      const match = lastClient.custCode.match(/(\d+)$/);
       if (match) {
         nextNumber = parseInt(match[1]) + 1;
       }
