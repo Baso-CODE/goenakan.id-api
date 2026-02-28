@@ -2,13 +2,11 @@ import { Router } from "express";
 import { autoInjectable } from "tsyringe";
 import { ClientController } from "./client.controller";
 
-import { CreateClientDTO } from "./dto/createClient.dto";
-import { UpdateClientDTO } from "./dto/updateClient.dto";
-import { env } from "../../config";
-import { JwtMiddleware } from "../../middleware/jwt.middleware";
 import { NextAuthMiddleware } from "../../middleware/nextAuth.middleware";
 import { verifyRole } from "../../middleware/role.middleware";
 import { validateBody } from "../../middleware/validation.middleware";
+import { CreateClientDTO } from "./dto/createClient.dto";
+import { UpdateClientDTO } from "./dto/updateClient.dto";
 
 @autoInjectable()
 export class ClientRouter {
@@ -41,7 +39,12 @@ export class ClientRouter {
       verifyRole(["SUPER_ADMIN"]),
       this.clientController.getClientById,
     );
-
+    this.router.get(
+      "/export/excel",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.clientController.exportClients,
+    );
     this.router.post(
       "/",
       this.nextAuthMiddleware.verifyNextAuthToken,
@@ -63,12 +66,6 @@ export class ClientRouter {
       this.nextAuthMiddleware.verifyNextAuthToken,
       verifyRole(["SUPER_ADMIN"]),
       this.clientController.deleteClient,
-    );
-    this.router.get(
-      "/export/excel",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
-      this.clientController.exportClients,
     );
   };
 

@@ -428,10 +428,34 @@ export class ClientService {
   async deleteClient(id: string) {
     const existing = await this.prisma.client.findUnique({
       where: { id },
+      include: { b2b: true, b2c: true },
     });
     if (!existing) throw new ApiError("Client not found", 404);
 
-    await this.prisma.client.delete({ where: { id } });
+    // Cek apakah client punya order/invoice/quotation
+    const hasRelatedData = await this.prisma.order.findFirst({
+      where: { clientId: id },
+    });
+    if (hasRelatedData) {
+      throw new ApiError(
+        "Client tidak dapat dihapus karena sudah memiliki data order terkait",
+        400,
+      );
+    }
+
+    // Hapus dalam urutan yang benar (child dulu, parent belakangan)
+    await this.prisma.$transaction(async (tx) => {
+      if (existing.b2b) {
+        // Hapus PICs dulu
+        await tx.clientB2BPIC.deleteMany({ where: { clientB2BId: id } });
+        await tx.clientB2B.delete({ where: { id } });
+      }
+      if (existing.b2c) {
+        await tx.clientB2C.delete({ where: { id } });
+      }
+      await tx.client.delete({ where: { id } });
+    });
+
     return { message: "Client deleted successfully" };
   }
 
