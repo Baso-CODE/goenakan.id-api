@@ -19,22 +19,41 @@ export class ClientService {
   async createClient(data: CreateClientDTO) {
     const prefix = data.type === ClientType.B2B ? "B" : "C";
 
-    // GET LAST CLIENT
-    const lastClient = await this.prisma.client.findFirst({
-      where: { type: data.type },
-      orderBy: { createdAt: "desc" },
+    // Ambil semua custCode sesuai prefix-nya masing-masing
+    const allCustCodes = await this.prisma.client.findMany({
+      where: {
+        custCode: {
+          startsWith: prefix,
+        },
+      },
       select: { custCode: true },
     });
 
-    let nextNumber = 1;
-    if (lastClient?.custCode) {
-      const match = lastClient.custCode.match(/(\d+)$/);
+    // Cari angka tertinggi dari custCode yang sudah ada
+    let maxNumber = 0;
+    for (const client of allCustCodes) {
+      if (!client.custCode) continue;
+      const match = client.custCode.match(/(\d+)$/);
       if (match) {
-        nextNumber = parseInt(match[1]) + 1;
+        const num = parseInt(match[1]);
+        if (num > maxNumber) maxNumber = num;
       }
     }
 
-    const custCode = `${prefix}${String(nextNumber).padStart(5, "0")}`;
+    // Generate custCode baru yang pasti unik
+    let custCode: string;
+    let isUnique = false;
+
+    do {
+      maxNumber += 1;
+      custCode = `${prefix}${String(maxNumber).padStart(5, "0")}`;
+
+      const existing = await this.prisma.client.findUnique({
+        where: { custCode },
+      });
+
+      isUnique = !existing;
+    } while (!isUnique);
 
     // ==================================================
     // ====================== B2B ========================
