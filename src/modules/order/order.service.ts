@@ -424,16 +424,51 @@ export class OrderService {
       throw new ApiError(`Order with ID ${id} not found`, 404);
     }
 
-    // === [UPDATE PENTING DISINI] ===
-    // 2. Ambil History Item yang SUDAH Masuk Invoice (Kecuali Cancelled)
-    const billedItems = await this.prisma.invoiceItem.findMany({
+    const activeInvoices = await this.prisma.invoice.findMany({
       where: {
-        invoice: {
-          orderId: id, // Filter berdasarkan Order ID ini
-          status: { not: "CANCELLED" }, // Abaikan invoice yang batal
-        },
+        orderId: id,
+        status: { not: "CANCELLED" },
+      },
+      include: {
+        items: true,
       },
     });
+
+    const activeInvoiceIds = activeInvoices.map((inv) => inv.id);
+    const billedAmountByProduct = new Map<string, number>();
+    for (const invoice of activeInvoices) {
+      // Hitung total harga semua items di invoice ini
+      const invoiceItemsTotal = invoice.items.reduce(
+        (sum, item) => sum + Number(item.price) * item.quantity,
+        0,
+      );
+
+      for (const item of invoice.items) {
+        const key = `${item.productId}_${item.variantId ?? "null"}`;
+        const itemBaseAmount = Number(item.price) * item.quantity;
+
+        // Proporsi item ini dari total invoice items
+        const proportion =
+          invoiceItemsTotal > 0 ? itemBaseAmount / invoiceItemsTotal : 0;
+
+        // Nominal yang dibayar untuk item ini = proporsi × totalAmount invoice
+        const paidForThisItem = Number(invoice.totalAmount) * proportion;
+
+        billedAmountByProduct.set(
+          key,
+          (billedAmountByProduct.get(key) || 0) + paidForThisItem,
+        );
+      }
+    }
+
+    const billedItems =
+      activeInvoiceIds.length > 0
+        ? await this.prisma.invoiceItem.findMany({
+            where: {
+              invoiceId: { in: activeInvoiceIds },
+            },
+          })
+        : [];
 
     // 3. Client Info Logic (Tetap Sama)
     let clientInfo = {
@@ -478,25 +513,26 @@ export class OrderService {
           customizationDetail = String(p.customization);
         }
       }
-
-      // === [CALCULATION LOGIC] ===
-      // Hitung total qty yang sudah ditagih untuk produk spesifik ini
-      // Kita harus mencocokkan productId DAN variantId agar akurat
+      const totalItemPrice = Number(p.unitPrice) * p.quantity;
       const currentBilledQty = billedItems
         .filter(
           (item) =>
             item.productId === p.productId && item.variantId === p.variantId,
         )
         .reduce((sum, item) => sum + item.quantity, 0);
+      const remainingQty = Math.max(0, p.quantity - currentBilledQty);
 
-      // Hitung Sisa (Total Order - Sudah Ditagih)
-      // Math.max(0, ...) untuk mencegah nilai minus jika ada anomali data
-      const remaining = Math.max(0, p.quantity - currentBilledQty);
+      const key = `${p.productId}_${p.variantId ?? "null"}`;
+      const currentBilledAmount = billedAmountByProduct.get(key) || 0;
+      const remainingBilledAmount = Math.max(
+        0,
+        totalItemPrice - currentBilledAmount,
+      );
 
       return {
         id: p.id,
-        productId: p.productId, // ID Master Product (Penting untuk filter di frontend)
-        variantId: p.variantId, // ID Varian
+        productId: p.productId,
+        variantId: p.variantId,
         productName: p.product?.name || "Unknown Product",
         sku: p.product?.sku || "-",
         variantName: p.variant ? p.variant.variantName || "-" : "-",
@@ -506,9 +542,10 @@ export class OrderService {
         customization: customizationDetail,
         remarks: p.remarks || "-",
 
-        // [FIELD BARU UNTUK FRONTEND]
-        billedQuantity: currentBilledQty, // Berapa yang sudah di-invoice
-        remainingQuantity: remaining, // Berapa sisa yang boleh dipilih
+        billedQuantity: currentBilledQty,
+        remainingQuantity: remainingQty,
+        billedAmount: currentBilledAmount,
+        remainingBilledAmount: remainingBilledAmount,
       };
     });
 

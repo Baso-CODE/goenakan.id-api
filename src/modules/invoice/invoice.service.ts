@@ -96,18 +96,45 @@ export class InvoiceService {
           const selected = selectedItems.find(
             (sel) => sel.productId === op.productId || sel.productId === op.id,
           );
-
           const quantityToBill = selected
             ? Number(selected.quantity)
             : op.quantity;
-
           return { ...op, quantityToBill };
         });
 
-      // Hitung Total Amount
-      invoiceAmount = targetOrderProducts.reduce((sum, item) => {
+      // Hitung base amount dari item yang dipilih
+      const baseAmount = targetOrderProducts.reduce((sum, item) => {
         return sum + Number(item.unitPrice) * item.quantityToBill;
       }, 0);
+
+      // ✅ Terapkan jenis tagihan di atas base amount split
+      if (category === InvoiceCategory.FULL_PAYMENT) {
+        invoiceAmount = baseAmount;
+      } else if (category === InvoiceCategory.DP) {
+        if (!dpPercentage)
+          throw new ApiError("dpPercentage required for DP", 400);
+        invoiceAmount = Math.floor(baseAmount * (dpPercentage / 100));
+      } else if (category === InvoiceCategory.INSTALLMENT) {
+        if (!customAmount)
+          throw new ApiError("customAmount required for INSTALLMENT", 400);
+        if (customAmount > baseAmount)
+          throw new ApiError(
+            `Nominal cicilan (${customAmount}) melebihi total item (${baseAmount})`,
+            400,
+          );
+        invoiceAmount = customAmount;
+      } else if (category === InvoiceCategory.REMAINING_BALANCE) {
+        // Sisa dari invoice-invoice sebelumnya yang aktif
+        const totalInvoiced = order.invoices.reduce((sum, inv) => {
+          if (inv.status !== "CANCELLED") return sum + Number(inv.totalAmount);
+          return sum;
+        }, 0);
+        invoiceAmount = baseAmount - totalInvoiced;
+        if (invoiceAmount <= 0)
+          throw new ApiError("Item ini sudah lunas.", 400);
+      } else {
+        invoiceAmount = baseAmount;
+      }
     } else {
       targetOrderProducts = order.products.map((op) => ({
         ...op,
@@ -381,10 +408,6 @@ export class InvoiceService {
                 },
               },
             },
-
-            // [OPTIMISASI] Kita hapus 'products' dari sini.
-            // Alasannya: Data produk yang valid untuk invoice ini (terutama Split Invoice)
-            // ada di 'invoice.items' di bawah.
           },
         },
 
