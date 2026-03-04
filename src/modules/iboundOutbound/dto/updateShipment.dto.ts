@@ -24,7 +24,6 @@ export enum ShipmentStatus {
 }
 
 // === DTO UTAMA: MENAMBAH HISTORY / STEP BARU ===
-// Dipakai untuk semua tahapan: Bea Cukai, Gudang, dll.
 export class AddShipmentHistoryDTO {
   @IsNotEmpty()
   @IsEnum(ShipmentStatus)
@@ -38,24 +37,22 @@ export class AddShipmentHistoryDTO {
   @IsNotEmpty()
   @IsString()
   city!: string;
-  // INI KUNCINYA:
-  // Admin bisa input manual: "Guangzhou", "Osaka", "Soekarno-Hatta", "Tanjung Priok".
-  // Jadi tidak terpaku pada "China".
 
   @IsOptional()
   @IsString()
-  note?: string; // Catatan singkat manual (cth: "Kena red line", "Pending clearance")
+  note?: string;
 
-  // Jika ingin menambah formal notes (template) pada step ini
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ShipmentNoteInputDTO)
   shipmentNotes?: ShipmentNoteInputDTO[];
+  @IsOptional()
+  @IsString()
+  trackingNumber?: string;
 }
 
 // === DTO UNTUK EDIT INFO HEADER (TYPO RESI, DLL) ===
-// Ini hanya untuk edit data header, bukan update status perjalanan
 export class UpdateShipmentInfoDTO {
   @IsOptional()
   @IsString()

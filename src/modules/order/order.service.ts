@@ -785,7 +785,6 @@ export class OrderService {
 
     // 6. POPULASI DATA BARIS
     orders.forEach((order) => {
-      // Logic Client Name & Type
       let clientName = "-";
       let clientType = order.client.type;
       if (order.client.b2b) {
@@ -794,8 +793,6 @@ export class OrderService {
         clientName = order.client.b2c.name;
       }
 
-      // Logic Product Summary String (Multiline)
-      // Format: "10x Kaos Polos - Merah (SKU123)"
       const productsString = order.products
         .map((p) => {
           const variantName = p.variant ? `(${p.variant.variantName})` : "";
@@ -803,14 +800,13 @@ export class OrderService {
         })
         .join("\n");
 
-      // Logic Vendors Summary String
       const vendorsString = order.vendors
         .map((v) => `${v.vendor.companyName} (${v.roleInOrder})`)
         .join("\n");
 
       worksheet.addRow({
         poNumber: order.poNumber,
-        dateOrder: order.dateOrder, // Akan diformat di bawah
+        dateOrder: order.dateOrder,
         salesCategory: order.salesCategory,
         clientName: clientName,
         clientType: clientType,
@@ -822,9 +818,6 @@ export class OrderService {
       });
     });
 
-    // 7. STYLING
-
-    // Header Style (Hijau Solid seperti contoh Product)
     const headerRow = worksheet.getRow(1);
     headerRow.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: "FFFFFF" } };
@@ -839,25 +832,23 @@ export class OrderService {
     // Formatting Data Rows
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber > 1) {
-        // Format Tanggal (Kolom 2)
         const dateCell = row.getCell(2);
         dateCell.numFmt = "dd/mm/yyyy";
         dateCell.alignment = { vertical: "top", horizontal: "center" };
 
-        // Format Currency (Kolom 7 - Total Amount)
         const amountCell = row.getCell(7);
         amountCell.numFmt = "#,##0";
         amountCell.alignment = { vertical: "top", horizontal: "right" };
 
         // Wrap Text & Top Align untuk kolom teks panjang (Produk, Vendor, Alamat)
-        row.getCell(8).alignment = { vertical: "top", wrapText: true }; // Products
-        row.getCell(9).alignment = { vertical: "top", wrapText: true }; // Vendors
-        row.getCell(10).alignment = { vertical: "top", wrapText: true }; // Address
+        row.getCell(8).alignment = { vertical: "top", wrapText: true };
+        row.getCell(9).alignment = { vertical: "top", wrapText: true };
+        row.getCell(10).alignment = { vertical: "top", wrapText: true };
 
         // Default alignment untuk kolom lain
-        row.getCell(1).alignment = { vertical: "top" }; // PO
-        row.getCell(4).alignment = { vertical: "top" }; // Client
-        row.getCell(6).alignment = { vertical: "top" }; // Sales
+        row.getCell(1).alignment = { vertical: "top" };
+        row.getCell(4).alignment = { vertical: "top" };
+        row.getCell(6).alignment = { vertical: "top" };
       }
     });
 
@@ -876,8 +867,6 @@ export class OrderService {
             b2c: { select: { name: true } },
           },
         },
-
-        // 2. Products (Master Data)
         products: {
           include: {
             product: { select: { name: true, sku: true } },
@@ -889,14 +878,9 @@ export class OrderService {
             },
           },
         },
-
-        // 3. Shipments (UPDATED HERE)
         shipments: {
           include: {
-            // A. Vendor Info
             vendor: { select: { companyName: true, trackingUrl: true } },
-
-            // B. Items dalam shipment
             items: {
               include: {
                 orderProduct: {
@@ -906,16 +890,12 @@ export class OrderService {
                 },
               },
             },
-
-            // C. HISTORY TRACKING (PENTING: Untuk Timeline UI)
             history: {
-              orderBy: { date: "desc" }, // Urutkan dari yg paling baru (Atas ke Bawah)
+              orderBy: { date: "desc" },
             },
-
-            // D. NOTES (PENTING: Untuk menampilkan catatan kondisi/dokumen)
             notes: {
               include: {
-                category: true, // Ambil nama kategorinya (misal: "Kondisi Fisik", "Dokumen")
+                category: true,
               },
             },
           },
@@ -928,7 +908,16 @@ export class OrderService {
       throw new ApiError(`Order with ID ${id} not found`, 404);
     }
 
-    // Mapping Data Products (Logic sisa produksi)
+    // ✅ Helper kalkulasi hari
+    const diffDays = (start: Date | null, end: Date | null): number => {
+      if (!start || !end) return 0;
+      return Math.ceil(
+        (new Date(end).getTime() - new Date(start).getTime()) /
+          (1000 * 60 * 60 * 24),
+      );
+    };
+
+    // Mapping Data Products
     const productsFormatted = order.products.map((p) => {
       const producedQty = p.productionTrackers.reduce(
         (sum, t) => sum + (t.status === "COMPLETED" ? t.quantity : 0),
@@ -955,12 +944,118 @@ export class OrderService {
       };
     });
 
+    // ✅ Kalkulasi Duration Summary
+    const durationSummary = (() => {
+      // --- PRODUCTION ---
+      const allTrackers = order.products.flatMap((p) => p.productionTrackers);
+      const prodStarts = allTrackers
+        .map((t) => t.startDate)
+        .filter(Boolean) as Date[];
+      const prodEnds = allTrackers
+        .map((t) => t.endDate)
+        .filter(Boolean) as Date[];
+
+      const prodStart = prodStarts.length
+        ? new Date(Math.min(...prodStarts.map((d) => d.getTime())))
+        : null;
+      const prodEnd = prodEnds.length
+        ? new Date(Math.max(...prodEnds.map((d) => d.getTime())))
+        : null;
+      const productionDays = diffDays(prodStart, prodEnd);
+
+      // --- INBOUND ---
+      const inboundShipments = order.shipments.filter(
+        (s) => s.type === "INBOUND",
+      );
+      const inboundStart = inboundShipments.length
+        ? new Date(
+            Math.min(
+              ...inboundShipments.map((s) =>
+                new Date(s.departureDate || s.createdAt).getTime(),
+              ),
+            ),
+          )
+        : null;
+      const inboundEnd =
+        inboundShipments.length > 0 &&
+        inboundShipments.every((s) => s.arrivalDate)
+          ? new Date(
+              Math.max(
+                ...inboundShipments.map((s) =>
+                  new Date(s.arrivalDate!).getTime(),
+                ),
+              ),
+            )
+          : null;
+      const inboundDays = diffDays(inboundStart, inboundEnd);
+
+      // --- OUTBOUND ---
+      const outboundShipments = order.shipments.filter(
+        (s) => s.type === "OUTBOUND",
+      );
+      const outboundStart = outboundShipments.length
+        ? new Date(
+            Math.min(
+              ...outboundShipments.map((s) =>
+                new Date(s.departureDate || s.createdAt).getTime(),
+              ),
+            ),
+          )
+        : null;
+      const outboundEnd =
+        outboundShipments.length > 0 &&
+        outboundShipments.every((s) => s.arrivalDate)
+          ? new Date(
+              Math.max(
+                ...outboundShipments.map((s) =>
+                  new Date(s.arrivalDate!).getTime(),
+                ),
+              ),
+            )
+          : null;
+      const outboundDays = diffDays(outboundStart, outboundEnd);
+
+      // --- TOTAL ---
+      const totalStart = prodStart || inboundStart || outboundStart;
+      const totalEnd = outboundEnd || inboundEnd || prodEnd || new Date();
+      const totalDays = diffDays(totalStart, totalEnd);
+
+      return {
+        production: {
+          days: productionDays,
+          startDate: prodStart,
+          endDate: prodEnd,
+          isComplete:
+            allTrackers.length > 0 && allTrackers.every((t) => t.endDate),
+        },
+        inbound: {
+          days: inboundDays,
+          startDate: inboundStart,
+          endDate: inboundEnd,
+          isComplete: inboundShipments.length > 0 && inboundEnd !== null,
+        },
+        outbound: {
+          days: outboundDays,
+          startDate: outboundStart,
+          endDate: outboundEnd,
+          isComplete: outboundShipments.length > 0 && outboundEnd !== null,
+        },
+        total: {
+          days: totalDays,
+          startDate: totalStart,
+          endDate: outboundEnd,
+          isComplete: outboundEnd !== null,
+        },
+      };
+    })();
+
     return {
       id: order.id,
       poNumber: order.poNumber,
       client: order.client,
       products: productsFormatted,
-      shipments: order.shipments, // Data shipment sekarang sudah lengkap dengan history & notes
+      shipments: order.shipments,
+      durationSummary,
     };
   }
 

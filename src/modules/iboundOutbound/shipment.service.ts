@@ -154,7 +154,6 @@ export class ShipmentService {
         });
       }
 
-      // 3. Update Status Parent (Header Shipment)
       const isFinal = [
         ShipmentStatus.ARRIVED_DESTINATION,
         ShipmentStatus.COMPLETED,
@@ -165,13 +164,15 @@ export class ShipmentService {
         data: {
           status: data.status,
           arrivalDate: isFinal ? new Date(data.date) : undefined,
+          ...(data.trackingNumber && data.trackingNumber.trim() !== ""
+            ? { trackingNumber: data.trackingNumber.trim() }
+            : {}),
         },
       });
 
       return history;
     });
   }
-
   // =================================================================
   // 3. EDIT INFO HEADER (Tanpa nambah history)
   // Gunanya: Kalau admin typo input resi, atau mau ganti kurir
@@ -227,12 +228,32 @@ export class ShipmentService {
         order: {
           include: {
             sales: true,
-
             pic: true,
             client: {
               include: {
                 b2b: { include: { department: true } },
                 b2c: true,
+              },
+            },
+            invoices: {
+              where: { status: { not: "CANCELLED" } },
+              orderBy: { createdAt: "asc" },
+              select: {
+                id: true,
+                invoiceNumber: true,
+                totalAmount: true,
+                status: true,
+                category: true,
+                createdAt: true,
+              },
+            },
+            shipments: {
+              orderBy: { createdAt: "asc" },
+              select: {
+                id: true,
+                deliveryNoteNumber: true,
+                createdAt: true,
+                type: true,
               },
             },
           },
@@ -248,11 +269,9 @@ export class ShipmentService {
             },
           },
         },
-        // INCLUDE HISTORY LENGKAP (Sorted Terbaru -> Terlama)
         history: {
           orderBy: { date: "desc" },
         },
-        // Include Notes
         notes: {
           include: { category: true },
         },
@@ -261,6 +280,32 @@ export class ShipmentService {
 
     if (!shipment) throw new ApiError("Shipment not found", 404);
 
-    return shipment;
+    const allOrderShipments = shipment.order.shipments;
+    const currentShipmentIndex = allOrderShipments.findIndex(
+      (s) => s.id === id,
+    );
+
+    const previousDO =
+      currentShipmentIndex > 0
+        ? allOrderShipments[currentShipmentIndex - 1]
+        : null;
+
+    return {
+      ...shipment,
+
+      invoiceNumbers: shipment.order.invoices.map((inv) => inv.invoiceNumber),
+      invoices: shipment.order.invoices,
+
+      previousDO: previousDO
+        ? {
+            id: previousDO.id,
+            deliveryNoteNumber: previousDO.deliveryNoteNumber,
+          }
+        : null,
+
+      isFirstShipment: currentShipmentIndex === 0,
+      shipmentSequence: currentShipmentIndex + 1,
+      totalShipments: allOrderShipments.length,
+    };
   }
 }
