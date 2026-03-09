@@ -417,10 +417,6 @@ export class QuotationService {
     return await this.prisma.quotation.delete({ where: { id } });
   }
 
-  // ==========================================
-  // 6. FOLLOW UP FEATURES
-  // ==========================================
-
   // Tambah Follow Up Baru
   async addFollowUp(quotationId: string, data: CreateFollowUpDTO) {
     const quotation = await this.prisma.quotation.findUnique({

@@ -728,8 +728,8 @@ model Order {
   purchaseChannelId String?
   purchaseChannel   PurchaseChannel? @relation(fields: [purchaseChannelId], references: [id])
 
-  client             Client              @relation(fields: [clientId], references: [id])
-  sales              Sales               @relation(fields: [salesId], references: [id])
+  client             Client                @relation(fields: [clientId], references: [id])
+  sales              Sales                 @relation(fields: [salesId], references: [id])
   products           OrderProduct[]
   vendors            OrderVendor[]
   cashflows          Cashflow[]
@@ -739,6 +739,7 @@ model Order {
   deliveryNotes      DeliveryNote[]
   quotations         Quotation[]
   cashflowSummary    CashflowSummary[]
+  sampleFollowUps    OrderSampleFollowUp[]
 
   @@map("orders")
 }
@@ -772,6 +773,21 @@ model OrderVendor {
   vendor         Vendor @relation(fields: [vendorId], references: [id])
 
   @@map("order_vendors")
+}
+
+model OrderSampleFollowUp {
+  id      String   @id @default(uuid())
+  orderId String
+  name    String
+  date    DateTime
+  isDone  Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_sample_follow_ups")
 }
 
 // ===============================================

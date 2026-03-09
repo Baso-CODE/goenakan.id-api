@@ -164,7 +164,19 @@ export class OrderService {
           purchaseChannel: true,
         },
       });
-
+      if (
+        orderCore.salesCategory === "SAMPLE" &&
+        data.sampleFollowUps &&
+        data.sampleFollowUps.length > 0
+      ) {
+        await tx.orderSampleFollowUp.createMany({
+          data: data.sampleFollowUps.map((fu) => ({
+            orderId: order.id,
+            name: fu.name,
+            date: new Date(fu.date),
+          })),
+        });
+      }
       return order;
     });
 
@@ -417,6 +429,9 @@ export class OrderService {
           },
         },
         invoices: true,
+        sampleFollowUps: {
+          orderBy: { date: "asc" },
+        },
       },
     });
 
@@ -593,6 +608,13 @@ export class OrderService {
 
       vendors: vendorsDetail,
       invoices: invoicesDetail,
+      sampleFollowUps: order.sampleFollowUps.map((fu) => ({
+        id: fu.id,
+        name: fu.name,
+        date: fu.date,
+        isDone: fu.isDone,
+        createdAt: fu.createdAt,
+      })),
     };
   }
 

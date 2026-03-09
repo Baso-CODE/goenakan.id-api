@@ -1,5 +1,7 @@
+import { Type } from "class-transformer";
 import {
   IsArray,
+  IsDate,
   IsDateString,
   IsEnum,
   IsNotEmpty,
@@ -8,8 +10,17 @@ import {
   IsString,
   ValidateNested,
 } from "class-validator";
-import { Type } from "class-transformer";
 
+class SampleFollowUpDTO {
+  @IsNotEmpty()
+  @IsString()
+  name!: string;
+
+  @IsNotEmpty()
+  @Type(() => Date)
+  @IsDate()
+  date!: Date;
+}
 class OrderProductDTO {
   @IsString()
   productId!: string;
@@ -68,6 +79,11 @@ export class CreateOrderDTO {
   @IsString({ each: true })
   vendorIds!: string[];
 
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SampleFollowUpDTO)
+  sampleFollowUps?: SampleFollowUpDTO[];
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => OrderProductDTO)
