@@ -248,9 +248,8 @@ export class QuotationService {
     const sequence = String(totalQuotations + 1).padStart(4, "0");
 
     // B. Client Code Logic
-    let clientCode = "NOC"; // Default fallback
+    let clientCode = "NOC";
     if (data.clientId) {
-      // Jika Client Existing, ambil dari database
       const client = await this.prisma.client.findUnique({
         where: { id: data.clientId },
         select: { custCode: true },
@@ -259,7 +258,6 @@ export class QuotationService {
         clientCode = client.custCode;
       }
     } else if (data.manualClientName) {
-      // Jika Manual, generate singkatan (AMI, BAA, NYR)
       clientCode = this.generateManualClientCode(data.manualClientName);
     }
 

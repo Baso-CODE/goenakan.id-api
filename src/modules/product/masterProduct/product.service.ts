@@ -1072,6 +1072,7 @@ export class ProductService {
           sku: true,
           basePrice: true,
           isCustom: true,
+          description: true,
           category: {
             select: { id: true, name: true },
           },
