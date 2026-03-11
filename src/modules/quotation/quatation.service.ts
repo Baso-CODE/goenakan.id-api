@@ -307,7 +307,6 @@ export class QuotationService {
       },
       include: {
         items: true,
-        // Sertakan notes & category saat return data agar bisa langsung ditampilkan
         notes: {
           include: {
             category: true,
