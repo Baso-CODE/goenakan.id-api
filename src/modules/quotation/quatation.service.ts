@@ -210,11 +210,6 @@ export class QuotationService {
   // ==========================================
   // 3. CREATE QUOTATION
   // ==========================================
-  // ================================================================
-  // createQuotation — dengan 1 image per item
-  // File fieldname format dari frontend: "items[0][image]", "items[1][image]"
-  // ================================================================
-
   async createQuotation(
     data: CreateQuotationDTO,
     files: Express.Multer.File[],
@@ -532,6 +527,16 @@ export class QuotationService {
           },
         },
 
+        pic: {
+          select: {
+            id: true,
+            name: true,
+            prefix: true,
+            phone: true,
+            email: true,
+          },
+        },
+
         items: {
           include: {
             product: {
@@ -552,7 +557,7 @@ export class QuotationService {
           },
         },
 
-        // 3. Notes (Syarat & Ketentuan)
+        // 4. Notes
         notes: {
           include: {
             category: true,
@@ -560,21 +565,33 @@ export class QuotationService {
           orderBy: { createdAt: "asc" },
         },
 
-        // 4. Data Sales dan PIC
-        order: {
-          include: {
-            sales: true,
-            pic: true,
-          },
-        },
+        // 5. Sales
+        sales: true,
       },
     });
 
-    // Jika data tidak ditemukan, lemparkan error 404
     if (!quotation) {
       throw new ApiError("Quotation not found", 404);
     }
 
-    return quotation;
+    const normalizedItems = quotation.items.map((item) => {
+      let imageUrl: string | null = null;
+
+      if (item.product?.images?.[0]?.url) {
+        imageUrl = item.product.images[0].url;
+      } else if (item.imageUrl) {
+        imageUrl = item.imageUrl;
+      }
+
+      return {
+        ...item,
+        imageUrl,
+      };
+    });
+
+    return {
+      ...quotation,
+      items: normalizedItems,
+    };
   }
 }
