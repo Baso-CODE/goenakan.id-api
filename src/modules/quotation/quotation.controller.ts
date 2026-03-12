@@ -44,9 +44,10 @@ export class QuotationController {
   // === CREATE ===
   create = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // Body sudah divalidasi oleh middleware validateBody(CreateQuotationDTO)
       const body = req.body as CreateQuotationDTO;
-      const result = await this.quotationService.createQuotation(body);
+
+      const files = (req.files as Express.Multer.File[]) ?? [];
+      const result = await this.quotationService.createQuotation(body, files);
 
       res.status(201).json(result);
     } catch (error) {

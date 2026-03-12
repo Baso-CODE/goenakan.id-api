@@ -6,8 +6,11 @@ import { validateBody } from "../../middleware/validation.middleware";
 import { QuotationController } from "./quotation.controller";
 
 // DTOs
+import multer from "multer";
+import { parseFormData } from "../../middleware/parseFormData.middleware";
 import { CreateFollowUpDTO } from "./dto/follow-up.dto";
 import { CreateQuotationDTO, UpdateQuotationDTO } from "./dto/quotation.dto";
+const upload = multer({ storage: multer.memoryStorage() });
 
 @autoInjectable()
 export class QuotationRouter {
@@ -52,6 +55,8 @@ export class QuotationRouter {
       "/",
       this.nextAuthMiddleware.verifyNextAuthToken,
       verifyRole(["SUPER_ADMIN", "ADMIN_INVOICE"]),
+      upload.any(),
+      parseFormData,
       validateBody(CreateQuotationDTO),
       this.quotationController.create,
     );

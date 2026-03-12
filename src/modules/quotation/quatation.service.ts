@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { injectable } from "tsyringe";
 
 import { ApiError } from "../../utils/api-error";
+import { CloudinaryService } from "../cloudinary/cloudinary.service";
 import { PaginationService } from "../pagination/pagination.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateFollowUpDTO } from "./dto/follow-up.dto";
@@ -12,6 +13,7 @@ export class QuotationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pagination: PaginationService,
+    private readonly cloudinary: CloudinaryService,
   ) {}
 
   // Helper: Konversi Bulan ke Romawi
@@ -208,25 +210,56 @@ export class QuotationService {
   // ==========================================
   // 3. CREATE QUOTATION
   // ==========================================
-  async createQuotation(data: CreateQuotationDTO) {
-    // 1. Validasi Hybrid Client
+  // ================================================================
+  // createQuotation — dengan 1 image per item
+  // File fieldname format dari frontend: "items[0][image]", "items[1][image]"
+  // ================================================================
+
+  async createQuotation(
+    data: CreateQuotationDTO,
+    files: Express.Multer.File[],
+  ) {
     if (!data.clientId && !data.manualClientName) {
       throw new ApiError(
         "Client information is required. Select a client from DB or input manually.",
         400,
       );
     }
+    const fileByItemIndex: Record<number, Express.Multer.File> = {};
+    if (files && files.length > 0) {
+      for (const file of files) {
+        const match = file.fieldname.match(/^items\[(\d+)\]\[image\]$/);
+        if (match) {
+          const idx = parseInt(match[1], 10);
+          fileByItemIndex[idx] = file;
+        }
+      }
+    }
 
-    // 2. Kalkulasi Item & Subtotal
+    // 3. Upload image per item
+    const uploadedImages: Record<number, { url: string; publicId: string }> =
+      {};
+    for (const [idxStr, file] of Object.entries(fileByItemIndex)) {
+      const idx = parseInt(idxStr, 10);
+      try {
+        const result = await this.cloudinary.upload(file, {
+          folder: "quotation-items",
+        });
+        uploadedImages[idx] = {
+          url: result.secure_url,
+          publicId: result.public_id,
+        };
+      } catch (err) {
+        throw new ApiError(`Gagal upload image untuk item ke-${idx + 1}`, 500);
+      }
+    }
+
+    // 4. Kalkulasi Item
     let subTotal = 0;
-
-    // Mapping items untuk Prisma Create
-    const itemsToCreate = data.items.map((item) => {
-      // Hitung total per baris: (Qty * Harga) - Diskon
+    const itemsToCreate = data.items.map((item, index) => {
       const lineTotal = item.quantity * item.unitPrice - (item.discount || 0);
-
       subTotal += lineTotal;
-
+      const img = uploadedImages[index];
       return {
         productId: item.productId || null,
         productName: item.productName,
@@ -237,86 +270,108 @@ export class QuotationService {
         totalPrice: lineTotal,
         customization: item.customization ?? Prisma.JsonNull,
         remarks: item.remarks,
+        imageUrl: img?.url ?? null,
+        imagePublicId: img?.publicId ?? null,
       };
     });
 
-    // 3. Hitung Grand Total
     const totalAmount = subTotal;
 
-    // A. Sequence (0001)
-    const totalQuotations = await this.prisma.quotation.count();
-    const sequence = String(totalQuotations + 1).padStart(4, "0");
-
-    // B. Client Code Logic
+    // 5. Client Code
     let clientCode = "NOC";
     if (data.clientId) {
       const client = await this.prisma.client.findUnique({
         where: { id: data.clientId },
         select: { custCode: true },
       });
-      if (client?.custCode) {
-        clientCode = client.custCode;
-      }
+      if (client?.custCode) clientCode = client.custCode;
     } else if (data.manualClientName) {
       clientCode = this.generateManualClientCode(data.manualClientName);
     }
 
-    // C. Date Parts
     const now = new Date();
-    const year = now.getFullYear();
     const romanMonth = this.getRomanMonth(now);
+    const year = now.getFullYear();
 
-    const quotationNumber = `QTN_${sequence}_${clientCode}_${romanMonth}_${year}`;
-
-    const newQuotation = await this.prisma.quotation.create({
-      data: {
-        quotationNumber,
-        date: data.date || new Date(),
-        validUntil: data.validUntil,
-        status: "DRAFT",
-        salesId: data.salesId || null,
-
-        clientId: data.clientId || null,
-        manualClientName: data.manualClientName,
-        manualClientCompany: data.manualClientCompany,
-        manualClientEmail: data.manualClientEmail,
-        manualClientPhone: data.manualClientPhone,
-        manualClientAddress: data.manualClientAddress,
-
-        subTotal,
-        totalAmount,
-
-        notes:
-          data.notes && data.notes.length > 0
-            ? {
-                createMany: {
-                  data: data.notes.flatMap((note) =>
-                    note.contents.map((text) => ({
-                      categoryId: note.categoryId,
-                      content: text,
-                    })),
-                  ),
-                },
-              }
-            : undefined,
-
-        // Nested Create Items
-        items: {
-          create: itemsToCreate,
-        },
-      },
-      include: {
-        items: true,
-        notes: {
-          include: {
-            category: true,
-          },
-        },
-        sales: true,
-      },
+    // 6. ✅ Cari sequence tertinggi dari SEMUA quotationNumber yang ada
+    // Tidak bergantung pada createdAt — scan semua nomor, ambil angka terbesar
+    const allQuotations = await this.prisma.quotation.findMany({
+      select: { quotationNumber: true },
     });
 
-    return newQuotation;
+    let maxSequence = 0;
+    for (const q of allQuotations) {
+      const parts = q.quotationNumber.split("_");
+      if (parts.length >= 2) {
+        const num = parseInt(parts[1], 10);
+        if (!isNaN(num) && num > maxSequence) {
+          maxSequence = num;
+        }
+      }
+    }
+
+    // 7. Retry loop — untuk handle race condition saat traffic tinggi
+    const MAX_RETRIES = 5;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      const nextSequence = maxSequence + 1 + attempt; // ✅ setiap retry increment langsung
+      const sequence = String(nextSequence).padStart(4, "0");
+      const quotationNumber = `QTN_${sequence}_${clientCode}_${romanMonth}_${year}`;
+
+      try {
+        const newQuotation = await this.prisma.quotation.create({
+          data: {
+            quotationNumber,
+            date: data.date || new Date(),
+            validUntil: data.validUntil,
+            status: "DRAFT",
+            salesId: data.salesId || null,
+            clientId: data.clientId || null,
+            manualClientName: data.manualClientName,
+            manualClientCompany: data.manualClientCompany,
+            manualClientEmail: data.manualClientEmail,
+            manualClientPhone: data.manualClientPhone,
+            manualClientAddress: data.manualClientAddress,
+            subTotal,
+            totalAmount,
+            notes:
+              data.notes && data.notes.length > 0
+                ? {
+                    createMany: {
+                      data: data.notes.flatMap((note) =>
+                        note.contents.map((text) => ({
+                          categoryId: note.categoryId,
+                          content: text,
+                        })),
+                      ),
+                    },
+                  }
+                : undefined,
+            items: { create: itemsToCreate },
+          },
+          include: {
+            items: true,
+            notes: { include: { category: true } },
+            client: { select: { id: true, custCode: true, type: true } },
+            sales: true,
+          },
+        });
+
+        return newQuotation;
+      } catch (error: any) {
+        if (error?.code === "P2002" && attempt < MAX_RETRIES - 1) {
+          console.warn(
+            `Duplicate quotationNumber ${quotationNumber}, retrying... (attempt ${attempt + 1})`,
+          );
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw new ApiError(
+      "Failed to generate unique quotation number after multiple attempts",
+      500,
+    );
   }
   // ==========================================
   // 4. UPDATE QUOTATION

@@ -4,9 +4,16 @@ import { NextFunction, Request, Response } from "express";
 
 export function validateBody(dtoClass: any) {
   return async (req: Request, res: Response, next: NextFunction) => {
-    const dtoInstance = plainToInstance(dtoClass, req.body);
+    const dtoInstance = plainToInstance(dtoClass, req.body, {
+      enableImplicitConversion: false,
+      excludeExtraneousValues: false,
+    });
 
-    const errors = await validate(dtoInstance);
+    const errors = await validate(dtoInstance, {
+      skipUndefinedProperties: true,
+      whitelist: true,
+      forbidNonWhitelisted: false,
+    });
 
     if (errors.length > 0) {
       const message = errors
@@ -16,6 +23,7 @@ export function validateBody(dtoClass: any) {
       res.status(400).send({ message });
       return;
     }
+    req.body = dtoInstance;
 
     next();
   };

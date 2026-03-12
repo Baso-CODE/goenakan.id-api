@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   IsInt,
   IsNotEmpty,
@@ -9,8 +9,15 @@ import {
   Min,
 } from "class-validator";
 
+// Sama seperti di quotation.dto.ts
+const EmptyStringToUndefined = Transform(({ value }) =>
+  value === "" || value === null ? undefined : value,
+);
+
 export class CreateQuotationItemDTO {
+  // ✅ productId: "" dari frontend → undefined → skip @IsUUID
   @IsOptional()
+  @EmptyStringToUndefined
   @IsUUID()
   productId?: string;
 
@@ -22,7 +29,6 @@ export class CreateQuotationItemDTO {
   @IsString()
   description?: string;
 
-  // === PERHITUNGAN ===
   @IsNotEmpty()
   @IsInt()
   @Min(1)

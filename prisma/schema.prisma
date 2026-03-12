@@ -237,8 +237,9 @@ model ClientB2BPIC {
   email       String?
   phone       String?
 
-  clientB2B ClientB2B @relation(fields: [clientB2BId], references: [id])
-  orders    Order[]
+  clientB2B  ClientB2B   @relation(fields: [clientB2BId], references: [id])
+  orders     Order[]
+  quotations Quotation[]
 
   @@map("client_b2b_pics")
 }
@@ -958,7 +959,9 @@ model Quotation {
   status          QuotationStatus @default(DRAFT)
 
   clientId String?
-  client   Client? @relation(fields: [clientId], references: [id])
+  client   Client?       @relation(fields: [clientId], references: [id])
+  picId    String?
+  pic      ClientB2BPIC? @relation(fields: [picId], references: [id])
 
   manualClientName    String?
   manualClientCompany String?
@@ -1053,6 +1056,9 @@ model QuotationItem {
 
   customization Json?
   remarks       String?
+
+  imageUrl      String?
+  imagePublicId String?
 
   quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
 

@@ -81,7 +81,6 @@ export class SalesService {
 
         await tx.salesBank.createMany({
           data: bankData,
-          // Lewati duplikasi jika ada (berdasarkan @@id([salesId, accountNumber]))
           skipDuplicates: true,
         });
       }
