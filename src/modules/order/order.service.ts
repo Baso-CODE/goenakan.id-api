@@ -209,7 +209,6 @@ export class OrderService {
         where: { id: item.productId },
         include: {
           productVariants: true,
-          priceTiers: { orderBy: { minQuantity: "desc" } },
         },
       });
 
@@ -217,44 +216,34 @@ export class OrderService {
         throw new ApiError(`Product with ID ${item.productId} not found`, 404);
       }
 
-      let finalPrice = 0;
+      if (product.isCustom && !item.variantId) {
+        throw new ApiError(
+          `Variant is required for custom product: ${product.name}`,
+          400,
+        );
+      }
 
-      if (product.isCustom) {
-        if (!item.variantId) {
-          throw new ApiError(
-            `Variant is required for custom product: ${product.name}`,
-            400,
-          );
-        }
-        const variant = product.productVariants.find(
+      if (product.isCustom && item.variantId) {
+        const variantExists = product.productVariants.find(
           (v) => v.id === item.variantId,
         );
-        if (!variant || !variant.price) {
+        if (!variantExists) {
           throw new ApiError(
             `Invalid variant for product: ${product.name}`,
             400,
           );
         }
-        finalPrice = Number(variant.price);
-      } else {
-        finalPrice = Number(product.basePrice);
-        if (product.priceTiers && product.priceTiers.length > 0) {
-          const applicableTier = product.priceTiers.find(
-            (t) => item.quantity >= t.minQuantity,
-          );
-          if (applicableTier) {
-            finalPrice = Number(applicableTier.price);
-          }
-        }
       }
 
+      // ✅ Gunakan harga dari input user (item.price), bukan dari product/variant
+      const finalPrice = Number(item.price);
       const subtotal = finalPrice * item.quantity;
       totalAmount += subtotal;
 
       const productData: any = {
         product: { connect: { id: item.productId } },
         quantity: item.quantity,
-        unitPrice: finalPrice,
+        unitPrice: finalPrice, // ✅ harga dari user
         variant: item.variantId
           ? { connect: { id: item.variantId } }
           : undefined,
