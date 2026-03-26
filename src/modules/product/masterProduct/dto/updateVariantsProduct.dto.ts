@@ -6,6 +6,10 @@ export class UpdateProductVariantsDTO {
     variantName?: string;
     price?: number;
     stock: number;
+    weight?: number;
+    width?: number;
+    height?: number;
+    length?: number;
     attributeValueIds: string[];
     _isDeleted?: boolean;
     images: {

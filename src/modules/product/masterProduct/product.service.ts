@@ -233,6 +233,10 @@ export class ProductService {
             variantName,
             productId: product.id,
             price: variantPrice,
+            weight: meta?.weight ?? null,
+            width: meta?.width ?? null,
+            height: meta?.height ?? null,
+            length: meta?.length ?? null,
             attributeValues: {
               createMany: {
                 data: combination.map((valueId) => ({
@@ -607,7 +611,6 @@ export class ProductService {
         const remainingVariants = await this.prisma.productVariant.count({
           where: { productId },
         });
-        variantIndexCounter = remainingVariants + 1;
       }
     } else {
       const remainingVariants = await this.prisma.productVariant.count({
@@ -637,6 +640,10 @@ export class ProductService {
             price: v.price,
             stock: v.stock,
             variantName: v.variantName,
+            weight: v.weight ?? null,
+            width: v.width ?? null,
+            height: v.height ?? null,
+            length: v.length ?? null,
           },
         });
         variantId = created.id;
@@ -652,6 +659,10 @@ export class ProductService {
             price: v.price,
             stock: v.stock,
             variantName: v.variantName,
+            weight: v.weight ?? null,
+            width: v.width ?? null,
+            height: v.height ?? null,
+            length: v.length ?? null,
           },
         });
       }

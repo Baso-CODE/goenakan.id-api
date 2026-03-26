@@ -31,6 +31,30 @@ export class VariantImageMetadataDTO {
   @IsInt({ message: "price must be an integer" })
   @Min(0, { message: "price cannot be negative" })
   price!: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: "weight must be a valid number" })
+  @Type(() => Number)
+  @Min(0, { message: "weight cannot be negative" })
+  weight?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: "width must be a valid number" })
+  @Type(() => Number)
+  @Min(0, { message: "width cannot be negative" })
+  width?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: "height must be a valid number" })
+  @Type(() => Number)
+  @Min(0, { message: "height cannot be negative" })
+  height?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: "length must be a valid number" })
+  @Type(() => Number)
+  @Min(0, { message: "length cannot be negative" })
+  length?: number;
 }
 
 export class CreateProductAttributeDTO {
