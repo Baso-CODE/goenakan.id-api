@@ -456,9 +456,8 @@ export class ProductService {
     const updatedProduct = await this.prisma.product.findUnique({
       where: { id },
       include: {
-        images: true, // Pastikan ini termasuk semua media yang relevan
-        videos: true, // Sertakan juga video jika perlu
-        // ... sertakan relasi lain yang dibutuhkan oleh frontend Anda
+        images: true,
+        videos: true,
       },
     });
 

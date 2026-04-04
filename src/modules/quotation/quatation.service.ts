@@ -381,7 +381,6 @@ export class QuotationService {
     const { items, notes, ...headerData } = data;
 
     return await this.prisma.$transaction(async (tx) => {
-      // Default gunakan nilai lama jika item tidak diupdate
       let newSubTotal = existing.subTotal;
       let newTotalAmount = existing.totalAmount;
 
@@ -412,7 +411,6 @@ export class QuotationService {
 
         await tx.quotationItem.createMany({ data: itemsPayload });
 
-        // Update Variable Total dengan nilai baru hasil kalkulasi
         newSubTotal = new Prisma.Decimal(calculatedSubTotal);
         newTotalAmount = newSubTotal;
       }
@@ -434,11 +432,42 @@ export class QuotationService {
         }
       }
 
+      // === LOGIC C: BUILD UPDATE PAYLOAD ===
       const updatePayload: Prisma.QuotationUncheckedUpdateInput = {
-        ...headerData,
+        // Header fields
+        ...(headerData.date && { date: new Date(headerData.date) }),
+        // ✅ validUntil: set ke null jika dikirim null/undefined eksplisit, atau update jika ada nilai
+        ...(headerData.validUntil !== undefined && {
+          validUntil: headerData.validUntil
+            ? new Date(headerData.validUntil)
+            : null,
+        }),
+        ...(headerData.status && { status: headerData.status as any }),
+        ...(headerData.clientId !== undefined && {
+          clientId: headerData.clientId || null,
+        }),
+        ...(headerData.picId !== undefined && {
+          picId: headerData.picId || null,
+        }),
+        ...(headerData.manualClientName !== undefined && {
+          manualClientName: headerData.manualClientName,
+        }),
+        ...(headerData.manualClientCompany !== undefined && {
+          manualClientCompany: headerData.manualClientCompany,
+        }),
+        ...(headerData.manualClientEmail !== undefined && {
+          manualClientEmail: headerData.manualClientEmail || null,
+        }),
+        ...(headerData.manualClientPhone !== undefined && {
+          manualClientPhone: headerData.manualClientPhone,
+        }),
+        ...(headerData.manualClientAddress !== undefined && {
+          manualClientAddress: headerData.manualClientAddress,
+        }),
+
+        // Financials
         subTotal: newSubTotal,
         totalAmount: newTotalAmount,
-        ...(headerData.status && { status: headerData.status as any }),
       };
 
       return await tx.quotation.update({
@@ -527,6 +556,7 @@ export class QuotationService {
           },
         },
 
+        // 2. PIC
         pic: {
           select: {
             id: true,
@@ -537,6 +567,7 @@ export class QuotationService {
           },
         },
 
+        // 3. Items
         items: {
           include: {
             product: {
@@ -574,23 +605,31 @@ export class QuotationService {
       throw new ApiError("Quotation not found", 404);
     }
 
+    // 🔥 Normalize items: satukan imageUrl + ekspos remarks
     const normalizedItems = quotation.items.map((item) => {
       let imageUrl: string | null = null;
 
       if (item.product?.images?.[0]?.url) {
+        // Item dari DB — pakai gambar product
         imageUrl = item.product.images[0].url;
       } else if (item.imageUrl) {
+        // Item manual — pakai gambar upload
         imageUrl = item.imageUrl;
       }
 
       return {
         ...item,
         imageUrl,
+        // 🔥 remarks sudah ikut dari ...item, tapi eksplisit agar jelas
+        remarks: item.remarks ?? null,
       };
     });
 
     return {
       ...quotation,
+      // 🔥 validUntil sudah ikut dari ...quotation (ada di model Quotation)
+      // Eksplisit untuk kejelasan dokumentasi
+      validUntil: quotation.validUntil ?? null,
       items: normalizedItems,
     };
   }
