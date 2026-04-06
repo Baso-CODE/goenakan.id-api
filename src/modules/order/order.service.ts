@@ -172,8 +172,12 @@ export class OrderService {
         await tx.orderSampleFollowUp.createMany({
           data: data.sampleFollowUps.map((fu) => ({
             orderId: order.id,
-            name: fu.name,
-            date: new Date(fu.date),
+            date: fu.date ? new Date(fu.date) : new Date(),
+            name: fu.name || null,
+            method: fu.method || null,
+            notes: fu.notes || null,
+            nextAction: fu.nextAction || null,
+            isDone: fu.isDone ?? false,
           })),
         });
       }
@@ -343,6 +347,7 @@ export class OrderService {
       include: {
         products: true,
         vendors: true,
+        sampleFollowUps: true,
       },
     });
 
@@ -388,6 +393,15 @@ export class OrderService {
           remarks: p.remarks || "",
         };
       }),
+      sampleFollowUps:
+        order.sampleFollowUps?.map((fu) => ({
+          name: fu.name || "",
+          date: fu.date ? fu.date.toISOString() : null,
+          method: fu.method || "",
+          notes: fu.notes || "",
+          nextAction: fu.nextAction || "",
+          isDone: fu.isDone || false,
+        })) || [],
     };
 
     return formValues;

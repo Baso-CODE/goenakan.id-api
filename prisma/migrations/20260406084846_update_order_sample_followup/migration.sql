@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE `order_sample_follow_ups` ADD COLUMN `method` VARCHAR(191) NULL,
+    ADD COLUMN `nextAction` VARCHAR(191) NULL,
+    ADD COLUMN `notes` TEXT NULL,
+    MODIFY `name` VARCHAR(191) NULL,
+    MODIFY `date` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3);

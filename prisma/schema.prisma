@@ -787,9 +787,14 @@ model OrderVendor {
 model OrderSampleFollowUp {
   id      String   @id @default(uuid())
   orderId String
-  name    String
-  date    DateTime
-  isDone  Boolean  @default(false)
+  date    DateTime @default(now())
+
+  name       String?
+  method     String?
+  notes      String? @db.Text
+  nextAction String?
+
+  isDone Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

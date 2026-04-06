@@ -1,6 +1,7 @@
 import { Type } from "class-transformer";
 import {
   IsArray,
+  IsBoolean,
   IsDate,
   IsDateString,
   IsEnum,
@@ -12,14 +13,30 @@ import {
 } from "class-validator";
 
 class SampleFollowUpDTO {
-  @IsNotEmpty()
-  @IsString()
-  name!: string;
-
-  @IsNotEmpty()
+  @IsOptional()
   @Type(() => Date)
   @IsDate()
-  date!: Date;
+  date?: Date;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  method?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @IsString()
+  nextAction?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isDone?: boolean;
 }
 class OrderProductDTO {
   @IsString()
