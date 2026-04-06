@@ -1,4 +1,3 @@
-// src/modules/invoice/dto/createInvoice.dto.ts
 import { Type } from "class-transformer";
 import {
   IsArray,
@@ -12,7 +11,6 @@ import {
   ValidateNested,
 } from "class-validator";
 
-// Sesuaikan dengan Enum di Schema.prisma Anda
 export enum InvoiceCategory {
   DP = "DP",
   FULL_PAYMENT = "FULL_PAYMENT",
@@ -32,6 +30,7 @@ export enum PaymentMethod {
   CREDIT_CARD = "CREDIT_CARD",
   QRIS = "QRIS",
 }
+
 class SelectedItemDTO {
   @IsNotEmpty()
   @IsString()
@@ -42,7 +41,7 @@ class SelectedItemDTO {
   @Min(1)
   quantity!: number;
 }
-// DTO untuk setiap Note
+
 class InvoiceNoteInputDTO {
   @IsNotEmpty()
   @IsString()
@@ -67,9 +66,20 @@ export class CreateInvoiceDTO {
   @IsEnum(InvoiceStatus)
   status?: InvoiceStatus = InvoiceStatus.UNPAID;
 
+  // Tanggal jatuh tempo
   @IsOptional()
   @IsString()
   dueDate?: string; // Format YYYY-MM-DD
+
+  // 🔥 Tanggal pembayaran aktual dilakukan
+  @IsOptional()
+  @IsString()
+  paymentDate?: string; // Format YYYY-MM-DD — diisi saat pembayaran dikonfirmasi
+
+  // 🔥 Tanggal lunas (bisa berbeda dengan paymentDate jika ada cicilan)
+  @IsOptional()
+  @IsString()
+  paidAt?: string; // Format YYYY-MM-DD
 
   @IsOptional()
   @IsEnum(PaymentMethod)
@@ -77,18 +87,14 @@ export class CreateInvoiceDTO {
 
   @IsOptional()
   @IsString()
-  remarks?: string; // Catatan, misal: "Cicilan 1 dari 3"
+  remarks?: string;
 
-  // === Field Khusus Perhitungan ===
-
-  // Jika Category = DP, isi field ini (0 - 100)
   @IsOptional()
   @IsNumber()
   @Min(1)
   @Max(100)
   dpPercentage?: number;
 
-  // Jika Category = INSTALLMENT / REMAINING, bisa isi nominal manual
   @IsOptional()
   @IsNumber()
   @Min(0)
@@ -96,8 +102,8 @@ export class CreateInvoiceDTO {
 
   @IsOptional()
   @IsArray()
-  @ValidateNested({ each: true }) // Validasi setiap item di array
-  @Type(() => SelectedItemDTO) // Transform plain object ke instance class DTO
+  @ValidateNested({ each: true })
+  @Type(() => SelectedItemDTO)
   selectedItems?: SelectedItemDTO[];
 
   @IsOptional()
@@ -105,4 +111,33 @@ export class CreateInvoiceDTO {
   @ValidateNested({ each: true })
   @Type(() => InvoiceNoteInputDTO)
   notes?: InvoiceNoteInputDTO[];
+}
+
+// 🔥 UpdateInvoiceDTO — untuk konfirmasi pembayaran / update status
+export class UpdateInvoiceDTO {
+  @IsOptional()
+  @IsEnum(InvoiceStatus)
+  status?: InvoiceStatus;
+
+  @IsOptional()
+  @IsEnum(PaymentMethod)
+  method?: PaymentMethod;
+
+  // 🔥 Tanggal pembayaran aktual — diisi saat admin konfirmasi bayar
+  @IsOptional()
+  @IsString()
+  paymentDate?: string; // Format YYYY-MM-DD
+
+  // 🔥 Tanggal lunas
+  @IsOptional()
+  @IsString()
+  paidAt?: string; // Format YYYY-MM-DD
+
+  @IsOptional()
+  @IsString()
+  dueDate?: string;
+
+  @IsOptional()
+  @IsString()
+  remarks?: string;
 }

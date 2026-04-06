@@ -24,6 +24,9 @@ export class InvoiceService {
       dpPercentage,
       customAmount,
       dueDate,
+      // 🔥 Tambah paymentDate dan paidAt
+      paymentDate,
+      paidAt,
       selectedItems,
       notes,
     } = data;
@@ -48,16 +51,20 @@ export class InvoiceService {
       throw new ApiError("Order not found", 404);
     }
 
-    // ============================================================
-    // LOGIC GENERATE INVOICE NUMBER (Updated)
-    // ============================================================
+    const lastInvoice = await this.prisma.invoice.findFirst({
+      orderBy: { id: "desc" },
+      select: { invoiceNumber: true },
+    });
 
-    // A. Hitung Sequence (0001, 0002, dst)
-    const totalInvoices = await this.prisma.invoice.count();
-    const sequence = String(totalInvoices + 1).padStart(4, "0");
+    let nextSequence = 1;
+    if (lastInvoice?.invoiceNumber) {
+      const parts = lastInvoice.invoiceNumber.split("_");
+      const lastNum = parseInt(parts[1], 10);
+      if (!isNaN(lastNum)) nextSequence = lastNum + 1;
+    }
+    const sequence = String(nextSequence).padStart(4, "0");
 
     const clientCode = order.client.custCode || "NOC";
-
     const now = new Date();
     const year = now.getFullYear();
     const romanMonths = [
@@ -75,13 +82,8 @@ export class InvoiceService {
       "XII",
     ];
     const romanMonth = romanMonths[now.getMonth()];
-
-    // D. Gabungkan String
     const formattedInvoiceNumber = `INV_${sequence}_${clientCode}_${romanMonth}_${year}`;
 
-    // ============================================================
-    // LOGIC HITUNG AMOUNT (Tidak Berubah)
-    // ============================================================
     let invoiceAmount = 0;
     let targetOrderProducts: any[] = [];
 
@@ -102,12 +104,10 @@ export class InvoiceService {
           return { ...op, quantityToBill };
         });
 
-      // Hitung base amount dari item yang dipilih
       const baseAmount = targetOrderProducts.reduce((sum, item) => {
         return sum + Number(item.unitPrice) * item.quantityToBill;
       }, 0);
 
-      // ✅ Terapkan jenis tagihan di atas base amount split
       if (category === InvoiceCategory.FULL_PAYMENT) {
         invoiceAmount = baseAmount;
       } else if (category === InvoiceCategory.DP) {
@@ -124,7 +124,6 @@ export class InvoiceService {
           );
         invoiceAmount = customAmount;
       } else if (category === InvoiceCategory.REMAINING_BALANCE) {
-        // Sisa dari invoice-invoice sebelumnya yang aktif
         const totalInvoiced = order.invoices.reduce((sum, inv) => {
           if (inv.status !== "CANCELLED") return sum + Number(inv.totalAmount);
           return sum;
@@ -162,7 +161,7 @@ export class InvoiceService {
       }
     }
 
-    // 3. Mapping Data ke InvoiceItem
+    // Mapping Data ke InvoiceItem
     const invoiceItemsData = targetOrderProducts.map((op) => {
       const customData = op.customization
         ? (op.customization as Prisma.InputJsonValue)
@@ -178,7 +177,7 @@ export class InvoiceService {
       };
     });
 
-    // 4. TRANSACTION
+    // TRANSACTION
     const result = await this.prisma.$transaction(async (tx) => {
       const createdInvoice = await tx.invoice.create({
         data: {
@@ -191,6 +190,9 @@ export class InvoiceService {
           category: category,
           method: method || undefined,
           dueDate: dueDate ? new Date(dueDate) : undefined,
+          // 🔥 Simpan paymentDate dan paidAt jika dikirim
+          paymentDate: paymentDate ? new Date(paymentDate) : undefined,
+          paidAt: paidAt ? new Date(paidAt) : undefined,
           items: {
             createMany: {
               data: invoiceItemsData,

@@ -199,9 +199,6 @@ export class QuotationService {
       };
     }
 
-    // 3. Return data
-    // Frontend QuotationForm akan menerima array 'notes' ini
-    // dan mengubahnya menjadi format grouped di defaultValues (useMemo)
     return {
       ...quotation,
       clientInfo: clientDetail,
@@ -220,6 +217,8 @@ export class QuotationService {
         400,
       );
     }
+
+    // 1. Group file per item index
     const fileByItemIndex: Record<number, Express.Multer.File> = {};
     if (files && files.length > 0) {
       for (const file of files) {
@@ -231,7 +230,7 @@ export class QuotationService {
       }
     }
 
-    // 3. Upload image per item
+    // 2. Upload image per item
     const uploadedImages: Record<number, { url: string; publicId: string }> =
       {};
     for (const [idxStr, file] of Object.entries(fileByItemIndex)) {
@@ -248,31 +247,65 @@ export class QuotationService {
         throw new ApiError(`Gagal upload image untuk item ke-${idx + 1}`, 500);
       }
     }
-
-    // 4. Kalkulasi Item
     let subTotal = 0;
-    const itemsToCreate = data.items.map((item, index) => {
-      const lineTotal = item.quantity * item.unitPrice - (item.discount || 0);
-      subTotal += lineTotal;
-      const img = uploadedImages[index];
-      return {
-        productId: item.productId || null,
-        productName: item.productName,
-        description: item.description,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        discount: item.discount || 0,
-        totalPrice: lineTotal,
-        customization: item.customization ?? Prisma.JsonNull,
-        remarks: item.remarks,
-        imageUrl: img?.url ?? null,
-        imagePublicId: img?.publicId ?? null,
-      };
-    });
+    const itemsToCreate = await Promise.all(
+      data.items.map(async (item, index) => {
+        let finalUnitPrice = item.unitPrice;
+
+        if (item.productId) {
+          const product = await this.prisma.product.findUnique({
+            where: { id: item.productId },
+            include: { productVariants: true },
+          });
+
+          // 🔥 Jika product custom, wajib ada variantId
+          if (product?.isCustom) {
+            if (!item.variantId) {
+              throw new ApiError(
+                `Variant wajib dipilih untuk product custom: ${product.name}`,
+                400,
+              );
+            }
+            const variant = product.productVariants.find(
+              (v) => v.id === item.variantId,
+            );
+            if (!variant) {
+              throw new ApiError(
+                `Variant tidak valid untuk product: ${product.name}`,
+                400,
+              );
+            }
+            if (!item.unitPrice && variant.price) {
+              finalUnitPrice = Number(variant.price);
+            }
+          }
+        }
+
+        const lineTotal = item.quantity * finalUnitPrice - (item.discount || 0);
+        subTotal += lineTotal;
+        const img = uploadedImages[index];
+
+        return {
+          productId: item.productId || null,
+          // 🔥 Simpan variantId ke DB
+          variantId: item.variantId || null,
+          productName: item.productName,
+          description: item.description,
+          quantity: item.quantity,
+          unitPrice: finalUnitPrice,
+          discount: item.discount || 0,
+          totalPrice: lineTotal,
+          customization: item.customization ?? Prisma.JsonNull,
+          remarks: item.remarks,
+          imageUrl: img?.url ?? null,
+          imagePublicId: img?.publicId ?? null,
+        };
+      }),
+    );
 
     const totalAmount = subTotal;
 
-    // 5. Client Code
+    // 4. Client Code
     let clientCode = "NOC";
     if (data.clientId) {
       const client = await this.prisma.client.findUnique({
@@ -288,8 +321,7 @@ export class QuotationService {
     const romanMonth = this.getRomanMonth(now);
     const year = now.getFullYear();
 
-    // 6. ✅ Cari sequence tertinggi dari SEMUA quotationNumber yang ada
-    // Tidak bergantung pada createdAt — scan semua nomor, ambil angka terbesar
+    // 5. Cari sequence tertinggi
     const allQuotations = await this.prisma.quotation.findMany({
       select: { quotationNumber: true },
     });
@@ -305,10 +337,10 @@ export class QuotationService {
       }
     }
 
-    // 7. Retry loop — untuk handle race condition saat traffic tinggi
+    // 6. Retry loop
     const MAX_RETRIES = 5;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      const nextSequence = maxSequence + 1 + attempt; // ✅ setiap retry increment langsung
+      const nextSequence = maxSequence + 1 + attempt;
       const sequence = String(nextSequence).padStart(4, "0");
       const quotationNumber = `QTN_${sequence}_${clientCode}_${romanMonth}_${year}`;
 
@@ -344,7 +376,17 @@ export class QuotationService {
             items: { create: itemsToCreate },
           },
           include: {
-            items: true,
+            items: {
+              include: {
+                variant: {
+                  select: {
+                    id: true,
+                    variantName: true,
+                    price: true,
+                  },
+                },
+              },
+            },
             notes: { include: { category: true } },
             client: { select: { id: true, custCode: true, type: true } },
             sales: true,

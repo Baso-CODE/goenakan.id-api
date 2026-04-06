@@ -9,17 +9,21 @@ import {
   Min,
 } from "class-validator";
 
-// Sama seperti di quotation.dto.ts
 const EmptyStringToUndefined = Transform(({ value }) =>
   value === "" || value === null ? undefined : value,
 );
 
 export class CreateQuotationItemDTO {
-  // ✅ productId: "" dari frontend → undefined → skip @IsUUID
   @IsOptional()
   @EmptyStringToUndefined
   @IsUUID()
   productId?: string;
+
+  // 🔥 Tambah variantId untuk product custom
+  @IsOptional()
+  @EmptyStringToUndefined
+  @IsUUID()
+  variantId?: string;
 
   @IsNotEmpty()
   @IsString()
