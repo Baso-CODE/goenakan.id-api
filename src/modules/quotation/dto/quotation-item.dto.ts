@@ -1,5 +1,6 @@
 import { Transform, Type } from "class-transformer";
 import {
+  IsArray,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -7,11 +8,26 @@ import {
   IsString,
   IsUUID,
   Min,
+  ValidateNested,
 } from "class-validator";
 
 const EmptyStringToUndefined = Transform(({ value }) =>
   value === "" || value === null ? undefined : value,
 );
+
+export class QuotationItemTierDTO {
+  @IsNotEmpty()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  quantity!: number;
+
+  @IsNotEmpty()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  unitPrice!: number;
+}
 
 export class CreateQuotationItemDTO {
   @IsOptional()
@@ -19,7 +35,6 @@ export class CreateQuotationItemDTO {
   @IsUUID()
   productId?: string;
 
-  // 🔥 Tambah variantId untuk product custom
   @IsOptional()
   @EmptyStringToUndefined
   @IsUUID()
@@ -33,17 +48,23 @@ export class CreateQuotationItemDTO {
   @IsString()
   description?: string;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsInt()
   @Min(1)
   @Type(() => Number)
-  quantity!: number;
+  quantity?: number;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsNumber()
   @Min(0)
   @Type(() => Number)
-  unitPrice!: number;
+  unitPrice?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => QuotationItemTierDTO)
+  tiers?: QuotationItemTierDTO[];
 
   @IsOptional()
   @IsNumber()

@@ -1,5 +1,6 @@
 import { Type } from "class-transformer";
 import {
+  IsArray,
   IsBoolean,
   IsNumber,
   IsOptional,
@@ -35,6 +36,11 @@ export class UpdateProductCoreDTO {
   @IsOptional()
   @IsString()
   categoryId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true, message: "Setiap tag harus berupa string ID" })
+  tagIds?: string[];
 
   @IsOptional()
   @Type(() => Number)

@@ -11,8 +11,7 @@ import {
 } from "class-validator";
 import { CreateQuotationItemDTO } from "./quotation-item.dto";
 
-// Helper transform: ubah string kosong "" → undefined
-// Sehingga @IsOptional() bisa mengabaikannya dan @IsUUID tidak error
+//
 const EmptyStringToUndefined = Transform(({ value }) =>
   value === "" || value === null ? undefined : value,
 );
@@ -39,19 +38,16 @@ export class CreateQuotationDTO {
   @IsDate()
   validUntil?: Date;
 
-  // ✅ salesId: "" dari frontend → undefined → lolos @IsOptional
   @IsOptional()
   @EmptyStringToUndefined
   @IsUUID(4)
   salesId?: string;
 
-  // ✅ picId: "" dari frontend → undefined → lolos @IsOptional
   @IsOptional()
   @EmptyStringToUndefined
   @IsUUID(4)
   picId?: string;
 
-  // ✅ clientId: "" dari frontend → undefined → lolos @IsOptional
   @IsOptional()
   @EmptyStringToUndefined
   @IsUUID()
@@ -65,7 +61,6 @@ export class CreateQuotationDTO {
   @IsString()
   manualClientCompany?: string;
 
-  // ✅ manualClientEmail: "" → undefined → skip @IsEmail validation
   @IsOptional()
   @EmptyStringToUndefined
   @IsEmail()

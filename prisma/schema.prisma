@@ -278,7 +278,7 @@ model Product {
   name         String
   sku          String   @unique // SKU
   slug         String   @unique
-  description  String?
+  description  String?  @db.Text
   basePrice    Decimal
   isCustom     Boolean  @default(false)
   materialType String?
@@ -296,7 +296,7 @@ model Product {
   // Relasi Baru
   attributeValues ProductAttributeValue[]
   priceTiers      PriceTier[]
-
+  tags            Tag[]
   // Relasi transaksi
   invoiceItems    InvoiceItem[]
   orderProducts   OrderProduct[]
@@ -514,6 +514,19 @@ model InvoiceItem {
   variant ProductVariant? @relation(fields: [variantId], references: [id])
 
   @@map("invoice_items")
+}
+
+model Tag {
+  id   String @id @default(uuid())
+  name String @unique
+  slug String @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+
+  @@map("tags")
 }
 
 // ===============================================
@@ -1051,33 +1064,64 @@ model QuotationFollowUp {
   @@map("quotation_follow_ups")
 }
 
+// model QuotationItem {
+//   id          String @id @default(uuid())
+//   quotationId String
+
+//   productId String?
+//   product   Product? @relation(fields: [productId], references: [id])
+
+//   variantId String?
+//   variant   ProductVariant? @relation(fields: [variantId], references: [id])
+
+//   productName String
+//   description String? @db.Text
+
+//   quantity   Int
+//   unitPrice  Decimal
+//   discount   Decimal? @default(0)
+//   totalPrice Decimal
+
+//   customization Json?
+//   remarks       String?
+
+//   imageUrl      String?
+//   imagePublicId String?
+
+//   quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+//   @@map("quotation_items")
+// }
+
 model QuotationItem {
-  id          String @id @default(uuid())
-  quotationId String
-
-  productId String?
-  product   Product? @relation(fields: [productId], references: [id])
-
-  variantId String?
-  variant   ProductVariant? @relation(fields: [variantId], references: [id])
-
-  productName String
-  description String? @db.Text
-
-  quantity   Int
-  unitPrice  Decimal
-  discount   Decimal? @default(0)
-  totalPrice Decimal
-
+  id            String              @id @default(uuid())
+  quotationId   String
+  productId     String?
+  product       Product?            @relation(fields: [productId], references: [id])
+  variantId     String?
+  variant       ProductVariant?     @relation(fields: [variantId], references: [id])
+  productName   String
+  description   String?             @db.Text
   customization Json?
+  discount      Decimal?            @default(0)
   remarks       String?
-
   imageUrl      String?
   imagePublicId String?
-
-  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  quotation     Quotation           @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  tiers         QuotationItemTier[]
 
   @@map("quotation_items")
+}
+
+model QuotationItemTier {
+  id              String        @id @default(uuid())
+  quotationItemId String
+  quantity        Int
+  unitPrice       Decimal
+  totalPrice      Decimal
+  item            QuotationItem @relation(fields: [quotationItemId], references: [id], onDelete: Cascade)
+
+  @@map("quotation_item_tiers")
 }
 
 model CashflowSummary {

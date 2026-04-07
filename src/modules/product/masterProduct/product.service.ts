@@ -93,16 +93,14 @@ export class ProductService {
       }
     }
 
-    // Destructure Data
+    // 🟡 HAPUS DESTRUCTURE ...productCore KARENA BERBAHAYA
     const {
       attributes = [],
       priceTiers = [],
       imagesMetadata = [],
-
       videosMetadata = [],
-
+      tagIds = [],
       variantImagesMetadata = [],
-      ...productCore
     } = data;
 
     let uploadedImages: {
@@ -114,16 +112,14 @@ export class ProductService {
 
     const uploadedVideos = videosMetadata.map((meta) => ({
       url: meta.url,
-
       publicId: meta.publicId || `fe_upload_${Date.now()}_${Math.random()}`,
-      title: meta.title || productCore.name || "Product Video",
+      title: meta.title || data.name || "Product Video",
       isFeatured: meta.isFeatured || false,
-      altText: meta.altText || productCore.name || "Product Video",
+      altText: meta.altText || data.name || "Product Video",
     }));
 
     // ============ MEDIA UPLOAD (IMAGE ONLY) ============
     try {
-      // Logic Upload Gambar Utama (Masih Backend Upload)
       if (files.images) {
         for (let i = 0; i < files.images.length; i++) {
           const file = files.images[i];
@@ -138,7 +134,7 @@ export class ProductService {
             url: uploadResult.secure_url,
             publicId: uploadResult.public_id,
             isFeatured: metadata.isFeatured || false,
-            altText: metadata.altText || productCore.name || "Product Image",
+            altText: metadata.altText || data.name || "Product Image",
           });
         }
       }
@@ -146,175 +142,208 @@ export class ProductService {
       throw new ApiError("Failed to upload image files to Cloudinary", 500);
     }
 
-    const newProduct = await this.prisma.$transaction(async (tx) => {
-      // 1. CREATE PRODUCT
-      const product = await tx.product.create({
-        data: {
-          ...productCore,
-          slug,
-          basePrice: productCore.basePrice,
-          priceTiers:
-            priceTiers.length > 0
-              ? {
-                  createMany: {
-                    data: priceTiers.map((tier) => ({
-                      minQuantity: tier.minQuantity,
-                      maxQuantity: tier.maxQuantity ?? null,
-                      price: tier.price.toString(),
-                    })),
-                  },
-                }
-              : undefined,
-        },
-      });
+    // 🟢 TAMBAHKAN TRY-CATCH KHUSUS UNTUK MELIHAT ERROR PRISMA
+    try {
+      const newProduct = await this.prisma.$transaction(async (tx) => {
+        // 1. CREATE PRODUCT
+        const product = await tx.product.create({
+          data: {
+            // 🟡 MAPPING EKSPLISIT (Sangat aman dari field siluman)
+            name: data.name,
+            sku: data.sku,
+            description: data.description,
+            basePrice: data.basePrice,
+            isCustom: data.isCustom,
+            materialType: data.materialType,
+            weight: data.weight,
+            width: data.width,
+            height: data.height,
+            length: data.length,
+            categoryId: data.categoryId,
+            slug,
 
-      // 2. INSERT PRODUCT ATTRIBUTE VALUES
-      if (attributes.length > 0) {
-        const productAttributeValueData: {
-          productId: string;
-          attributeValueId: string;
-        }[] = [];
+            // Relasi Tag
+            tags:
+              tagIds.length > 0
+                ? {
+                    connect: tagIds.map((id) => ({ id })),
+                  }
+                : undefined,
 
-        for (const attr of attributes) {
-          for (const valueId of attr.valueIds) {
-            productAttributeValueData.push({
-              productId: product.id,
-              attributeValueId: valueId,
-            });
+            // Relasi Price Tiers
+            priceTiers:
+              priceTiers.length > 0
+                ? {
+                    createMany: {
+                      data: priceTiers.map((tier) => ({
+                        minQuantity: tier.minQuantity,
+                        maxQuantity: tier.maxQuantity ?? null,
+                        price: tier.price.toString(),
+                      })),
+                    },
+                  }
+                : undefined,
+          },
+        });
+
+        // 2. INSERT PRODUCT ATTRIBUTE VALUES
+        if (attributes.length > 0) {
+          const productAttributeValueData: {
+            productId: string;
+            attributeValueId: string;
+          }[] = [];
+
+          for (const attr of attributes) {
+            for (const valueId of attr.valueIds) {
+              productAttributeValueData.push({
+                productId: product.id,
+                attributeValueId: valueId,
+              });
+            }
           }
+
+          await tx.productAttributeValue.createMany({
+            data: productAttributeValueData,
+            skipDuplicates: true,
+          });
         }
 
-        await tx.productAttributeValue.createMany({
-          data: productAttributeValueData,
-          skipDuplicates: true,
-        });
-      }
-
-      // 3. AUTO GENERATE VARIANTS
-      if (attributes.length > 0) {
-        const allAttributeValues = await this.prisma.attributeValue.findMany({
-          where: {
-            id: {
-              in: attributes.flatMap((attr) => attr.valueIds),
-            },
-          },
-          include: {
-            attribute: true,
-          },
-        });
-
-        const listOfValueGroups = attributes.map((attr) => attr.valueIds);
-        const combinations = this.cartesianProduct(listOfValueGroups);
-
-        const variantCreates = combinations.map((combination, index) => {
-          const variantSku = `${productCore.sku}-VAR-${index + 1}`;
-
-          const variantNameParts = combination
-            .map((valueId) => {
-              const val = allAttributeValues.find((x) => x.id === valueId);
-              if (val && val.attribute) {
-                return `${val.attribute.name}: ${val.value}`;
-              }
-              return "";
-            })
-            .filter(Boolean);
-
-          const variantName = variantNameParts.join(" • ");
-
-          const meta = variantImagesMetadata.find(
-            (m) => m.variantIndex === index,
-          );
-
-          const variantPrice = meta?.price
-            ? meta.price.toString()
-            : productCore.basePrice.toString();
-          return {
-            sku: variantSku,
-            variantName,
-            productId: product.id,
-            price: variantPrice,
-            weight: meta?.weight ?? null,
-            width: meta?.width ?? null,
-            height: meta?.height ?? null,
-            length: meta?.length ?? null,
-            attributeValues: {
-              createMany: {
-                data: combination.map((valueId) => ({
-                  attributeValueId: valueId,
-                })),
+        // 3. AUTO GENERATE VARIANTS
+        if (attributes.length > 0) {
+          const allAttributeValues = await this.prisma.attributeValue.findMany({
+            where: {
+              id: {
+                in: attributes.flatMap((attr) => attr.valueIds),
               },
             },
-          };
-        });
+            include: {
+              attribute: true,
+            },
+          });
 
-        for (const variant of variantCreates) {
-          await tx.productVariant.create({ data: variant });
-        }
-      }
+          const listOfValueGroups = attributes.map((attr) => attr.valueIds);
+          const combinations = this.cartesianProduct(listOfValueGroups);
 
-      // 4. UPLOAD VARIANT IMAGES (Masih Backend Upload)
-      if (files.variantImages && variantImagesMetadata.length > 0) {
-        const variants = await tx.productVariant.findMany({
-          where: { productId: product.id },
-          orderBy: { createdAt: "asc" },
-        });
+          const variantCreates = combinations.map((combination, index) => {
+            const variantSku = `${data.sku}-VAR-${index + 1}`;
 
-        for (const variantMeta of variantImagesMetadata) {
-          const variantIndex = variantMeta.variantIndex;
-          const variant = variants[variantIndex];
-          if (!variant) continue;
+            const variantNameParts = combination
+              .map((valueId) => {
+                const val = allAttributeValues.find((x) => x.id === valueId);
+                if (val && val.attribute) {
+                  return `${val.attribute.name}: ${val.value}`;
+                }
+                return "";
+              })
+              .filter(Boolean);
 
-          const filesForVariant = files.variantImages[variantIndex] || [];
+            const variantName = variantNameParts.join(" • ");
 
-          if (filesForVariant.length === 0) continue;
+            const meta = variantImagesMetadata.find(
+              (m) => m.variantIndex === index,
+            );
 
-          const uploadedVariantImages = [];
+            const variantPrice = meta?.price
+              ? meta.price.toString()
+              : data.basePrice.toString();
 
-          for (const file of filesForVariant) {
-            const uploaded = await this.cloudinary.upload(file, {
-              folder: "products/variants",
-              resource_type: "image",
-            });
+            return {
+              sku: variantSku,
+              variantName,
+              productId: product.id,
+              price: variantPrice,
+              weight: meta?.weight ?? null,
+              width: meta?.width ?? null,
+              height: meta?.height ?? null,
+              length: meta?.length ?? null,
+              attributeValues: {
+                createMany: {
+                  data: combination.map((valueId) => ({
+                    attributeValueId: valueId,
+                  })),
+                },
+              },
+            };
+          });
 
-            uploadedVariantImages.push({
-              variantId: variant.id,
-              url: uploaded.secure_url,
-              publicId: uploaded.public_id,
-              isFeatured: variantMeta.isFeatured ?? false,
-              altText: variantMeta.altText ?? "",
-            });
+          for (const variant of variantCreates) {
+            await tx.productVariant.create({ data: variant });
           }
+        }
 
-          if (uploadedVariantImages.length > 0) {
-            await tx.productVariantImage.createMany({
-              data: uploadedVariantImages,
-            });
+        // 4. UPLOAD VARIANT IMAGES
+        if (files.variantImages && variantImagesMetadata.length > 0) {
+          const variants = await tx.productVariant.findMany({
+            where: { productId: product.id },
+            orderBy: { createdAt: "asc" },
+          });
+
+          for (const variantMeta of variantImagesMetadata) {
+            const variantIndex = variantMeta.variantIndex;
+            const variant = variants[variantIndex];
+            if (!variant) continue;
+
+            const filesForVariant = files.variantImages[variantIndex] || [];
+
+            if (filesForVariant.length === 0) continue;
+
+            const uploadedVariantImages = [];
+
+            for (const file of filesForVariant) {
+              const uploaded = await this.cloudinary.upload(file, {
+                folder: "products/variants",
+                resource_type: "image",
+              });
+
+              uploadedVariantImages.push({
+                variantId: variant.id,
+                url: uploaded.secure_url,
+                publicId: uploaded.public_id,
+                isFeatured: variantMeta.isFeatured ?? false,
+                altText: variantMeta.altText ?? "",
+              });
+            }
+
+            if (uploadedVariantImages.length > 0) {
+              await tx.productVariantImage.createMany({
+                data: uploadedVariantImages,
+              });
+            }
           }
         }
-      }
 
-      if (uploadedImages.length > 0) {
-        await tx.productImage.createMany({
-          data: uploadedImages.map((img) => ({
-            ...img,
-            productId: product.id,
-          })),
-        });
-      }
+        if (uploadedImages.length > 0) {
+          await tx.productImage.createMany({
+            data: uploadedImages.map((img) => ({
+              ...img,
+              productId: product.id,
+            })),
+          });
+        }
 
-      if (uploadedVideos.length > 0) {
-        await tx.productVideo.createMany({
-          data: uploadedVideos.map((video) => ({
-            ...video,
-            productId: product.id,
-          })),
-        });
-      }
+        if (uploadedVideos.length > 0) {
+          await tx.productVideo.createMany({
+            data: uploadedVideos.map((video) => ({
+              ...video,
+              productId: product.id,
+            })),
+          });
+        }
 
-      return product;
-    });
+        return product;
+      });
 
-    return this.getProductById(newProduct.id);
+      return this.getProductById(newProduct.id);
+    } catch (dbError) {
+      // 🟢 PRINT ERROR ASLI DARI PRISMA KE TERMINAL
+      console.error("🔥 RAW PRISMA ERROR 🔥", dbError);
+
+      // Lempar ulang error agar bisa ditangkap oleh controller
+      throw new ApiError(
+        "Database error occurred while creating product. Please check the backend console for details.",
+        500,
+      );
+    }
   }
 
   async updateProductCore(id: string, data: UpdateProductCoreDTO) {
@@ -322,6 +351,8 @@ export class ProductService {
       where: { id },
     });
     if (!existing) throw new ApiError("Product not found", 404);
+
+    const { tagIds, ...productCore } = data;
 
     const slug = data.name ? this.slug.create(data.name) : existing.slug;
 
@@ -360,6 +391,12 @@ export class ProductService {
     if (data.height !== undefined) updateData.height = data.height;
     if (data.length !== undefined) updateData.length = data.length;
 
+    if (tagIds !== undefined) {
+      updateData.tags = {
+        set: tagIds.map((tagId) => ({ id: tagId })),
+      };
+    }
+
     const updated = await this.prisma.product.update({
       where: { id },
       data: updateData,
@@ -370,6 +407,7 @@ export class ProductService {
         productVariants: true,
         attributeValues: true,
         priceTiers: true,
+        tags: true,
       },
     });
 

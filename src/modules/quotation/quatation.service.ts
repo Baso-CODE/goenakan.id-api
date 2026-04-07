@@ -127,11 +127,9 @@ export class QuotationService {
   // 2. GET BY ID (DETAIL)
   // ==========================================
   async getQuotationById(id: string) {
-    // 1. Ambil data dengan Deep Nested Include
     const quotation = await this.prisma.quotation.findUnique({
       where: { id },
       include: {
-        // Include Client beserta detail B2B / B2C nya
         client: {
           include: {
             b2b: {
@@ -140,7 +138,19 @@ export class QuotationService {
             b2c: true,
           },
         },
-        items: true,
+        items: {
+          include: {
+            tiers: true,
+            variant: {
+              select: {
+                id: true,
+                variantName: true,
+                price: true,
+              },
+            },
+          },
+        },
+
         followUps: {
           orderBy: { date: "desc" },
         },
@@ -153,8 +163,6 @@ export class QuotationService {
     });
 
     if (!quotation) throw new ApiError("Quotation not found", 404);
-
-    // 2. Logic Penyeragaman Data Client (Data Transformation)
     let clientDetail = null;
 
     if (quotation.clientId && quotation.client) {
@@ -247,11 +255,15 @@ export class QuotationService {
         throw new ApiError(`Gagal upload image untuk item ke-${idx + 1}`, 500);
       }
     }
+
     let subTotal = 0;
+
+    // 3. Prepare Items & Tiers
     const itemsToCreate = await Promise.all(
       data.items.map(async (item, index) => {
-        let finalUnitPrice = item.unitPrice;
+        let variantPrice: number | null = null;
 
+        // A. Validasi Produk & Variant
         if (item.productId) {
           const product = await this.prisma.product.findUnique({
             where: { id: item.productId },
@@ -275,30 +287,70 @@ export class QuotationService {
                 400,
               );
             }
-            if (!item.unitPrice && variant.price) {
-              finalUnitPrice = Number(variant.price);
+            // Simpan harga variant jika sewaktu-waktu tier tidak mengirimkan harga
+            if (variant.price) {
+              variantPrice = Number(variant.price);
             }
           }
         }
 
-        const lineTotal = item.quantity * finalUnitPrice - (item.discount || 0);
-        subTotal += lineTotal;
         const img = uploadedImages[index];
+
+        // 🟢 B. FORMAT DATA TIERS
+        // Gunakan item.tiers jika ada. Jika tidak ada, gunakan fallback ke item.quantity & item.unitPrice (format lama)
+        const tiersData =
+          item.tiers && item.tiers.length > 0
+            ? item.tiers
+            : [
+                {
+                  quantity: item.quantity || 1,
+                  unitPrice: item.unitPrice || 0,
+                },
+              ];
+
+        const tiersToCreate = tiersData.map((tier) => {
+          let finalUnitPrice = tier.unitPrice;
+
+          // Jika harga tier 0/kosong tapi variant memiliki harga, gunakan harga variant
+          if (!finalUnitPrice && variantPrice !== null) {
+            finalUnitPrice = variantPrice;
+          }
+
+          // Hitung total per baris tier (dikurangi diskon jika ada)
+          const lineTotal =
+            tier.quantity * finalUnitPrice - (item.discount || 0);
+
+          return {
+            quantity: tier.quantity,
+            unitPrice: finalUnitPrice,
+            totalPrice: lineTotal < 0 ? 0 : lineTotal, // Mencegah minus
+          };
+        });
+
+        // 🟢 C. HITUNG SUBTOTAL QUOTATION
+        // Karena ada multi-opsi, kita ambil opsi tier pertama (index 0) sebagai estimasi default SubTotal
+        if (tiersToCreate.length > 0) {
+          subTotal += tiersToCreate[0].totalPrice;
+        }
 
         return {
           productId: item.productId || null,
-          // 🔥 Simpan variantId ke DB
           variantId: item.variantId || null,
           productName: item.productName,
           description: item.description,
-          quantity: item.quantity,
-          unitPrice: finalUnitPrice,
-          discount: item.discount || 0,
-          totalPrice: lineTotal,
+
+          // 🟡 HAPUS: quantity, unitPrice, dan totalPrice tidak lagi di-insert ke tabel Item utama
+          // discount: item.discount || 0, // Biarkan jika Anda tidak menghapus field discount dari schema Item
+
           customization: item.customization ?? Prisma.JsonNull,
           remarks: item.remarks,
           imageUrl: img?.url ?? null,
           imagePublicId: img?.publicId ?? null,
+
+          // 🟢 RELASIKAN TIERS KE ITEM
+          tiers: {
+            create: tiersToCreate,
+          },
         };
       }),
     );
@@ -378,6 +430,7 @@ export class QuotationService {
           include: {
             items: {
               include: {
+                tiers: true, // 🟢 INCLUDE TIERS agar otomatis dikembalikan dalam response
                 variant: {
                   select: {
                     id: true,
@@ -426,32 +479,51 @@ export class QuotationService {
       let newSubTotal = existing.subTotal;
       let newTotalAmount = existing.totalAmount;
 
-      // === LOGIC A: UPDATE ITEMS ===
       if (items && items.length > 0) {
         await tx.quotationItem.deleteMany({ where: { quotationId: id } });
 
         let calculatedSubTotal = 0;
 
-        const itemsPayload = items.map((item) => {
-          const lineTotal =
-            item.quantity * item.unitPrice - (item.discount || 0);
-          calculatedSubTotal += lineTotal;
+        for (const item of items) {
+          const tiersData =
+            item.tiers && item.tiers.length > 0
+              ? item.tiers
+              : [
+                  {
+                    quantity: item.quantity || 1,
+                    unitPrice: item.unitPrice || 0,
+                  },
+                ];
 
-          return {
-            quotationId: id,
-            productId: item.productId || null,
-            productName: item.productName,
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            discount: item.discount || 0,
-            totalPrice: lineTotal,
-            customization: item.customization ?? Prisma.JsonNull,
-            remarks: item.remarks,
-          };
-        });
+          const tiersToCreate = tiersData.map((tier) => {
+            const lineTotal =
+              tier.quantity * tier.unitPrice - (item.discount || 0);
+            return {
+              quantity: tier.quantity,
+              unitPrice: tier.unitPrice,
+              totalPrice: lineTotal < 0 ? 0 : lineTotal,
+            };
+          });
 
-        await tx.quotationItem.createMany({ data: itemsPayload });
+          if (tiersToCreate.length > 0) {
+            calculatedSubTotal += tiersToCreate[0].totalPrice;
+          }
+          await tx.quotationItem.create({
+            data: {
+              quotationId: id,
+              productId: item.productId || null,
+              variantId: item.variantId || null,
+              productName: item.productName,
+              description: item.description,
+              discount: item.discount || 0,
+              customization: item.customization ?? Prisma.JsonNull,
+              remarks: item.remarks,
+              tiers: {
+                create: tiersToCreate,
+              },
+            },
+          });
+        }
 
         newSubTotal = new Prisma.Decimal(calculatedSubTotal);
         newTotalAmount = newSubTotal;
@@ -478,7 +550,6 @@ export class QuotationService {
       const updatePayload: Prisma.QuotationUncheckedUpdateInput = {
         // Header fields
         ...(headerData.date && { date: new Date(headerData.date) }),
-        // ✅ validUntil: set ke null jika dikirim null/undefined eksplisit, atau update jika ada nilai
         ...(headerData.validUntil !== undefined && {
           validUntil: headerData.validUntil
             ? new Date(headerData.validUntil)
@@ -516,7 +587,19 @@ export class QuotationService {
         where: { id },
         data: updatePayload,
         include: {
-          items: true,
+          // 🟢 INCLUDE TIERS agar Frontend menerima balikan format baru yang lengkap
+          items: {
+            include: {
+              tiers: true,
+              variant: {
+                select: {
+                  id: true,
+                  variantName: true,
+                  price: true,
+                },
+              },
+            },
+          },
           notes: {
             include: { category: true },
           },
@@ -612,6 +695,12 @@ export class QuotationService {
         // 3. Items
         items: {
           include: {
+            tiers: true,
+            variant: {
+              select: {
+                variantName: true,
+              },
+            },
             product: {
               select: {
                 sku: true,
@@ -622,7 +711,6 @@ export class QuotationService {
                     url: true,
                     isFeatured: true,
                   },
-                  orderBy: { isFeatured: "desc" },
                   take: 1,
                 },
               },
@@ -647,30 +735,25 @@ export class QuotationService {
       throw new ApiError("Quotation not found", 404);
     }
 
-    // 🔥 Normalize items: satukan imageUrl + ekspos remarks
     const normalizedItems = quotation.items.map((item) => {
       let imageUrl: string | null = null;
 
       if (item.product?.images?.[0]?.url) {
-        // Item dari DB — pakai gambar product
         imageUrl = item.product.images[0].url;
       } else if (item.imageUrl) {
-        // Item manual — pakai gambar upload
         imageUrl = item.imageUrl;
       }
 
       return {
         ...item,
         imageUrl,
-        // 🔥 remarks sudah ikut dari ...item, tapi eksplisit agar jelas
         remarks: item.remarks ?? null,
+        tiers: item.tiers || [],
       };
     });
 
     return {
       ...quotation,
-      // 🔥 validUntil sudah ikut dari ...quotation (ada di model Quotation)
-      // Eksplisit untuk kejelasan dokumentasi
       validUntil: quotation.validUntil ?? null,
       items: normalizedItems,
     };

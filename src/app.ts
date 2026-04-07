@@ -26,6 +26,7 @@ import { OrderRouter } from "./modules/order/order.router";
 import { AttributeRouter } from "./modules/product/attributes/attributes.router";
 import { ProductCategoryRouter } from "./modules/product/category/categoryProduct.router";
 import { ProductRouter } from "./modules/product/masterProduct/product.router";
+import { ProductTagRouter } from "./modules/product/tags/tags.router";
 import { PurchaseChannelRouter } from "./modules/purchaseChannel/purchaseChannel.router";
 import { QuotationRouter } from "./modules/quotation/quotation.router";
 import { QuotationNoteCategoryRouter } from "./modules/quotation/quotationNoteCategory/quotationNoteCategory.router";
@@ -59,6 +60,7 @@ export default class App {
     const contactPlatformRouter = container.resolve(ContactPlatformRouter);
     const clientRouter = container.resolve(ClientRouter);
     const producCategorytRouter = container.resolve(ProductCategoryRouter);
+    const producTagRouter = container.resolve(ProductTagRouter);
     const producAttributesRouter = container.resolve(AttributeRouter);
     const producRouter = container.resolve(ProductRouter);
     const salesRouter = container.resolve(SalesRouter);
@@ -96,6 +98,7 @@ export default class App {
     this.app.use("/clients", clientRouter.getRouter());
     this.app.use("/product-categories", producCategorytRouter.getRouter());
     this.app.use("/product-attributes", producAttributesRouter.getRouter());
+    this.app.use("/product-tags", producTagRouter.getRouter());
     this.app.use("/products", producRouter.getRouter());
     this.app.use("/sales", salesRouter.getRouter());
     this.app.use("/departments", departmentRouter.getRouter());

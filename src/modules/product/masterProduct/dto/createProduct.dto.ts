@@ -172,6 +172,11 @@ export class CreateProductDTO {
 
   @IsOptional()
   @IsArray()
+  @IsString({ each: true, message: "Setiap tag harus berupa string ID" })
+  tagIds?: string[];
+
+  @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateProductAttributeSelectionDTO)
   attributes: CreateProductAttributeSelectionDTO[] = [];
