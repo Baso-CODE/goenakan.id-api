@@ -16,6 +16,7 @@ export class OrderController {
       next(error);
     }
   };
+
   updateOrder = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;
@@ -27,6 +28,7 @@ export class OrderController {
       next(error);
     }
   };
+
   getOrderByIdUpdate = async (
     req: Request,
     res: Response,
@@ -41,6 +43,7 @@ export class OrderController {
       next(error);
     }
   };
+
   getOrderByIdDetail = async (
     req: Request,
     res: Response,
@@ -55,6 +58,7 @@ export class OrderController {
       next(error);
     }
   };
+
   getAllOrder = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { page, take, search, salesCategory, startDate, endDate } =
@@ -83,6 +87,7 @@ export class OrderController {
       next(error);
     }
   };
+
   exportOrders = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const query: OrderExportQuery = {
@@ -108,6 +113,7 @@ export class OrderController {
       next(error);
     }
   };
+
   getForTracking = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;
@@ -121,6 +127,7 @@ export class OrderController {
       next(error);
     }
   };
+
   getSampleOrders = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { page, take, search, startDate, endDate } = req.query;
@@ -185,6 +192,15 @@ export class OrderController {
     try {
       const data = await this.orderService.getSalesMetrics();
       res.status(200).json({ data });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getGeneralStats = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await this.orderService.getGeneralOrderStats();
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

@@ -743,10 +743,12 @@ export class QuotationService {
       } else if (item.imageUrl) {
         imageUrl = item.imageUrl;
       }
-
+      const finalDescription =
+        item.description || item.product?.description || null;
       return {
         ...item,
         imageUrl,
+        description: finalDescription,
         remarks: item.remarks ?? null,
         tiers: item.tiers || [],
       };

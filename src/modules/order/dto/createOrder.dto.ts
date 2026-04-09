@@ -9,9 +9,36 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Validate,
   ValidateNested,
+  ValidationArguments,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
 } from "class-validator";
+@ValidatorConstraint({ name: "isValidPrice", async: false })
+export class IsValidPriceConstraint implements ValidatorConstraintInterface {
+  validate(value: any, args: ValidationArguments) {
+    // Price harus ada dan merupakan number >= 0
+    if (value === null || value === undefined) {
+      return false;
+    }
 
+    const price = Number(value);
+
+    // Validasi: price harus number dan >= 0
+    if (isNaN(price) || price < 0) {
+      return false;
+    }
+
+    // ✅ Allow 0 untuk SAMPLE orders
+    // Number 0 adalah valid
+    return true;
+  }
+
+  defaultMessage(args: ValidationArguments) {
+    return "price must be a number >= 0";
+  }
+}
 class SampleFollowUpDTO {
   @IsOptional()
   @Type(() => Date)
@@ -44,13 +71,22 @@ class OrderProductDTO {
 
   @IsOptional()
   @IsString()
-  variantId?: string; // Biarkan ? karena ini opsional
+  variantId?: string;
 
   @IsNumber()
   quantity!: number;
 
-  @IsNumber()
-  price!: number;
+  @IsOptional()
+  @IsNumber(
+    { allowInfinity: false, allowNaN: false },
+    {
+      message: "price must be a valid number",
+    },
+  )
+  @Validate(IsValidPriceConstraint, {
+    message: "price must be a number >= 0",
+  })
+  price?: number; // ✅ Changed from ! to ?
 
   @IsOptional()
   @IsString()

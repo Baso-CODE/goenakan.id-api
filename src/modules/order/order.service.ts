@@ -1,5 +1,6 @@
 import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
+import { getErrorMessage } from "../../middleware/getErrorMessage";
 import { ApiError } from "../../utils/api-error";
 import { PaginationService } from "../pagination/pagination.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -19,6 +20,8 @@ export class OrderService {
     private readonly pagination: PaginationService,
   ) {}
 
+  // User bisa pilih: kasih harga atau gratis
+
   async createOrder(data: CreateOrderDTO) {
     const {
       vendorIds,
@@ -30,6 +33,8 @@ export class OrderService {
 
     let totalAmount = 0;
     const orderProductsData: any[] = [];
+
+    const isSampleOrder = orderCore.salesCategory === "SAMPLE";
 
     for (const item of products) {
       const product = await this.prisma.product.findUnique({
@@ -44,34 +49,44 @@ export class OrderService {
         throw new ApiError(`Product with ID ${item.productId} not found`, 404);
       }
 
-      let finalPrice = item.price ? Number(item.price) : 0;
+      let finalPrice = 0;
 
-      if (finalPrice === 0) {
-        if (product.isCustom) {
-          if (!item.variantId) {
-            throw new ApiError(
-              `Variant is required for custom product: ${product.name}`,
-              400,
-            );
-          }
-          const variant = product.productVariants.find(
-            (v) => v.id === item.variantId,
-          );
-          if (!variant || !variant.price) {
-            throw new ApiError(
-              `Invalid variant for product: ${product.name}`,
-              400,
-            );
-          }
-          finalPrice = Number(variant.price);
+      if (isSampleOrder) {
+        if (item.price !== undefined && item.price !== null && item.price > 0) {
+          finalPrice = Number(item.price);
         } else {
-          finalPrice = Number(product.basePrice);
-          if (product.priceTiers && product.priceTiers.length > 0) {
-            const applicableTier = product.priceTiers.find(
-              (t) => item.quantity >= t.minQuantity,
+          finalPrice = 0;
+        }
+      } else {
+        finalPrice = item.price ? Number(item.price) : 0;
+
+        if (finalPrice === 0) {
+          if (product.isCustom) {
+            if (!item.variantId) {
+              throw new ApiError(
+                `Variant is required for custom product: ${product.name}`,
+                400,
+              );
+            }
+            const variant = product.productVariants.find(
+              (v) => v.id === item.variantId,
             );
-            if (applicableTier) {
-              finalPrice = Number(applicableTier.price);
+            if (!variant || !variant.price) {
+              throw new ApiError(
+                `Invalid variant for product: ${product.name}`,
+                400,
+              );
+            }
+            finalPrice = Number(variant.price);
+          } else {
+            finalPrice = Number(product.basePrice);
+            if (product.priceTiers && product.priceTiers.length > 0) {
+              const applicableTier = product.priceTiers.find(
+                (t) => item.quantity >= t.minQuantity,
+              );
+              if (applicableTier) {
+                finalPrice = Number(applicableTier.price);
+              }
             }
           }
         }
@@ -164,8 +179,9 @@ export class OrderService {
           purchaseChannel: true,
         },
       });
+
       if (
-        orderCore.salesCategory === "SAMPLE" &&
+        isSampleOrder &&
         data.sampleFollowUps &&
         data.sampleFollowUps.length > 0
       ) {
@@ -181,12 +197,12 @@ export class OrderService {
           })),
         });
       }
+
       return order;
     });
 
     return newOrder;
   }
-
   async updateOrder(id: string, data: CreateOrderDTO) {
     const {
       vendorIds,
@@ -731,6 +747,7 @@ export class OrderService {
 
     return { data: formattedData, meta };
   }
+
   async exportOrdersToExcel(query: OrderExportQuery): Promise<Buffer> {
     const { startDate, endDate, search, salesCategory } = query;
 
@@ -1152,6 +1169,49 @@ export class OrderService {
     const sequence = String(totalOrders + 1).padStart(4, "0");
 
     return `GI-PO${sequence}`;
+  }
+
+  async getGeneralOrderStats() {
+    try {
+      // 1. Hitung Semua Order
+      const totalOrders = await this.prisma.order.count();
+
+      // 2. Hitung On-Going Orders
+      // Asumsi On-Going:
+      // - Order belum punya invoice sama sekali (baru dibuat)
+      // - ATAU Order punya invoice tapi statusnya masih UNPAID / DRAFT / OVERDUE
+      const ongoingOrders = await this.prisma.order.count({
+        where: {
+          OR: [
+            {
+              invoices: {
+                none: {}, // Belum ada invoice sama sekali
+              },
+            },
+            {
+              invoices: {
+                some: {
+                  status: {
+                    in: ["UNPAID", "DRAFT", "OVERDUE"], // Masih ada tagihan gantung
+                  },
+                },
+              },
+            },
+          ],
+        },
+      });
+
+      return {
+        data: {
+          totalOrders,
+          ongoingOrders,
+        },
+      };
+    } catch (error) {
+      throw new Error(
+        "Gagal mengambil statistik order: " + getErrorMessage(error),
+      );
+    }
   }
 
   // ===============================================

@@ -24,7 +24,7 @@ export class InvoiceService {
       dpPercentage,
       customAmount,
       dueDate,
-      // 🔥 Tambah paymentDate dan paidAt
+
       paymentDate,
       paidAt,
       selectedItems,
@@ -380,7 +380,6 @@ export class InvoiceService {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
       include: {
-        // 1. Client Info (Untuk Header Invoice)
         client: {
           include: {
             b2b: { include: { department: true, pics: true } },
@@ -388,12 +387,23 @@ export class InvoiceService {
           },
         },
 
-        // 2. Order Info (Untuk PO Number & Footer Sales)
         order: {
           select: {
             id: true,
             poNumber: true,
             dateOrder: true,
+
+            totalAmount: true,
+
+            invoices: {
+              select: {
+                id: true,
+                category: true,
+                status: true,
+                totalAmount: true,
+                paidAt: true,
+              },
+            },
 
             // Ambil Data Sales & Bank Account (Untuk Tanda Tangan & Info Transfer)
             sales: {

@@ -33,6 +33,10 @@ export class VariantImageMetadataDTO {
   price!: number;
 
   @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
   @IsNumber({}, { message: "weight must be a valid number" })
   @Type(() => Number)
   @Min(0, { message: "weight cannot be negative" })

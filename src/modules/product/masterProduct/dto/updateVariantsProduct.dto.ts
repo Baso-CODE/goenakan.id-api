@@ -4,6 +4,7 @@ export class UpdateProductVariantsDTO {
     variantId?: string;
     sku: string;
     variantName?: string;
+    description?: string;
     price?: number;
     stock: number;
     weight?: number;
@@ -13,7 +14,7 @@ export class UpdateProductVariantsDTO {
     attributeValueIds: string[];
     _isDeleted?: boolean;
     images: {
-      id?: string; // undefined = create (new image)
+      id?: string;
       url: string;
       publicId: string;
       isFeatured?: boolean;
@@ -21,7 +22,7 @@ export class UpdateProductVariantsDTO {
       markedForDelete?: boolean;
       _isDeleted?: boolean;
 
-      fileIndex?: number; // <── TAMBAHKAN INI
+      fileIndex?: number;
     }[];
   }[];
 }

@@ -41,6 +41,13 @@ export class OrderRouter {
     );
 
     this.router.get(
+      "/stats/general",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.orderController.getGeneralStats,
+    );
+
+    this.router.get(
       "/export/excel",
       this.nextAuthMiddleware.verifyNextAuthToken,
       verifyRole(["SUPER_ADMIN"]),

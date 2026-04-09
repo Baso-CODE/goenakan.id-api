@@ -250,6 +250,7 @@ export class ProductService {
               variantName,
               productId: product.id,
               price: variantPrice,
+              description: meta?.description ?? null,
               weight: meta?.weight ?? null,
               width: meta?.width ?? null,
               height: meta?.height ?? null,
@@ -334,7 +335,6 @@ export class ProductService {
       return this.getProductById(newProduct.id);
     } catch (dbError) {
       console.error("🔥 RAW PRISMA ERROR 🔥", dbError);
-
       throw new ApiError(
         "Database error occurred while creating product. Please check the backend console for details.",
         500,
@@ -640,7 +640,6 @@ export class ProductService {
       if (match) {
         variantIndexCounter = parseInt(match[1]) + 1;
       } else {
-        // Fallback jika format SKU tidak sesuai, hitung jumlah varian yang tersisa
         const remainingVariants = await this.prisma.productVariant.count({
           where: { productId },
         });
@@ -671,6 +670,7 @@ export class ProductService {
             productId,
             sku: finalSku,
             price: v.price,
+            description: v.description ?? null,
             stock: v.stock,
             variantName: v.variantName,
             weight: v.weight ?? null,
@@ -692,6 +692,7 @@ export class ProductService {
             price: v.price,
             stock: v.stock,
             variantName: v.variantName,
+            description: v.description ?? null,
             weight: v.weight ?? null,
             width: v.width ?? null,
             height: v.height ?? null,
