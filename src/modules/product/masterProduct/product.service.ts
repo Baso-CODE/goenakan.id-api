@@ -93,7 +93,6 @@ export class ProductService {
       }
     }
 
-    // 🟡 HAPUS DESTRUCTURE ...productCore KARENA BERBAHAYA
     const {
       attributes = [],
       priceTiers = [],
@@ -142,7 +141,6 @@ export class ProductService {
       throw new ApiError("Failed to upload image files to Cloudinary", 500);
     }
 
-    // 🟢 TAMBAHKAN TRY-CATCH KHUSUS UNTUK MELIHAT ERROR PRISMA
     try {
       const newProduct = await this.prisma.$transaction(async (tx) => {
         // 1. CREATE PRODUCT
@@ -335,10 +333,8 @@ export class ProductService {
 
       return this.getProductById(newProduct.id);
     } catch (dbError) {
-      // 🟢 PRINT ERROR ASLI DARI PRISMA KE TERMINAL
       console.error("🔥 RAW PRISMA ERROR 🔥", dbError);
 
-      // Lempar ulang error agar bisa ditangkap oleh controller
       throw new ApiError(
         "Database error occurred while creating product. Please check the backend console for details.",
         500,

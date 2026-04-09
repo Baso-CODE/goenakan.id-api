@@ -1,9 +1,7 @@
-import { differenceInDays } from "date-fns";
 import { injectable } from "tsyringe";
-import { PaginationService } from "../pagination/pagination.service"; // Pastikan path ini benar
+import { PaginationService } from "../pagination/pagination.service";
 import { PrismaService } from "../prisma/prisma.service";
 
-// Tipe Query Input
 interface LogisticsQuery {
   page?: number;
   take?: number;
@@ -16,36 +14,36 @@ interface LogisticsQuery {
 export class OrderAnalyticsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly pagination: PaginationService, // 1. Inject PaginationService
+    private readonly pagination: PaginationService,
   ) {}
 
-  // MAIN FUNCTION: Generate Table Dashboard with Pagination
+  // Helper kalkulasi hari (Disamakan persis dengan yang di Tracking Detail)
+  private diffDays(start: Date | null, end: Date | null): number {
+    if (!start || !end) return 0;
+
+    const startDate = new Date(start);
+    startDate.setHours(0, 0, 0, 0);
+
+    const endDate = new Date(end);
+    endDate.setHours(0, 0, 0, 0);
+
+    const diffTime = endDate.getTime() - startDate.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // Ditambah 1 agar inklusif
+  }
+
   async getOrderLogisticsSummary(query: LogisticsQuery) {
     const { page, take, search, startDate, endDate } = query;
     const where: any = {};
 
-    // === 2. BUILD SEARCH FILTER ===
     if (search && search.trim() !== "") {
       const searchTerm = search.trim();
       where.OR = [
-        // Cari berdasarkan PO Number
         { poNumber: { contains: searchTerm } },
-        // Cari berdasarkan Nama Client B2B
-        {
-          client: {
-            b2b: { companyName: { contains: searchTerm } },
-          },
-        },
-        // Cari berdasarkan Nama Client B2C
-        {
-          client: {
-            b2c: { name: { contains: searchTerm } },
-          },
-        },
+        { client: { b2b: { companyName: { contains: searchTerm } } } },
+        { client: { b2c: { name: { contains: searchTerm } } } },
       ];
     }
 
-    // === 3. BUILD DATE FILTER ===
     if (startDate || endDate) {
       const dateFilter: any = {};
       if (startDate) {
@@ -55,25 +53,22 @@ export class OrderAnalyticsService {
       if (endDate) {
         const end = new Date(endDate);
         if (!isNaN(end.getTime())) {
-          end.setDate(end.getDate() + 1); // +1 hari agar inklusif
+          end.setDate(end.getDate() + 1);
           dateFilter.lt = end;
         }
       }
       if (Object.keys(dateFilter).length > 0) {
-        where.createdAt = dateFilter; // Atau gunakan 'dateOrder' jika ingin filter by tgl order
+        where.createdAt = dateFilter;
       }
     }
 
-    // === 4. EXECUTE QUERY ===
-    // A. Hitung Total Data (untuk Meta)
     const count = await this.prisma.order.count({ where });
 
-    // B. Ambil Data Halaman Ini
     const orders = await this.prisma.order.findMany({
       where,
       skip: (Number(page || 1) - 1) * Number(take || 10),
       take: Number(take || 10),
-      orderBy: { createdAt: "desc" }, // Order terbaru paling atas
+      orderBy: { createdAt: "desc" },
       include: {
         productionTrackers: true,
         shipments: true,
@@ -88,49 +83,87 @@ export class OrderAnalyticsService {
       },
     });
 
-    // === 5. MAPPING & KALKULASI (Sama seperti logic sebelumnya) ===
     const formattedData = orders.map((order) => {
-      // A. Hitung Waktu Produksi
-      const productionDays = order.productionTrackers.reduce((acc, tracker) => {
-        if (tracker.startDate && tracker.endDate) {
-          return (
-            acc +
-            differenceInDays(
-              new Date(tracker.endDate),
-              new Date(tracker.startDate),
-            )
-          );
-        }
-        if (tracker.startDate && tracker.status === "IN_PRODUCTION") {
-          return (
-            acc + differenceInDays(new Date(), new Date(tracker.startDate))
-          );
-        }
-        return acc;
-      }, 0);
+      // --- KALKULASI WAKTU PRODUKSI ---
+      const prodStarts = order.productionTrackers
+        .map((t) => t.startDate)
+        .filter(Boolean) as Date[];
+      const prodEnds = order.productionTrackers
+        .map((t) => t.endDate)
+        .filter(Boolean) as Date[];
+      const prodStart = prodStarts.length
+        ? new Date(Math.min(...prodStarts.map((d) => d.getTime())))
+        : null;
+      const isProdOngoing = order.productionTrackers.some(
+        (t) => t.startDate && !t.endDate,
+      );
+      const prodEnd = prodEnds.length
+        ? new Date(Math.max(...prodEnds.map((d) => d.getTime())))
+        : isProdOngoing
+          ? new Date()
+          : null;
+      const productionDays = this.diffDays(prodStart, prodEnd);
 
-      // B. Hitung Inbound Time
+      // --- KALKULASI INBOUND ---
       const inboundShipments = order.shipments.filter(
         (s) => s.type === "INBOUND",
       );
-      const inboundDays = this.calculateTotalDuration(inboundShipments);
+      const inStarts = inboundShipments
+        .map((s) => s.departureDate)
+        .filter(Boolean) as Date[];
+      const inEnds = inboundShipments
+        .map((s) => s.arrivalDate)
+        .filter(Boolean) as Date[];
+      const inboundStart = inStarts.length
+        ? new Date(Math.min(...inStarts.map((d) => d.getTime())))
+        : null;
+      const isInboundOngoing = inboundShipments.some(
+        (s) => s.departureDate && !s.arrivalDate,
+      );
+      const inboundEnd = inEnds.length
+        ? new Date(Math.max(...inEnds.map((d) => d.getTime())))
+        : isInboundOngoing
+          ? new Date()
+          : null;
+      const inboundDays = this.diffDays(inboundStart, inboundEnd);
 
-      // C. Hitung Outbound Time
+      // --- KALKULASI OUTBOUND ---
       const outboundShipments = order.shipments.filter(
         (s) => s.type === "OUTBOUND",
       );
-      const outboundDays = this.calculateTotalDuration(outboundShipments);
+      const outStarts = outboundShipments
+        .map((s) => s.departureDate)
+        .filter(Boolean) as Date[];
+      const outEnds = outboundShipments
+        .map((s) => s.arrivalDate)
+        .filter(Boolean) as Date[];
+      const outboundStart = outStarts.length
+        ? new Date(Math.min(...outStarts.map((d) => d.getTime())))
+        : null;
+      const isOutboundOngoing = outboundShipments.some(
+        (s) => s.departureDate && !s.arrivalDate,
+      );
+      const outboundEnd = outEnds.length
+        ? new Date(Math.max(...outEnds.map((d) => d.getTime())))
+        : isOutboundOngoing
+          ? new Date()
+          : null;
+      const outboundDays = this.diffDays(outboundStart, outboundEnd);
 
-      // D. Total Waktu Penyelesaian
-      const totalDays = productionDays + inboundDays + outboundDays;
+      // --- KALKULASI TOTAL WAKTU ---
+      const totalStart = prodStart || inboundStart || outboundStart;
+      const totalEnd =
+        outboundEnd ||
+        inboundEnd ||
+        prodEnd ||
+        (totalStart ? new Date() : null);
+      const totalDays = this.diffDays(totalStart, totalEnd);
 
-      // E. Tentukan Current Status
       const currentStatus = this.determineCurrentStatus(
         order.productionTrackers,
         order.shipments,
       );
 
-      // Nama Client (Helper)
       const clientName =
         order.client.type === "B2B"
           ? order.client.b2b?.companyName
@@ -148,7 +181,6 @@ export class OrderAnalyticsService {
       };
     });
 
-    // === 6. GENERATE META ===
     const meta = this.pagination.generateMeta({
       page: Number(page || 1),
       take: Number(take || 10),
@@ -158,21 +190,7 @@ export class OrderAnalyticsService {
     return { data: formattedData, meta };
   }
 
-  private calculateTotalDuration(shipments: any[]): number {
-    return shipments.reduce((acc, s) => {
-      if (s.departureDate && s.arrivalDate) {
-        return (
-          acc +
-          differenceInDays(new Date(s.arrivalDate), new Date(s.departureDate))
-        );
-      }
-      if (s.status === "DISPATCHED" && s.departureDate) {
-        return acc + differenceInDays(new Date(), new Date(s.departureDate));
-      }
-      return acc;
-    }, 0);
-  }
-
+  // 🟢 3. LOGIKA STATUS UPDATE (MEMPERBAIKI BUG LABEL SALAH / TIDAK FINAL)
   private determineCurrentStatus(productions: any[], shipments: any[]): string {
     const allEvents = [
       ...productions.map((p) => ({
@@ -189,33 +207,44 @@ export class OrderAnalyticsService {
       })),
     ];
 
-    if (allEvents.length === 0) return "Order Created";
+    if (allEvents.length === 0) return "Menunggu Produksi";
 
     allEvents.sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
     );
-
     const lastEvent = allEvents[0];
 
+    // Status Produksi
     if (lastEvent.type === "PRODUCTION") {
       if (lastEvent.status === "IN_PRODUCTION") return "Sedang Produksi";
-      if (lastEvent.status === "COMPLETED")
-        return "Siap Dikirim (Prod Selesai)";
+      if (lastEvent.status === "COMPLETED") return "Produksi Selesai";
     }
 
+    // Status Pengiriman
     if (lastEvent.type === "SHIPMENT") {
       const s = lastEvent.meta;
-      const destination = s.destination || "Tujuan";
-      const typeLabel = s.type === "INBOUND" ? "Inbound" : "Outbound";
+      const status = lastEvent.status;
 
-      if (lastEvent.status === "DISPATCHED") {
-        return `${typeLabel}: OTW ke ${destination}`;
-      }
-      if (lastEvent.status === "ARRIVED") {
-        return `${typeLabel}: Sampai di ${destination}`;
+      if (s.type === "INBOUND") {
+        if (
+          status === "DISPATCHED" ||
+          status === "DEPARTED_ORIGIN" ||
+          status === "IN_TRANSIT"
+        )
+          return "Inbound: OTW";
+        if (status === "AT_CUSTOMS" || status === "RELEASED_FROM_CUSTOMS")
+          return "Inbound: Bea Cukai";
+        if (status === "ARRIVED_DESTINATION") return "Inbound: Sampai HO";
+      } else {
+        if (status === "DISPATCHED" || status === "PICKED_UP")
+          return "Outbound: Diproses";
+        if (status === "IN_TRANSIT" || status === "ARRIVED_CITY")
+          return "Outbound: Dalam Perjalanan";
+        if (status === "ARRIVED_DESTINATION")
+          return "Outbound: Diterima Client";
       }
     }
 
-    return "Unknown Status";
+    return "Diproses";
   }
 }

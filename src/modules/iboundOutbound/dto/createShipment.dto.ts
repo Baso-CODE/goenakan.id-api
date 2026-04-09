@@ -45,6 +45,10 @@ export class ShipmentItemInputDTO {
   @IsInt()
   @Min(1)
   quantity!: number;
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  totalCarton?: number;
 }
 
 // --- MAIN DTO: CREATE SHIPMENT HEADER ---
@@ -85,6 +89,9 @@ export class CreateShipmentDTO {
   @IsDateString()
   departureDate!: string;
 
+  @IsOptional()
+  @IsDateString()
+  arrivalDate?: string;
   // === ITEM YANG DIKIRIM ===
   @IsArray()
   @ValidateNested({ each: true })

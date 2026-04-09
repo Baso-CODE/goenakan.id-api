@@ -79,16 +79,18 @@ export class ShipmentService {
           courierLink: vendorTrackingUrl || data.courierLink || null,
           method: data.method,
 
-          status: ShipmentStatus.DISPATCHED,
+          status: "DISPATCHED",
           departureDate: new Date(data.departureDate),
 
           origin: data.origin,
           destination: data.destination,
+          arrivalDate: data.arrivalDate ? new Date(data.arrivalDate) : null,
 
           items: {
             create: data.items.map((item) => ({
               orderProductId: item.orderProductId,
               quantity: item.quantity,
+              totalCarton: item.totalCarton || 0,
             })),
           },
 
@@ -111,7 +113,7 @@ export class ShipmentService {
       await tx.shipmentHistory.create({
         data: {
           shipmentId: shipment.id,
-          status: ShipmentStatus.DISPATCHED,
+          status: "DISPATCHED",
           date: new Date(data.departureDate),
           city: data.origin,
           note: "Shipment created and dispatched",
@@ -121,7 +123,6 @@ export class ShipmentService {
       return shipment;
     });
   }
-
   // =================================================================
   // 2. ADD HISTORY / UPDATE STATUS (Multi-Step Logic)
   // =================================================================
@@ -248,13 +249,9 @@ export class ShipmentService {
               },
             },
             shipments: {
+              where: { type: "OUTBOUND" },
               orderBy: { createdAt: "asc" },
-              select: {
-                id: true,
-                deliveryNoteNumber: true,
-                createdAt: true,
-                type: true,
-              },
+              include: { items: true },
             },
           },
         },
@@ -263,8 +260,18 @@ export class ShipmentService {
           include: {
             orderProduct: {
               include: {
-                product: { select: { name: true, sku: true } },
-                variant: { select: { variantName: true } },
+                product: {
+                  select: {
+                    name: true,
+                    sku: true,
+                    description: true,
+                  },
+                },
+                variant: {
+                  select: {
+                    variantName: true,
+                  },
+                },
               },
             },
           },
@@ -280,18 +287,52 @@ export class ShipmentService {
 
     if (!shipment) throw new ApiError("Shipment not found", 404);
 
-    const allOrderShipments = shipment.order.shipments;
-    const currentShipmentIndex = allOrderShipments.findIndex(
+    const outboundShipments = shipment.order.shipments;
+
+    const currentShipmentIndex = outboundShipments.findIndex(
       (s) => s.id === id,
     );
 
     const previousDO =
       currentShipmentIndex > 0
-        ? allOrderShipments[currentShipmentIndex - 1]
+        ? outboundShipments[currentShipmentIndex - 1]
         : null;
+
+    const previousShipments =
+      currentShipmentIndex > 0
+        ? outboundShipments.slice(0, currentShipmentIndex)
+        : [];
+
+    const formattedItems = shipment.items.map((item: any) => {
+      const orderedPcs = item.orderProduct.quantity || 0;
+      const sendPcs = item.quantity || 0;
+      const totalCarton = item.totalCarton || 0;
+
+      // Hitung barang yang SUDAH DIKIRIM di DO Outbound SEBELUMNYA
+      const deliveredPcs = previousShipments.reduce((total, prevShip) => {
+        const matchingItem = prevShip.items.find(
+          (prevItem) => prevItem.orderProductId === item.orderProductId,
+        );
+        return total + (matchingItem?.quantity || 0);
+      }, 0);
+
+      // Sisa yang belum dikirim (In Process)
+      const inProcessPcs = Math.max(0, orderedPcs - (deliveredPcs + sendPcs));
+
+      return {
+        ...item,
+        orderedPcs,
+        sendPcs,
+        deliveredPcs: deliveredPcs,
+        inProcessPcs: inProcessPcs,
+        totalCarton: totalCarton > 0 ? totalCarton : "-",
+      };
+    });
 
     return {
       ...shipment,
+
+      items: formattedItems,
 
       invoiceNumbers: shipment.order.invoices.map((inv) => inv.invoiceNumber),
       invoices: shipment.order.invoices,
@@ -302,10 +343,10 @@ export class ShipmentService {
             deliveryNoteNumber: previousDO.deliveryNoteNumber,
           }
         : null,
-
       isFirstShipment: currentShipmentIndex === 0,
-      shipmentSequence: currentShipmentIndex + 1,
-      totalShipments: allOrderShipments.length,
+      shipmentSequence:
+        currentShipmentIndex !== -1 ? currentShipmentIndex + 1 : 0,
+      totalShipments: outboundShipments.length,
     };
   }
 }

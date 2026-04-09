@@ -239,7 +239,6 @@ export class OrderService {
         }
       }
 
-      // ✅ Gunakan harga dari input user (item.price), bukan dari product/variant
       const finalPrice = Number(item.price);
       const subtotal = finalPrice * item.quantity;
       totalAmount += subtotal;
@@ -933,13 +932,23 @@ export class OrderService {
       throw new ApiError(`Order with ID ${id} not found`, 404);
     }
 
-    // ✅ Helper kalkulasi hari
+    // Helper kalkulasi hari
     const diffDays = (start: Date | null, end: Date | null): number => {
       if (!start || !end) return 0;
-      return Math.ceil(
-        (new Date(end).getTime() - new Date(start).getTime()) /
-          (1000 * 60 * 60 * 24),
-      );
+
+      // Ambil tanggal murni tanpa peduli jam (set ke 00:00:00)
+      const startDate = new Date(start);
+      startDate.setHours(0, 0, 0, 0);
+
+      const endDate = new Date(end);
+      endDate.setHours(0, 0, 0, 0);
+
+      // Hitung selisih
+      const diffTime = endDate.getTime() - startDate.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      // Jika start dan end ada (proses sudah dimulai dan diakhiri), minimal hitungannya adalah 1 hari
+      return diffDays + 1;
     };
 
     // Mapping Data Products
@@ -957,12 +966,14 @@ export class OrderService {
         quantity: p.quantity,
         productionTrackers: p.productionTrackers.map((t) => ({
           id: t.id,
+          step: t.step,
           vendorId: t.vendorId,
           quantity: t.quantity,
           startDate: t.startDate,
           endDate: t.endDate,
           status: t.status,
           vendor: t.vendor,
+          remarks: t.remarks ?? null,
         })),
         producedQuantity: producedQty,
         remainingProduction: Math.max(0, p.quantity - producedQty),

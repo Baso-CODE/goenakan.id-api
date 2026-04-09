@@ -24,6 +24,11 @@ export class CreateProductionDTO {
   @IsNotEmpty()
   @IsInt()
   @Min(1)
+  step!: number;
+
+  @IsNotEmpty()
+  @IsInt()
+  @Min(1)
   quantity!: number; // Jumlah yang diproduksi
 
   @IsNotEmpty()

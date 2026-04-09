@@ -851,16 +851,16 @@ model Cashflow {
 // ===============================================
 
 model ProductionTracker {
-  id             String @id @default(uuid())
+  id             String           @id @default(uuid())
   orderId        String
   orderProductId String
   vendorId       String
-
-  quantity  Int
-  startDate DateTime?
-  endDate   DateTime?
-  status    ProductionStatus @default(PENDING)
-  remarks   String?
+  step           Int              @default(1)
+  quantity       Int
+  startDate      DateTime?
+  endDate        DateTime?
+  status         ProductionStatus @default(PENDING)
+  remarks        String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -924,8 +924,8 @@ model ShipmentItem {
   id             String @id @default(uuid())
   shipmentId     String
   orderProductId String
-
-  quantity Int
+  totalCarton    Int?   @default(0)
+  quantity       Int
 
   // Relations
   shipment     Shipment     @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
