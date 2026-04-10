@@ -524,7 +524,7 @@ export class ProductService {
     return updatedProduct;
   }
 
-  // Kita definisikan tipe datanya langsung di sini biar simpel
+  // === ADD VIDEO ===
   async addVideo(
     id: string,
     data: {
@@ -569,6 +569,7 @@ export class ProductService {
     return { message: "Video deleted successfully" };
   }
 
+  // == DELETE PRODUCT (SOFT DELETE) ===
   async deleteProduct(id: string) {
     // ... (Logika delete/soft-delete)
     throw new ApiError(
@@ -577,6 +578,7 @@ export class ProductService {
     );
   }
 
+  // === UPDATE PRODUCT VARIANTS (CREATE/UPDATE/DELETE) ===
   async updateProductVariants(
     dto: UpdateProductVariantsDTO,
     files: UpdateProductVariantFiles,
@@ -813,6 +815,8 @@ export class ProductService {
       variants: updatedVariants,
     };
   }
+
+  // === UPDATE PRODUCT ATTRIBUTES (CREATE/DELETE) ===
   async updateProductAttributes(dto: UpdateProductAttributesDTO) {
     const { productId, attributeValueIds } = dto;
 
@@ -854,6 +858,7 @@ export class ProductService {
     return { message: "Product attributes updated successfully." };
   }
 
+  // === UPDATE VARIANT IMAGES (CREATE/UPDATE/DELETE) ===
   async updateVariantImages(
     productId: string,
     variantId: string,
@@ -994,6 +999,7 @@ export class ProductService {
     };
   }
 
+  // === GET PRODUCT BY ID (INCLUDE MEDIA, VARIANTS, ATTRIBUTES) ===
   async getProductById(id: string) {
     const product = await this.prisma.product.findUnique({
       where: { id },
@@ -1002,6 +1008,7 @@ export class ProductService {
         priceTiers: true,
         images: true,
         videos: true,
+        tags: true,
 
         attributeValues: {
           include: {
@@ -1037,6 +1044,7 @@ export class ProductService {
     return product;
   }
 
+  // === GET ALL PRODUCTS (WITH PAGINATION, SEARCH, FILTER) ===
   async getAllProducts(query: {
     page?: number;
     take?: number;
@@ -1086,6 +1094,7 @@ export class ProductService {
     return { data, meta };
   }
 
+  // === GET ALL PRODUCTS FOR ORDER (WITHOUT PAGINATION, BUT WITH CATEGORY & CUSTOM FILTER) ===
   async getAllProductsForOrder(query?: {
     categoryId?: string;
     isCustom?: boolean | string;
@@ -1176,6 +1185,8 @@ export class ProductService {
       throw new Error("Failed to fetch products for order.");
     }
   }
+
+  // === EXPORT PRODUCTS TO EXCEL (DENGAN FILTERING) ===
   async exportProductsToExcel(query: ProductExportQuery): Promise<Buffer> {
     const { startDate, endDate, search, categoryId, isCustom } = query;
 
@@ -1342,6 +1353,7 @@ export class ProductService {
     return buffer as unknown as Buffer;
   }
 
+  // === UPDATE PRODUCT IMAGE SEO (ALT TEXT & FEATURED) ===
   async updateProductImageSEO(imageId: string, data: UpdateProductImageDTO) {
     // 1. Cek apakah image ada
     const existingImage = await this.prisma.productImage.findUnique({
@@ -1373,6 +1385,7 @@ export class ProductService {
     return updatedImage;
   }
 
+  // === UPDATE PRODUCT VIDEO SEO (TITLE, ALT TEXT & FEATURED) ===
   async updateProductVideoSEO(videoId: string, data: UpdateProductVideoDTO) {
     const existingVideo = await this.prisma.productVideo.findUnique({
       where: { id: videoId },
@@ -1404,6 +1417,7 @@ export class ProductService {
     return updatedVideo;
   }
 
+  // === UPSERT PRODUCT SEO (META TITLE, DESCRIPTION, KEYWORDS, DLL) ===
   async upsertProductSEO(productId: string, data: ProductSeoDTO) {
     // 1. Validasi: Pastikan Produknya Ada
     const product = await this.prisma.product.findUnique({
@@ -1457,6 +1471,7 @@ export class ProductService {
     return seoData || {};
   }
 
+  // === GENERATE SKU OTOMATIS BERBASIS NAMA PRODUK ===
   async generateSku(productName: string): Promise<string> {
     if (!productName) {
       throw new ApiError("Product Name is required to generate SKU", 400);
