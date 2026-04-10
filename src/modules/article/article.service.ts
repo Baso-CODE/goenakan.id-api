@@ -1,0 +1,375 @@
+import { injectable } from "tsyringe";
+
+import { ApiError } from "../../utils/api-error";
+import { SlugService } from "../../utils/genereateSlug";
+import { CloudinaryService } from "../cloudinary/cloudinary.service";
+import { PaginationService } from "../pagination/pagination.service";
+import { PrismaService } from "../prisma/prisma.service";
+import { CreateArticleDTO, UpdateArticleDTO } from "./dto/article.dto";
+
+@injectable()
+export class ArticleService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pagination: PaginationService,
+    private readonly slug: SlugService,
+    private readonly cloudinary: CloudinaryService,
+  ) {}
+
+  // =========================================================================
+  // 1. ENDPOINT KHUSUS UNTUK TIPTAP (SINGLE IMAGE UPLOAD)
+  // Fungsi ini dipanggil secara asynchronous oleh frontend saat user insert gambar di Tiptap
+  // =========================================================================
+  async uploadTiptapImage(file: Express.Multer.File): Promise<{ url: string }> {
+    if (!file) {
+      throw new ApiError("No image file provided for Tiptap upload", 400);
+    }
+
+    try {
+      const uploadResult = await this.cloudinary.upload(file, {
+        folder: "articles/content", // Simpan terpisah dari cover
+        resource_type: "image",
+      });
+
+      return { url: uploadResult.secure_url };
+    } catch (error) {
+      console.error("🔥 ERROR UPLOADING TIPTAP IMAGE:", error);
+      throw new ApiError("Failed to upload image to Cloudinary", 500);
+    }
+  }
+
+  // =========================================================================
+  // 2. CREATE ARTICLE (DENGAN UPLOAD COVER IMAGE)
+  // =========================================================================
+  async createArticle(
+    data: CreateArticleDTO,
+    authorId: string,
+    coverFile?: Express.Multer.File, // Menerima file gambar
+  ) {
+    const slug = this.slug.create(data.title);
+
+    const existing = await this.prisma.article.findUnique({
+      where: { slug },
+    });
+
+    if (existing) {
+      throw new ApiError("Article with this title/slug already exists", 400);
+    }
+
+    // --- PROSES UPLOAD COVER IMAGE KE CLOUDINARY ---
+    let coverImageUrl = data.coverImage; // Bisa URL dari DTO jika sudah diupload terpisah
+    let coverImagePublicId = data.coverImageId;
+
+    if (coverFile) {
+      try {
+        const uploadResult = await this.cloudinary.upload(coverFile, {
+          folder: "articles/covers",
+          resource_type: "image",
+        });
+        coverImageUrl = uploadResult.secure_url;
+        coverImagePublicId = uploadResult.public_id;
+      } catch (error) {
+        throw new ApiError("Failed to upload cover image to Cloudinary", 500);
+      }
+    }
+
+    if (!coverImageUrl) {
+      throw new ApiError("Cover image is required", 400);
+    }
+    // -----------------------------------------------
+
+    try {
+      const newArticle = await this.prisma.$transaction(async (tx) => {
+        // 1. Create Article
+        const article = await tx.article.create({
+          data: {
+            title: data.title,
+            slug,
+            content: data.content,
+            coverImage: coverImageUrl,
+            coverImageId: coverImagePublicId,
+            source: data.source,
+            published: data.published ?? false,
+            publishedAt: data.published
+              ? data.publishedAt
+                ? new Date(data.publishedAt)
+                : new Date()
+              : null,
+            categoryId: data.categoryId,
+            authorId: authorId,
+          },
+        });
+
+        // 2. Insert Related Products (Sticky Sidebar)
+        if (data.productIds && data.productIds.length > 0) {
+          await tx.articleProduct.createMany({
+            data: data.productIds.map((productId) => ({
+              articleId: article.id,
+              productId: productId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+
+        return article;
+      });
+
+      return this.getArticleById(newArticle.id);
+    } catch (error) {
+      console.error("🔥 ERROR CREATING ARTICLE:", error);
+      throw new ApiError(
+        "Database error occurred while creating article.",
+        500,
+      );
+    }
+  }
+
+  // =========================================================================
+  // 3. UPDATE ARTICLE (DENGAN OPSI UPDATE COVER IMAGE)
+  // =========================================================================
+  async updateArticle(
+    id: string,
+    data: UpdateArticleDTO,
+    coverFile?: Express.Multer.File, // Opsi menerima file gambar baru
+  ) {
+    const existing = await this.prisma.article.findUnique({
+      where: { id },
+    });
+
+    if (!existing) throw new ApiError("Article not found", 404);
+
+    const { productIds, ...articleData } = data;
+
+    const slug = data.title ? this.slug.create(data.title) : existing.slug;
+
+    if (data.title && data.title !== existing.title) {
+      const duplicate = await this.prisma.article.findFirst({
+        where: { slug, id: { not: id } },
+      });
+
+      if (duplicate) {
+        throw new ApiError("Article with this title/slug already exists", 400);
+      }
+    }
+
+    // --- PROSES UPDATE COVER IMAGE KE CLOUDINARY ---
+    let coverImageUrl = existing.coverImage;
+    let coverImagePublicId = existing.coverImageId;
+
+    if (coverFile) {
+      try {
+        // Hapus cover lama dari Cloudinary (Opsional, tapi disarankan agar rapi)
+        if (existing.coverImageId) {
+          await this.cloudinary.delete(existing.coverImageId);
+        }
+
+        // Upload cover baru
+        const uploadResult = await this.cloudinary.upload(coverFile, {
+          folder: "articles/covers",
+          resource_type: "image",
+        });
+        coverImageUrl = uploadResult.secure_url;
+        coverImagePublicId = uploadResult.public_id;
+      } catch (error) {
+        throw new ApiError(
+          "Failed to upload new cover image to Cloudinary",
+          500,
+        );
+      }
+    }
+    // -----------------------------------------------
+
+    const updateData: any = {
+      ...articleData,
+      slug,
+      coverImage: coverImageUrl,
+      coverImageId: coverImagePublicId,
+    };
+
+    if (data.published !== undefined) {
+      if (
+        data.published === true &&
+        !existing.publishedAt &&
+        !data.publishedAt
+      ) {
+        updateData.publishedAt = new Date();
+      } else if (data.published === false) {
+        // updateData.publishedAt = null;
+      } else if (data.publishedAt) {
+        updateData.publishedAt = new Date(data.publishedAt);
+      }
+    }
+
+    try {
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const article = await tx.article.update({
+          where: { id },
+          data: updateData,
+        });
+
+        if (productIds !== undefined) {
+          await tx.articleProduct.deleteMany({
+            where: { articleId: id },
+          });
+
+          if (productIds.length > 0) {
+            await tx.articleProduct.createMany({
+              data: productIds.map((productId) => ({
+                articleId: id,
+                productId: productId,
+              })),
+            });
+          }
+        }
+
+        return article;
+      });
+
+      return this.getArticleById(updated.id);
+    } catch (error) {
+      console.error("🔥 ERROR UPDATING ARTICLE:", error);
+      throw new ApiError(
+        "Database error occurred while updating article.",
+        500,
+      );
+    }
+  }
+
+  // =========================================================================
+  // BACA DATA (GET BY ID, GET BY SLUG, GET ALL) & DELETE - TETAP SAMA
+  // =========================================================================
+  async getArticleById(id: string) {
+    const article = await this.prisma.article.findUnique({
+      where: { id },
+      include: {
+        category: true,
+        author: {
+          select: { id: true, name: true, email: true },
+        },
+        relatedProducts: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                sku: true,
+                basePrice: true,
+                images: {
+                  where: { isFeatured: true },
+                  take: 1,
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!article) throw new ApiError("Article not found", 404);
+    return article;
+  }
+
+  async getArticleBySlug(slug: string) {
+    const article = await this.prisma.article.findUnique({
+      where: { slug },
+      include: {
+        category: true,
+        author: {
+          select: { name: true },
+        },
+        relatedProducts: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                basePrice: true,
+                images: {
+                  where: { isFeatured: true },
+                  take: 1,
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!article || !article.published) {
+      throw new ApiError("Article not found or not published", 404);
+    }
+
+    return article;
+  }
+
+  async getAllArticles(query: {
+    page?: number;
+    take?: number;
+    search?: string;
+    categoryId?: string;
+    published?: boolean | string;
+  }) {
+    const where: any = {};
+
+    if (query.search) {
+      where.title = { contains: query.search };
+    }
+
+    if (query.categoryId) {
+      where.categoryId = query.categoryId;
+    }
+
+    if (query.published !== undefined) {
+      if (typeof query.published === "string") {
+        where.published = query.published === "true";
+      } else {
+        where.published = query.published;
+      }
+    }
+
+    const count = await this.prisma.article.count({ where });
+    const data = await this.prisma.article.findMany({
+      where,
+      skip: (Number(query.page || 1) - 1) * Number(query.take || 10),
+      take: Number(query.take || 10),
+      orderBy: { createdAt: "desc" },
+      include: {
+        category: { select: { id: true, name: true, slug: true } },
+        author: { select: { name: true } },
+      },
+    });
+
+    const meta = this.pagination.generateMeta({
+      count,
+      page: Number(query.page || 1),
+      take: Number(query.take || 10),
+    });
+
+    return { data, meta };
+  }
+
+  async deleteArticle(id: string) {
+    const existing = await this.prisma.article.findUnique({
+      where: { id },
+    });
+
+    if (!existing) throw new ApiError("Article not found", 404);
+
+    if (existing.coverImageId) {
+      try {
+        await this.cloudinary.delete(existing.coverImageId);
+      } catch (error) {
+        console.warn(
+          `Failed to delete image ${existing.coverImageId} from Cloudinary`,
+        );
+      }
+    }
+
+    const deleted = await this.prisma.article.delete({
+      where: { id },
+    });
+
+    return deleted;
+  }
+}

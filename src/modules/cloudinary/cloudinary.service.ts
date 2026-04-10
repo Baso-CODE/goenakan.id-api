@@ -25,6 +25,8 @@ export class CloudinaryService {
     return readable;
   };
 
+  // ⚠️ Peringatan: Fungsi ini akan memotong nama folder.
+  // Hanya gunakan jika file Cloudinary Anda ada di root folder.
   private extractPublicIdFromUrl = (url: string): string => {
     const urlParts = url.split("/");
     const publicIdWithExtension = urlParts[urlParts.length - 1];
@@ -58,9 +60,20 @@ export class CloudinaryService {
       readableStream.pipe(uploadStream);
     });
   };
+
+  // === METHOD LAMA: Hapus berdasarkan URL ===
   public remove = async (secureUrl: string): Promise<any> => {
     try {
       const publicId = this.extractPublicIdFromUrl(secureUrl);
+      return await cloudinary.uploader.destroy(publicId);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  // === METHOD BARU: Hapus berdasarkan Public ID ===
+  public delete = async (publicId: string): Promise<any> => {
+    try {
       return await cloudinary.uploader.destroy(publicId);
     } catch (error) {
       throw error;

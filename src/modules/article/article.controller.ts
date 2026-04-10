@@ -1,0 +1,136 @@
+import { NextFunction, Request, Response } from "express";
+import { injectable } from "tsyringe";
+import { ArticleService } from "./article.service";
+import { CreateArticleDTO, UpdateArticleDTO } from "./dto/article.dto";
+
+@injectable()
+export class ArticleController {
+  constructor(private readonly articleService: ArticleService) {}
+
+  // === UPLOAD IMAGE UNTUK TIPTAP EDITOR ===
+  uploadTiptapImage = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const file = req.file as Express.Multer.File;
+      const result = await this.articleService.uploadTiptapImage(file);
+
+      // Biasanya editor teks butuh kembalian spesifik berupa URL gambar
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === CREATE ARTICLE ===
+  createArticle = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // Jika request berupa multipart/form-data (karena ada gambar),
+      // pastikan boolean/array di-parse dengan benar oleh middleware/DTO Anda.
+      const data: CreateArticleDTO = req.body;
+      const file = req.file as Express.Multer.File; // Cover image dari multer.single()
+
+      // Ambil ID User dari token JWT (biasanya disimpan di req.user setelah melewati middleware auth)
+      // Gunakan (req as any) jika Anda belum membuat type definition khusus untuk Express Request
+      const authorId = (req as any).user?.id;
+
+      if (!authorId) {
+        return res
+          .status(401)
+          .json({ message: "Unauthorized. Author ID is missing." });
+      }
+
+      const result = await this.articleService.createArticle(
+        data,
+        authorId,
+        file,
+      );
+      res.status(201).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === UPDATE ARTICLE ===
+  updateArticle = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const data: UpdateArticleDTO = req.body;
+      const file = req.file as Express.Multer.File | undefined; // Cover image opsional
+
+      const updatedArticle = await this.articleService.updateArticle(
+        id,
+        data,
+        file,
+      );
+
+      res.status(200).send(updatedArticle);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === GET ALL ARTICLES (Pagination & Filter) ===
+  getAllArticles = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { page, take, search, categoryId, published } = req.query;
+
+      const articles = await this.articleService.getAllArticles({
+        page: page ? Number(page) : 1,
+        take: take ? Number(take) : 10,
+        search: search as string,
+        categoryId: categoryId as string,
+        published: published as string | boolean | undefined,
+      });
+
+      res.status(200).json(articles);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === GET ARTICLE BY ID (BACKOFFICE) ===
+  getArticleById = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const article = await this.articleService.getArticleById(id);
+
+      res.status(200).send(article);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === GET ARTICLE BY SLUG (PUBLIC/FRONTEND) ===
+  getArticleBySlug = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { slug } = req.params;
+      const article = await this.articleService.getArticleBySlug(slug);
+
+      res.status(200).send(article);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === DELETE ARTICLE ===
+  deleteArticle = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const result = await this.articleService.deleteArticle(id);
+
+      res.status(200).send({
+        message: "Article successfully deleted",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+}

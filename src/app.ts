@@ -7,6 +7,8 @@ import { container } from "tsyringe";
 import { env } from "./config";
 
 import { errorMiddleware } from "./middleware/error.middleware";
+import { ArticleRouter } from "./modules/article/article.router";
+import { ArticleCategoryRouter } from "./modules/article/category/articleCategory.router";
 import { AuthRouter } from "./modules/auth/auth.router";
 import { CashflowRouter } from "./modules/cashflow/cashflow.router";
 import { ClientRouter } from "./modules/client/client.router";
@@ -85,6 +87,8 @@ export default class App {
       QuotationNoteCategoryRouter,
     );
     const financeRouter = container.resolve(FinanceRouter);
+    const categoryArticleRouter = container.resolve(ArticleCategoryRouter);
+    const articleRouter = container.resolve(ArticleRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -124,6 +128,8 @@ export default class App {
       quotationNoteCategoryRouter.getRouter(),
     );
     this.app.use("/finance", financeRouter.getRouter());
+    this.app.use("/article-categories", categoryArticleRouter.getRouter());
+    this.app.use("/articles", articleRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);
