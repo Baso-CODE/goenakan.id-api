@@ -27,13 +27,19 @@ export class ArticleController {
   // === CREATE ARTICLE ===
   createArticle = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // Jika request berupa multipart/form-data (karena ada gambar),
-      // pastikan boolean/array di-parse dengan benar oleh middleware/DTO Anda.
       const data: CreateArticleDTO = req.body;
-      const file = req.file as Express.Multer.File; // Cover image dari multer.single()
+      const file = req.file as Express.Multer.File;
 
-      // Ambil ID User dari token JWT (biasanya disimpan di req.user setelah melewati middleware auth)
-      // Gunakan (req as any) jika Anda belum membuat type definition khusus untuk Express Request
+      if (typeof data.published === "string") {
+        data.published = data.published === "true";
+      }
+
+      if (typeof data.productIds === "string") {
+        data.productIds = (data.productIds as string)
+          .split(",")
+          .filter(Boolean);
+      }
+
       const authorId = (req as any).user?.id;
 
       if (!authorId) {
