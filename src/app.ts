@@ -8,6 +8,7 @@ import { env } from "./config";
 
 import { errorMiddleware } from "./middleware/error.middleware";
 import { ArticleRouter } from "./modules/article/article.router";
+import { ArticleBannerRouter } from "./modules/article/banner/articleBanner.router";
 import { ArticleCategoryRouter } from "./modules/article/category/articleCategory.router";
 import { AuthRouter } from "./modules/auth/auth.router";
 import { CashflowRouter } from "./modules/cashflow/cashflow.router";
@@ -88,6 +89,7 @@ export default class App {
     );
     const financeRouter = container.resolve(FinanceRouter);
     const categoryArticleRouter = container.resolve(ArticleCategoryRouter);
+    const articleBannerRouter = container.resolve(ArticleBannerRouter);
     const articleRouter = container.resolve(ArticleRouter);
 
     this.app.get("/", (_, res) => {
@@ -129,6 +131,7 @@ export default class App {
     );
     this.app.use("/finance", financeRouter.getRouter());
     this.app.use("/article-categories", categoryArticleRouter.getRouter());
+    this.app.use("/articles-banners", articleBannerRouter.getRouter());
     this.app.use("/articles", articleRouter.getRouter());
   }
   private handleError(): void {

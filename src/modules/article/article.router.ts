@@ -29,6 +29,9 @@ export class ArticleRouter {
     // 1. PUBLIC / LIST ROUTES
     // ====================================================================
 
+    // GET ARTICLE LIST (Tanpa Autentikasi, untuk tampilan publik seperti homepage) --- IGNORE ---
+    this.router.get("/list", this.articleController.getArticleList);
+
     // GET ALL ARTICLES (Pagination & Filter)
     this.router.get(
       "/",

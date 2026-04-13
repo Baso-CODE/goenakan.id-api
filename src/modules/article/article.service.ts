@@ -300,7 +300,35 @@ export class ArticleService {
       throw new ApiError("Article not found or not published", 404);
     }
 
-    return article;
+    const prevArticle = await this.prisma.article.findFirst({
+      where: {
+        published: true,
+        createdAt: { lt: article.createdAt },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { title: true, slug: true },
+    });
+
+    const nextArticle = await this.prisma.article.findFirst({
+      where: {
+        published: true,
+        createdAt: { gt: article.createdAt },
+      },
+      orderBy: { createdAt: "asc" },
+      select: { title: true, slug: true },
+    });
+
+    // 4. Return artikel utama beserta prev dan next-nya
+    return {
+      ...article,
+      // Format href langsung disesuaikan dengan kebutuhan frontend
+      prevArticle: prevArticle
+        ? { title: prevArticle.title, href: `/article/${prevArticle.slug}` }
+        : null,
+      nextArticle: nextArticle
+        ? { title: nextArticle.title, href: `/article/${nextArticle.slug}` }
+        : null,
+    };
   }
 
   async getAllArticles(query: {
@@ -371,5 +399,57 @@ export class ArticleService {
     });
 
     return deleted;
+  }
+
+  // === GET ALL ARTICLES (PUBLIC CLIENT) ===
+  async getArticleListPublic(query: {
+    page?: number;
+    take?: number;
+    search?: string;
+    categoryName?: string;
+    sort?: "newest" | "older";
+  }) {
+    const where: any = {
+      published: true,
+    };
+
+    if (query.search) {
+      where.title = { contains: query.search, mode: "insensitive" };
+    }
+
+    if (query.categoryName && query.categoryName !== "All posts") {
+      where.category = {
+        name: query.categoryName,
+      };
+    }
+
+    const count = await this.prisma.article.count({ where });
+
+    // Logika Sorting
+    const orderBy: any = {};
+    if (query.sort === "older") {
+      orderBy.publishedAt = "asc";
+    } else {
+      orderBy.publishedAt = "desc"; // Default "newest"
+    }
+
+    const data = await this.prisma.article.findMany({
+      where,
+      skip: (Number(query.page || 1) - 1) * Number(query.take || 6),
+      take: Number(query.take || 6),
+      orderBy: orderBy,
+      include: {
+        category: { select: { id: true, name: true, slug: true } },
+        author: { select: { name: true } },
+      },
+    });
+
+    const meta = this.pagination.generateMeta({
+      count,
+      page: Number(query.page || 1),
+      take: Number(query.take || 6),
+    });
+
+    return { data, meta };
   }
 }

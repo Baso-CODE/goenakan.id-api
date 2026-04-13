@@ -64,7 +64,17 @@ export class ArticleController {
     try {
       const { id } = req.params;
       const data: UpdateArticleDTO = req.body;
-      const file = req.file as Express.Multer.File | undefined; // Cover image opsional
+      const file = req.file as Express.Multer.File | undefined;
+
+      if (typeof data.published === "string") {
+        data.published = data.published === "true";
+      }
+
+      if (typeof data.productIds === "string") {
+        data.productIds = (data.productIds as string)
+          .split(",")
+          .filter(Boolean);
+      }
 
       const updatedArticle = await this.articleService.updateArticle(
         id,
@@ -134,6 +144,32 @@ export class ArticleController {
       res.status(200).send({
         message: "Article successfully deleted",
         data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === GET PUBLIC ARTICLE LIST ===
+  getArticleList = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { page, take, search, categoryName, sort } = req.query;
+
+      const queryParams = {
+        page: page ? parseInt(page as string, 10) : undefined,
+        take: take ? parseInt(take as string, 10) : undefined,
+        search: search as string,
+        categoryName: categoryName as string,
+        sort: sort as "newest" | "older",
+      };
+
+      const result =
+        await this.articleService.getArticleListPublic(queryParams);
+
+      res.status(200).json({
+        message: "Public articles fetched successfully",
+        data: result.data,
+        meta: result.meta,
       });
     } catch (error) {
       next(error);

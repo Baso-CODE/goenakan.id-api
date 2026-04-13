@@ -30,12 +30,7 @@ export class ArticleCategoryRouter {
       this.articleCategoryController.getAllCategories,
     );
 
-    this.router.get(
-      "/list",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
-      this.articleCategoryController.getCategoryList,
-    );
+    this.router.get("/list", this.articleCategoryController.getCategoryList);
 
     this.router.get(
       "/export/excel",
