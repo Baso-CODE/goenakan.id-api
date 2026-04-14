@@ -20,6 +20,90 @@ export class FaqService {
     private readonly pagination: PaginationService,
   ) {}
 
+  // =========================================================
+  // === PUBLIC SERVICES (UNTUK FRONTEND CLIENT) ===
+  // =========================================================
+
+  // 1. Ambil FAQ Khusus Landing Page (Hanya Featured)
+  async getLandingPageFaqs(take: number = 5) {
+    try {
+      const data = await this.prisma.faq.findMany({
+        where: {
+          isFeatured: true,
+          isActive: true,
+          category: {
+            isActive: true,
+          },
+        },
+        take: take,
+        include: {
+          category: {
+            select: { id: true, name: true, slug: true },
+          },
+        },
+        orderBy: {
+          displayOrder: "asc",
+        },
+      });
+
+      return data;
+    } catch (error) {
+      console.error("❌ Error fetching Landing Page FAQs:", error);
+      throw new Error("Failed to fetch landing page FAQs.");
+    }
+  }
+
+  async getMainPageFaqs(query: {
+    page?: number;
+    take?: number;
+    categoryId?: string;
+  }) {
+    try {
+      const page = Number(query.page) || 1;
+      const take = Number(query.take) || 10;
+      const skip = (page - 1) * take;
+
+      const where: any = {
+        isFeatured: false,
+        isActive: true,
+        category: {
+          isActive: true,
+        },
+      };
+
+      if (query.categoryId) {
+        where.categoryId = query.categoryId;
+      }
+
+      const count = await this.prisma.faq.count({ where });
+
+      const data = await this.prisma.faq.findMany({
+        where,
+        skip,
+        take,
+        include: {
+          category: {
+            select: { id: true, name: true, slug: true },
+          },
+        },
+        orderBy: {
+          displayOrder: "asc", // Urutkan berdasarkan urutan prioritas
+        },
+      });
+
+      const meta = this.pagination.generateMeta({
+        count,
+        page,
+        take,
+      });
+
+      return { data, meta };
+    } catch (error) {
+      console.error("❌ Error fetching Main Page FAQs:", error);
+      throw new Error("Failed to fetch main page FAQs.");
+    }
+  }
+
   // === GET ALL WITH PAGINATION ===
   async getAllFaqs(query: {
     page?: number;

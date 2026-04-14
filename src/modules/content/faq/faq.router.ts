@@ -139,6 +139,17 @@ export class FaqRouter {
       verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       this.faqController.deleteFaq,
     );
+
+    // ==========================================
+    // SECTION 3: PUBLIC ROUTES (CLIENT/FRONTEND)
+    // Base Path: /public
+    // ==========================================
+
+    // 1. Get Landing Page FAQs (Hanya Featured = true)
+    this.router.get("/public/landing", this.faqController.getLandingPageFaqs);
+
+    // 2. Get Main Page FAQs (Semua non-featured, Pagination, per Kategori)
+    this.router.get("/public/main", this.faqController.getMainPageFaqs);
   };
 
   getRouter(): Router {

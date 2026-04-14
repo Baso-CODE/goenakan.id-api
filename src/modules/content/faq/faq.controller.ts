@@ -205,4 +205,43 @@ export class FaqController {
       next(error);
     }
   };
+
+  // =================================================================
+  // SECTION 3: PUBLIC ENDPOINTS (CLIENT/FRONTEND)
+  // =================================================================
+
+  // === GET FAQ FOR LANDING PAGE (FEATURED ONLY) ===
+  getLandingPageFaqs = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { take } = req.query;
+      const result = await this.faqService.getLandingPageFaqs(
+        take ? Number(take) : undefined,
+      );
+
+      res.status(200).json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === GET FAQ FOR MAIN PAGE (NON-FEATURED, WITH PAGINATION & CATEGORY) ===
+  getMainPageFaqs = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { page, take, categoryId } = req.query;
+
+      const result = await this.faqService.getMainPageFaqs({
+        page: Number(page),
+        take: Number(take),
+        categoryId: categoryId as string,
+      });
+
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
 }
