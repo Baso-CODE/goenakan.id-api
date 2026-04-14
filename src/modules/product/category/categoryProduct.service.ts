@@ -1,11 +1,12 @@
+import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
 import { ApiError } from "../../../utils/api-error";
+import { SlugService } from "../../../utils/genereateSlug";
+import { CloudinaryService } from "../../cloudinary/cloudinary.service";
 import { PaginationService } from "../../pagination/pagination.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateProductCategoryDTO } from "./dto/createCategoryProduct.dto";
 import { UpdateProductCategoryDTO } from "./dto/updateCategoryProduct.dto";
-import { SlugService } from "../../../utils/genereateSlug";
-import * as ExcelJS from "exceljs";
 
 export interface CategoryProductsExportQuery {
   startDate?: string;
@@ -17,6 +18,7 @@ export class ProductCategoryService {
     private readonly prisma: PrismaService,
     private readonly pagination: PaginationService,
     private readonly slug: SlugService,
+    private readonly cloudinary: CloudinaryService,
   ) {}
 
   // === GET ALL ACTIVE CATEGORIES (WITH PAGINATION) ===
@@ -68,10 +70,15 @@ export class ProductCategoryService {
     }
   }
 
-  // === CREATE CATEGORY ===
-  async createCategory(data: CreateProductCategoryDTO) {
+  // === CREATE CATEGORY DENGAN UPLOAD IMAGE ===
+  async createCategory(
+    data: CreateProductCategoryDTO,
+    file?: Express.Multer.File,
+  ) {
     const slug = this.slug.create(data.name);
-    const existing = await this.prisma.productCategory.findFirst({
+
+    // 1. Validasi keberadaan kategori
+    const existing = await this.prisma.productCategory.findUnique({
       where: { name: data.name },
     });
 
@@ -79,15 +86,46 @@ export class ProductCategoryService {
       throw new ApiError("Category name already exists", 400);
     }
 
-    const category = await this.prisma.productCategory.create({
-      data: {
-        name: data.name,
-        slug: slug,
-      },
-    });
+    // 2. Proses Upload Gambar ke Cloudinary
+    let imageUrl = data.image; // Cadangan jika URL sudah dikirim via DTO
+    let imageId = data.imageId;
 
-    return category;
+    if (file) {
+      try {
+        const uploadResult = await this.cloudinary.upload(file, {
+          folder: "products/categories", // Folder khusus kategori produk
+          resource_type: "image",
+        });
+        imageUrl = uploadResult.secure_url;
+        imageId = uploadResult.public_id;
+      } catch (error) {
+        console.error("🔥 CLOUDINARY UPLOAD ERROR:", error);
+        throw new ApiError(
+          "Failed to upload category image to Cloudinary",
+          500,
+        );
+      }
+    }
+
+    // 3. Simpan ke Database
+    try {
+      const category = await this.prisma.productCategory.create({
+        data: {
+          name: data.name,
+          slug: slug,
+          image: imageUrl, // Field baru dari schema
+          imageId: imageId, // Field baru dari schema
+          description: data.description, // Jika Anda menambahkan deskripsi
+        },
+      });
+
+      return category;
+    } catch (error) {
+      console.error("🔥 DATABASE ERROR:", error);
+      throw new ApiError("Failed to create product category in database", 500);
+    }
   }
+
   // === GET CATEGORY BY ID ===
   async getCategoryById(id: string) {
     const category = await this.prisma.productCategory.findUnique({
@@ -97,29 +135,70 @@ export class ProductCategoryService {
     return category;
   }
 
-  // === UPDATE CATEGORY ===
-  // === UPDATE CATEGORY ===
-  async updateCategory(id: string, data: Partial<UpdateProductCategoryDTO>) {
+  // === UPDATE CATEGORY DENGAN IMAGE REPLACEMENT ===
+  async updateCategory(
+    id: string,
+    data: Partial<UpdateProductCategoryDTO>,
+    file?: Express.Multer.File, // Opsional, jika ada file baru yang diunggah
+  ) {
+    // 1. Cek keberadaan kategori
     const existing = await this.prisma.productCategory.findUnique({
       where: { id },
     });
 
     if (!existing) throw new ApiError("Category not found", 404);
 
+    // 2. Update Slug jika nama berubah
     const slug =
       data.name && data.name !== existing.name
         ? this.slug.create(data.name)
         : existing.slug;
 
-    const updated = await this.prisma.productCategory.update({
-      where: { id },
-      data: {
-        ...data,
-        slug,
-      },
-    });
+    // 3. Proses Gambar Baru (jika ada)
+    let imageUrl = data.image;
+    let imageId = data.imageId;
 
-    return updated;
+    if (file) {
+      try {
+        if (existing.imageId) {
+          await this.cloudinary.delete(existing.imageId).catch((err) => {
+            console.warn(
+              `⚠️ Gagal menghapus gambar lama ${existing.imageId}:`,
+              err,
+            );
+          });
+        }
+
+        // --- UPLOAD GAMBAR BARU ---
+        const uploadResult = await this.cloudinary.upload(file, {
+          folder: "products/categories",
+          resource_type: "image",
+        });
+        imageUrl = uploadResult.secure_url;
+        imageId = uploadResult.public_id;
+      } catch (error) {
+        throw new ApiError("Failed to update image on Cloudinary", 500);
+      }
+    }
+
+    // 4. Update Database
+    try {
+      const updated = await this.prisma.productCategory.update({
+        where: { id },
+        data: {
+          name: data.name,
+          slug: slug,
+          image: imageUrl,
+          imageId: imageId,
+          description: data.description,
+        },
+      });
+
+      return updated;
+    } catch (error) {
+      console.error("🔥 DATABASE UPDATE ERROR:", error);
+      throw new ApiError("Failed to update product category in database", 500);
+    }
   }
 
   // === SOFT DELETE CATEGORY ===
@@ -235,5 +314,30 @@ export class ProductCategoryService {
 
     const buffer = await workbook.xlsx.writeBuffer();
     return buffer as unknown as Buffer;
+  }
+
+  async getPublicCategories() {
+    try {
+      const categories = await this.prisma.productCategory.findMany({
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          image: true, // URL dari Cloudinary
+          description: true,
+          _count: {
+            select: { products: true }, // Menghitung jumlah produk di tiap kategori
+          },
+        },
+        orderBy: {
+          name: "asc",
+        },
+      });
+
+      return categories;
+    } catch (error) {
+      console.error("🔥 Gagal mengambil kategori publik:", error);
+      throw new ApiError("Failed to fetch categories", 500);
+    }
   }
 }

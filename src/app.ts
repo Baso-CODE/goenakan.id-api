@@ -14,9 +14,11 @@ import { AuthRouter } from "./modules/auth/auth.router";
 import { CashflowRouter } from "./modules/cashflow/cashflow.router";
 import { ClientRouter } from "./modules/client/client.router";
 import { PopupBannerRouter } from "./modules/content/banner/banner.router";
+import { BrandClientRouter } from "./modules/content/brandClient/brandClient.router";
 import { ClientLogoRouter } from "./modules/content/clientLogo/clientLogo.router";
 import { FaqRouter } from "./modules/content/faq/faq.router";
 import { HeroRouter } from "./modules/content/hero/hero.router";
+import { PortfolioRouter } from "./modules/content/portfolio/portfolio.router";
 import { AppSettingRouter } from "./modules/content/setting/setting.router";
 import { CurrencyRouter } from "./modules/currency/currency.router";
 import { DepartmentRouter } from "./modules/department/department.router";
@@ -91,6 +93,8 @@ export default class App {
     const categoryArticleRouter = container.resolve(ArticleCategoryRouter);
     const articleBannerRouter = container.resolve(ArticleBannerRouter);
     const articleRouter = container.resolve(ArticleRouter);
+    const brandClientRouter = container.resolve(BrandClientRouter);
+    const portfolioRouter = container.resolve(PortfolioRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -133,6 +137,8 @@ export default class App {
     this.app.use("/article-categories", categoryArticleRouter.getRouter());
     this.app.use("/articles-banners", articleBannerRouter.getRouter());
     this.app.use("/articles", articleRouter.getRouter());
+    this.app.use("/brand-clients", brandClientRouter.getRouter());
+    this.app.use("/portfolios", portfolioRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

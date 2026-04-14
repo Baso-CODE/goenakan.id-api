@@ -235,6 +235,35 @@ export class ArticleService {
     }
   }
 
+  // === GET RELEVANT ARTICLES (BERDASARKAN KATEGORI) ===
+  async getRelevantArticles(
+    categoryId: string,
+    currentArticleId: string,
+    take: number = 6,
+  ) {
+    try {
+      const articles = await this.prisma.article.findMany({
+        where: {
+          categoryId: categoryId,
+          published: true,
+          id: { not: currentArticleId },
+        },
+        take: take,
+        orderBy: {
+          createdAt: "desc", // Ambil yang terbaru di kategori tersebut
+        },
+        include: {
+          category: { select: { name: true } },
+        },
+      });
+
+      return articles;
+    } catch (error) {
+      console.error("🔥 ERROR FETCHING RELEVANT ARTICLES:", error);
+      throw new ApiError("Failed to fetch relevant articles", 500);
+    }
+  }
+
   // =========================================================================
   // BACA DATA (GET BY ID, GET BY SLUG, GET ALL) & DELETE - TETAP SAMA
   // =========================================================================
@@ -299,7 +328,10 @@ export class ArticleService {
     if (!article || !article.published) {
       throw new ApiError("Article not found or not published", 404);
     }
-
+    const relevantArticles = await this.getRelevantArticles(
+      article.categoryId,
+      article.id,
+    );
     const prevArticle = await this.prisma.article.findFirst({
       where: {
         published: true,
@@ -321,7 +353,7 @@ export class ArticleService {
     // 4. Return artikel utama beserta prev dan next-nya
     return {
       ...article,
-      // Format href langsung disesuaikan dengan kebutuhan frontend
+      relevantArticles,
       prevArticle: prevArticle
         ? { title: prevArticle.title, href: `/article/${prevArticle.slug}` }
         : null,

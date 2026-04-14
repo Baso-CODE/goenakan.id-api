@@ -17,13 +17,18 @@ export class ProductCategoryController {
   createCategory = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const body = req.body as CreateProductCategoryDTO;
-      const result = await this.productCategoryService.createCategory(body);
+      const file = req.file;
+
+      const result = await this.productCategoryService.createCategory(
+        body,
+        file,
+      );
+
       res.status(201).send(result);
     } catch (error) {
       next(error);
     }
   };
-
   // === GET ALL CATEGORIES ===
   getAllCategories = async (
     req: Request,
@@ -67,11 +72,18 @@ export class ProductCategoryController {
   };
 
   // === UPDATE CATEGORY ===
+  // === UPDATE CATEGORY ===
   updateCategory = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;
       const body = req.body as UpdateProductCategoryDTO;
-      const result = await this.productCategoryService.updateCategory(id, body);
+      const file = req.file;
+      const result = await this.productCategoryService.updateCategory(
+        id,
+        body,
+        file,
+      );
+
       res.status(200).send(result);
     } catch (error) {
       next(error);
@@ -110,6 +122,25 @@ export class ProductCategoryController {
         'attachment; filename="data-kategori-vendor-export.xlsx"',
       );
       res.send(excelBuffer);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getPublicCategories = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const result = await this.productCategoryService.getPublicCategories();
+
+      // Kita bisa tambahkan cache-control jika ingin performa lebih cepat
+      res.setHeader("Cache-Control", "public, s-maxage=3600");
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
     } catch (error) {
       next(error);
     }

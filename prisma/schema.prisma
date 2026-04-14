@@ -262,42 +262,43 @@ model Department {
 // ===============================================
 
 model ProductCategory {
-  id        String   @id @default(uuid())
-  name      String
-  slug      String   @unique
-  createdAt DateTime @default(now())
+  id          String  @id @default(uuid())
+  name        String  @unique
+  slug        String  @unique
+  image       String?
+  imageId     String?
+  description String? @db.Text
 
-  products  Product[]
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
 
   @@map("product_categories")
 }
 
 model Product {
-  id           String   @id @default(uuid())
+  id           String          @id @default(uuid())
   name         String
-  sku          String   @unique // SKU
-  slug         String   @unique
-  description  String?  @db.Text
+  sku          String          @unique // SKU
+  slug         String          @unique
+  description  String?         @db.Text
   basePrice    Decimal
-  isCustom     Boolean  @default(false)
+  isCustom     Boolean         @default(false)
   materialType String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
   weight       Float?
   width        Float?
   height       Float?
   length       Float?
-
-  // Relasi Category
-  categoryId String
-  category   ProductCategory @relation(fields: [categoryId], references: [id])
+  categoryId   String
+  category     ProductCategory @relation(fields: [categoryId], references: [id])
 
   // Relasi Baru
   attributeValues ProductAttributeValue[]
   priceTiers      PriceTier[]
   tags            Tag[]
-  // Relasi transaksi
   invoiceItems    InvoiceItem[]
   orderProducts   OrderProduct[]
   quotationItems  QuotationItem[]
@@ -312,9 +313,7 @@ model Product {
 }
 
 model ProductSEO {
-  id String @id @default(uuid())
-
-  // Field SEO Standar
+  id              String  @id @default(uuid())
   metaTitle       String?
   metaDescription String?
   keywords        String?
@@ -325,10 +324,8 @@ model ProductSEO {
   ogImage       String?
 
   structuredData String? @db.Text
-
-  // Relasi balik ke Product
-  productId String  @unique // @unique menandakan relasi One-to-One
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId      String  @unique
+  product        Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -372,7 +369,7 @@ model ProductAttributeValue {
   attribute        Attribute?     @relation(fields: [attributeId], references: [id])
   attributeId      String?
 
-  @@unique([productId, attributeValueId]) // agar tidak dobel assign
+  @@unique([productId, attributeValueId])
   @@map("product_attribute_values")
 }
 
@@ -1407,4 +1404,39 @@ model ArticleBanner {
   updatedAt DateTime @updatedAt
 
   @@map("article_banners")
+}
+
+model BrandClient {
+  id           String  @id @default(cuid())
+  name         String
+  slug         String  @unique
+  country      String
+  logo         String
+  logoId       String
+  websiteUrl   String?
+  displayOrder Int     @default(0)
+  isActive     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("brand_clients")
+}
+
+model Portfolio {
+  id           String  @id @default(cuid())
+  title        String
+  slug         String  @unique
+  clientName   String
+  description  String? @db.Text
+  image        String
+  imageId      String
+  displayOrder Int     @default(0)
+  isActive     Boolean @default(true)
+
+  // Standard Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("portfolios")
 }

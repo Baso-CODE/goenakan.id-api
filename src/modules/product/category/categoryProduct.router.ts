@@ -3,11 +3,11 @@ import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
 import { verifyRole } from "../../../middleware/role.middleware";
-import { validateBody } from "../../../middleware/validation.middleware";
 import { ProductCategoryController } from "./categoryProduct.controller";
-import { CreateProductCategoryDTO } from "./dto/createCategoryProduct.dto";
-import { UpdateProductCategoryDTO } from "./dto/updateCategoryProduct.dto";
 
+import multer from "multer";
+const upload = multer({ storage: multer.memoryStorage() });
+@autoInjectable()
 @autoInjectable()
 export class ProductCategoryRouter {
   private readonly router: Router = Router();
@@ -20,7 +20,16 @@ export class ProductCategoryRouter {
   }
 
   private initializeRoutes = (): void => {
+    const auth = this.nextAuthMiddleware.verifyNextAuthToken;
+    const adminRole = verifyRole(["SUPER_ADMIN"]);
+
     // === PUBLIC ROUTE: Get All Active Categories ===
+    this.router.get(
+      "/public",
+      this.productCategoryController.getPublicCategories,
+    );
+
+    // === PROTECTED ROUTES ===
     this.router.get(
       "/",
       this.nextAuthMiddleware.verifyNextAuthToken,
@@ -44,17 +53,16 @@ export class ProductCategoryRouter {
 
     this.router.post(
       "/",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
-      validateBody(CreateProductCategoryDTO),
+      auth,
+      adminRole,
+      upload.single("image"),
       this.productCategoryController.createCategory,
     );
-
     this.router.patch(
       "/:id",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
-      validateBody(UpdateProductCategoryDTO),
+      auth,
+      adminRole,
+      upload.single("image"),
       this.productCategoryController.updateCategory,
     );
 
