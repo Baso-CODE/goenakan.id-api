@@ -17,15 +17,23 @@ const EmptyStringToUndefined = Transform(({ value }) =>
 
 export class QuotationItemTierDTO {
   @IsNotEmpty()
-  @IsInt()
-  @Min(1)
   @Type(() => Number)
-  quantity!: number;
+  @IsNumber()
+  @Min(1)
+  minQuantity!: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  maxQuantity?: number;
+
+  @IsOptional()
+  @IsString()
+  quantityLabel?: string;
 
   @IsNotEmpty()
-  @IsNumber()
-  @Min(0)
   @Type(() => Number)
+  @IsNumber()
   unitPrice!: number;
 }
 
@@ -60,6 +68,9 @@ export class CreateQuotationItemDTO {
   @Type(() => Number)
   unitPrice?: number;
 
+  @IsOptional()
+  @IsString()
+  quantityLabel?: string;
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

@@ -212,6 +212,7 @@ export class QuotationService {
       clientInfo: clientDetail,
     };
   }
+
   // ==========================================
   // 3. CREATE QUOTATION
   // ==========================================
@@ -260,7 +261,7 @@ export class QuotationService {
 
     // 3. Prepare Items & Tiers
     const itemsToCreate = await Promise.all(
-      data.items.map(async (item, index) => {
+      data.items.map(async (item: any, index) => {
         let variantPrice: number | null = null;
 
         // A. Validasi Produk & Variant
@@ -297,18 +298,21 @@ export class QuotationService {
         const img = uploadedImages[index];
 
         // 🟢 B. FORMAT DATA TIERS
-        // Gunakan item.tiers jika ada. Jika tidak ada, gunakan fallback ke item.quantity & item.unitPrice (format lama)
+        // Gunakan item.tiers jika ada.
+        // Fallback ditambahkan untuk berjaga-jaga jika payload lama masih mengirimkan `quantity`
         const tiersData =
           item.tiers && item.tiers.length > 0
             ? item.tiers
             : [
                 {
-                  quantity: item.quantity || 1,
+                  minQuantity: item.quantity ? Number(item.quantity) : 1,
+                  maxQuantity: undefined,
+                  quantityLabel: item.quantityLabel || null,
                   unitPrice: item.unitPrice || 0,
                 },
               ];
 
-        const tiersToCreate = tiersData.map((tier) => {
+        const tiersToCreate = tiersData.map((tier: any) => {
           let finalUnitPrice = tier.unitPrice;
 
           // Jika harga tier 0/kosong tapi variant memiliki harga, gunakan harga variant
@@ -316,12 +320,18 @@ export class QuotationService {
             finalUnitPrice = variantPrice;
           }
 
-          // Hitung total per baris tier (dikurangi diskon jika ada)
+          // 🟢 Hitung total per baris tier (berdasarkan minQuantity sebagai pengali dasar)
+          const baseQtyForCalculation = tier.minQuantity
+            ? Number(tier.minQuantity)
+            : 1;
           const lineTotal =
-            tier.quantity * finalUnitPrice - (item.discount || 0);
+            baseQtyForCalculation * Number(finalUnitPrice) -
+            Number(item.discount || 0);
 
           return {
-            quantity: tier.quantity,
+            minQuantity: baseQtyForCalculation,
+            maxQuantity: tier.maxQuantity ? Number(tier.maxQuantity) : null,
+            quantityLabel: tier.quantityLabel || null,
             unitPrice: finalUnitPrice,
             totalPrice: lineTotal < 0 ? 0 : lineTotal, // Mencegah minus
           };
@@ -338,9 +348,6 @@ export class QuotationService {
           variantId: item.variantId || null,
           productName: item.productName,
           description: item.description,
-
-          // 🟡 HAPUS: quantity, unitPrice, dan totalPrice tidak lagi di-insert ke tabel Item utama
-          // discount: item.discount || 0, // Biarkan jika Anda tidak menghapus field discount dari schema Item
 
           customization: item.customization ?? Prisma.JsonNull,
           remarks: item.remarks,
@@ -463,10 +470,14 @@ export class QuotationService {
       500,
     );
   }
+
   // ==========================================
   // 4. UPDATE QUOTATION
   // ==========================================
   async updateQuotation(id: string, data: UpdateQuotationDTO) {
+    console.log("=== PAYLOAD MASUK DARI FRONTEND ===");
+    console.log(JSON.stringify(data.items, null, 2));
+    console.log("===================================");
     const existing = await this.prisma.quotation.findUnique({
       where: { id },
     });
@@ -480,34 +491,51 @@ export class QuotationService {
       let newTotalAmount = existing.totalAmount;
 
       if (items && items.length > 0) {
+        // Hapus item lama, akan diganti dengan yang baru dari payload
         await tx.quotationItem.deleteMany({ where: { quotationId: id } });
 
         let calculatedSubTotal = 0;
 
         for (const item of items) {
+          // 🟢 FORMAT DATA TIERS (Sesuai dengan skema baru)
           const tiersData =
             item.tiers && item.tiers.length > 0
               ? item.tiers
               : [
                   {
-                    quantity: item.quantity || 1,
+                    minQuantity: item.quantity ? Number(item.quantity) : 1, // Fallback jika format lama
+                    maxQuantity: undefined,
+                    quantityLabel: item.quantityLabel || null,
                     unitPrice: item.unitPrice || 0,
                   },
                 ];
 
-          const tiersToCreate = tiersData.map((tier) => {
+          const tiersToCreate = tiersData.map((tier: any) => {
+            const baseQtyForCalculation = tier.minQuantity
+              ? Number(tier.minQuantity)
+              : 1;
+            const finalUnitPrice = tier.unitPrice || 0;
+
+            // Hitung total per baris menggunakan minQuantity
             const lineTotal =
-              tier.quantity * tier.unitPrice - (item.discount || 0);
+              baseQtyForCalculation * Number(finalUnitPrice) -
+              Number(item.discount || 0);
+
             return {
-              quantity: tier.quantity,
-              unitPrice: tier.unitPrice,
-              totalPrice: lineTotal < 0 ? 0 : lineTotal,
+              minQuantity: baseQtyForCalculation,
+              maxQuantity: tier.maxQuantity ? Number(tier.maxQuantity) : null,
+              quantityLabel: tier.quantityLabel || null,
+              unitPrice: finalUnitPrice,
+              totalPrice: lineTotal < 0 ? 0 : lineTotal, // Mencegah minus
             };
           });
 
+          // Ambil tier pertama untuk perhitungan subtotal default
           if (tiersToCreate.length > 0) {
             calculatedSubTotal += tiersToCreate[0].totalPrice;
           }
+
+          // Insert Item beserta relasi Tier-nya
           await tx.quotationItem.create({
             data: {
               quotationId: id,
@@ -587,7 +615,6 @@ export class QuotationService {
         where: { id },
         data: updatePayload,
         include: {
-          // 🟢 INCLUDE TIERS agar Frontend menerima balikan format baru yang lengkap
           items: {
             include: {
               tiers: true,
