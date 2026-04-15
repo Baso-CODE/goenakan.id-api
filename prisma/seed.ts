@@ -23,9 +23,9 @@ async function main() {
   await prisma.user.upsert({
     where: { email: "superadmin@goenakan.id" },
     update: {
-      password: hashedPassword, // <-- Paksa update password jadi yang baru
+      password: hashedPassword,
       role: "SUPER_ADMIN",
-      name: "Super Admin", // Opsional: reset nama juga
+      name: "Super Admin",
     },
     create: {
       name: "Super Admin",

@@ -101,6 +101,7 @@ enum ShipmentType {
 }
 
 enum ShipmentStatus {
+  PENDING
   PREPARED
   DISPATCHED
   ARRIVED
@@ -866,9 +867,10 @@ model Shipment {
   deliveryNoteNumber String?
   trackingNumber     String?
   courierLink        String?
+  step               Int               @default(1)
   type               ShipmentType
   method             ShippingMethod
-  status             String            @default("PENDING")
+  status             ShipmentStatus    @default(PREPARED)
   history            ShipmentHistory[]
   origin             String?
   destination        String?
@@ -892,11 +894,10 @@ model ShipmentHistory {
   id         String   @id @default(cuid())
   shipmentId String
   shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-
-  status String
-  note   String?
-  city   String?
-  date   DateTime @default(now())
+  status     String
+  note       String?
+  city       String?
+  date       DateTime @default(now())
 
   createdAt DateTime @default(now())
 }

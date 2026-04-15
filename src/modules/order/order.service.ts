@@ -20,8 +20,6 @@ export class OrderService {
     private readonly pagination: PaginationService,
   ) {}
 
-  // User bisa pilih: kasih harga atau gratis
-
   async createOrder(data: CreateOrderDTO) {
     const {
       vendorIds,
@@ -203,6 +201,7 @@ export class OrderService {
 
     return newOrder;
   }
+
   async updateOrder(id: string, data: CreateOrderDTO) {
     const {
       vendorIds,

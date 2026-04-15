@@ -4,7 +4,6 @@ import { PrismaService } from "../prisma/prisma.service";
 import { CreateShipmentDTO } from "./dto/createShipment.dto";
 import {
   AddShipmentHistoryDTO,
-  ShipmentStatus,
   UpdateShipmentInfoDTO,
 } from "./dto/updateShipment.dto";
 
@@ -15,17 +14,13 @@ export class ShipmentService {
   // =================================================================
   // 1. CREATE SHIPMENT (Auto Start History di Origin)
   // =================================================================
-  async createShipment(data: CreateShipmentDTO) {
+  async createShipment(data: CreateShipmentDTO & { step: number }) {
     const order = await this.prisma.order.findUnique({
       where: { id: data.orderId },
       select: {
         id: true,
         poNumber: true,
-        client: {
-          select: {
-            custCode: true,
-          },
-        },
+        client: { select: { custCode: true } },
       },
     });
 
@@ -65,21 +60,149 @@ export class ShipmentService {
     const romanMonth = romanMonths[monthIndex];
 
     const custCode = order.client.custCode;
-
     const generatedDN = `DN_${sequence}_${custCode}_${romanMonth}_${year}`;
 
     return await this.prisma.$transaction(async (tx) => {
+      // =========================================================
+      // 1. VALIDASI MULTI-STEP LOGIC SEBELUM MEMBUAT SHIPMENT
+      // =========================================================
+      for (const item of data.items) {
+        const orderProduct = await tx.orderProduct.findUnique({
+          where: { id: item.orderProductId },
+          include: {
+            productionTrackers: true,
+            shipmentItems: { include: { shipment: true } },
+          },
+        });
+
+        if (!orderProduct) throw new ApiError("Product not found", 404);
+
+        if (data.type === "INBOUND") {
+          if (data.step === 1) {
+            const maxProdStep = Math.max(
+              ...orderProduct.productionTrackers.map((t) => t.step),
+              0,
+            );
+            const completedProd = orderProduct.productionTrackers
+              .filter((t) => t.step === maxProdStep && t.status === "COMPLETED")
+              .reduce((sum, t) => sum + t.quantity, 0);
+
+            const currentInboundStep1 = orderProduct.shipmentItems
+              .filter(
+                (si) =>
+                  si.shipment.type === "INBOUND" && si.shipment.step === 1,
+              )
+              .reduce((sum, si) => sum + si.quantity, 0);
+
+            const allowedQty = completedProd - currentInboundStep1;
+            if (item.quantity > allowedQty) {
+              throw new ApiError(
+                `Gagal: Kuantitas Inbound Step 1 melebihi sisa produksi yang sudah selesai (${allowedQty} pcs).`,
+                400,
+              );
+            }
+          } else {
+            const arrivedPrevStep = orderProduct.shipmentItems
+              .filter(
+                (si) =>
+                  si.shipment.type === "INBOUND" &&
+                  si.shipment.step === data.step - 1 &&
+                  si.shipment.status === "ARRIVED",
+              )
+              .reduce((sum, si) => sum + si.quantity, 0);
+
+            const currentThisStep = orderProduct.shipmentItems
+              .filter(
+                (si) =>
+                  si.shipment.type === "INBOUND" &&
+                  si.shipment.step === data.step,
+              )
+              .reduce((sum, si) => sum + si.quantity, 0);
+
+            const allowedQty = arrivedPrevStep - currentThisStep;
+            if (item.quantity > allowedQty) {
+              throw new ApiError(
+                `Gagal: Belum bisa lanjut Inbound Step ${data.step}. Hanya ${allowedQty} pcs yang sudah sampai di titik sebelumnya (Step ${data.step - 1}).`,
+                400,
+              );
+            }
+          }
+        } else if (data.type === "OUTBOUND") {
+          if (data.step === 1) {
+            const inboundShipments = orderProduct.shipmentItems.filter(
+              (si) => si.shipment.type === "INBOUND",
+            );
+            const maxInboundStep =
+              inboundShipments.length > 0
+                ? Math.max(...inboundShipments.map((si) => si.shipment.step))
+                : 0;
+
+            const arrivedMaxInbound = inboundShipments
+              .filter(
+                (si) =>
+                  si.shipment.step === maxInboundStep &&
+                  si.shipment.status === "ARRIVED",
+              )
+              .reduce((sum, si) => sum + si.quantity, 0);
+
+            const currentOutboundStep1 = orderProduct.shipmentItems
+              .filter(
+                (si) =>
+                  si.shipment.type === "OUTBOUND" && si.shipment.step === 1,
+              )
+              .reduce((sum, si) => sum + si.quantity, 0);
+
+            const allowedQty = arrivedMaxInbound - currentOutboundStep1;
+            if (item.quantity > allowedQty) {
+              throw new ApiError(
+                `Gagal: Kuantitas Outbound Step 1 melebihi stok Inbound yang tersedia di gudang (${allowedQty} pcs).`,
+                400,
+              );
+            }
+          } else {
+            const arrivedPrevStep = orderProduct.shipmentItems
+              .filter(
+                (si) =>
+                  si.shipment.type === "OUTBOUND" &&
+                  si.shipment.step === data.step - 1 &&
+                  si.shipment.status === "ARRIVED",
+              )
+              .reduce((sum, si) => sum + si.quantity, 0);
+
+            const currentThisStep = orderProduct.shipmentItems
+              .filter(
+                (si) =>
+                  si.shipment.type === "OUTBOUND" &&
+                  si.shipment.step === data.step,
+              )
+              .reduce((sum, si) => sum + si.quantity, 0);
+
+            const allowedQty = arrivedPrevStep - currentThisStep;
+            if (item.quantity > allowedQty) {
+              throw new ApiError(
+                `Gagal: Belum bisa lanjut Outbound Step ${data.step}. Hanya ${allowedQty} pcs yang sudah sampai di transit sebelumnya (Step ${data.step - 1}).`,
+                400,
+              );
+            }
+          }
+        }
+      }
+
+      // =========================================================
+      // 2. CREATE SHIPMENT & HISTORY
+      // =========================================================
       const shipment = await tx.shipment.create({
         data: {
           orderId: data.orderId,
           type: data.type,
+          step: data.step, // 🔄 MENYIMPAN STEP
           vendorId: data.vendorId || null,
           deliveryNoteNumber: generatedDN,
           trackingNumber: data.trackingNumber || null,
           courierLink: vendorTrackingUrl || data.courierLink || null,
           method: data.method,
 
-          status: "DISPATCHED",
+          status: "DISPATCHED", // Pastikan enum-nya menerima string ini
           departureDate: new Date(data.departureDate),
 
           origin: data.origin,
@@ -116,13 +239,14 @@ export class ShipmentService {
           status: "DISPATCHED",
           date: new Date(data.departureDate),
           city: data.origin,
-          note: "Shipment created and dispatched",
+          note: `Shipment Step ${data.step} created and dispatched`, // ✨ Info step di catatan
         },
       });
 
       return shipment;
     });
   }
+
   // =================================================================
   // 2. ADD HISTORY / UPDATE STATUS (Multi-Step Logic)
   // =================================================================
@@ -155,16 +279,14 @@ export class ShipmentService {
         });
       }
 
-      const isFinal = [
-        ShipmentStatus.ARRIVED_DESTINATION,
-        ShipmentStatus.COMPLETED,
-      ].includes(data.status);
+      // const isFinal = data.status === "ARRIVED" || data.status === "CANCELLED";
 
       await tx.shipment.update({
         where: { id: shipmentId },
         data: {
           status: data.status,
-          arrivalDate: isFinal ? new Date(data.date) : undefined,
+          arrivalDate:
+            data.status === "ARRIVED" ? new Date(data.date) : undefined,
           ...(data.trackingNumber && data.trackingNumber.trim() !== ""
             ? { trackingNumber: data.trackingNumber.trim() }
             : {}),
@@ -174,6 +296,7 @@ export class ShipmentService {
       return history;
     });
   }
+
   // =================================================================
   // 3. EDIT INFO HEADER (Tanpa nambah history)
   // Gunanya: Kalau admin typo input resi, atau mau ganti kurir

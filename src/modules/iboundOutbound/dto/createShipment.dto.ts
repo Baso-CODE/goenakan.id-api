@@ -59,21 +59,26 @@ export class CreateShipmentDTO {
 
   @IsOptional()
   @IsUUID()
-  vendorId?: string; // Optional karena mungkin pakai kurir internal
+  vendorId?: string;
 
   @IsNotEmpty()
   @IsEnum(ShipmentType)
   type!: ShipmentType;
 
   @IsNotEmpty()
+  @IsInt()
+  @Min(1)
+  step!: number;
+
+  @IsNotEmpty()
   @IsEnum(ShippingMethod)
   method!: ShippingMethod;
 
-  @IsNotEmpty() // Wajib diisi (Contoh: "Guangzhou", "Tokyo", "Jakarta")
+  @IsNotEmpty()
   @IsString()
   origin!: string;
 
-  @IsNotEmpty() // Wajib diisi (Contoh: "Jakarta HQ", "Surabaya Branch")
+  @IsNotEmpty()
   @IsString()
   destination!: string;
 

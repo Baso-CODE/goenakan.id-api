@@ -190,7 +190,6 @@ export class OrderAnalyticsService {
     return { data: formattedData, meta };
   }
 
-  // 🟢 3. LOGIKA STATUS UPDATE (MEMPERBAIKI BUG LABEL SALAH / TIDAK FINAL)
   private determineCurrentStatus(productions: any[], shipments: any[]): string {
     const allEvents = [
       ...productions.map((p) => ({
@@ -209,39 +208,40 @@ export class OrderAnalyticsService {
 
     if (allEvents.length === 0) return "Menunggu Produksi";
 
+    // Urutkan dari yang terbaru (descending)
     allEvents.sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
     );
+
+    // Ambil event (produksi/pengiriman) yang paling terakhir diupdate
     const lastEvent = allEvents[0];
 
-    // Status Produksi
+    // --- STATUS PRODUKSI ---
     if (lastEvent.type === "PRODUCTION") {
+      if (lastEvent.status === "PENDING") return "Menunggu Produksi";
       if (lastEvent.status === "IN_PRODUCTION") return "Sedang Produksi";
       if (lastEvent.status === "COMPLETED") return "Produksi Selesai";
     }
 
-    // Status Pengiriman
+    // --- STATUS PENGIRIMAN (LOGISTICS) ---
     if (lastEvent.type === "SHIPMENT") {
       const s = lastEvent.meta;
       const status = lastEvent.status;
 
+      if (status === "CANCELLED") return "Pengiriman Dibatalkan";
+
       if (s.type === "INBOUND") {
-        if (
-          status === "DISPATCHED" ||
-          status === "DEPARTED_ORIGIN" ||
-          status === "IN_TRANSIT"
-        )
-          return "Inbound: OTW";
-        if (status === "AT_CUSTOMS" || status === "RELEASED_FROM_CUSTOMS")
-          return "Inbound: Bea Cukai";
-        if (status === "ARRIVED_DESTINATION") return "Inbound: Sampai HO";
-      } else {
-        if (status === "DISPATCHED" || status === "PICKED_UP")
+        if (status === "PENDING" || status === "PREPARED")
+          return "Inbound: Disiapkan";
+        if (status === "DISPATCHED") return "Inbound: OTW (Perjalanan)";
+        if (status === "ARRIVED") return "Inbound: Sampai HO / Gudang";
+      } else if (s.type === "OUTBOUND") {
+        if (status === "PENDING" || status === "PREPARED")
           return "Outbound: Diproses";
-        if (status === "IN_TRANSIT" || status === "ARRIVED_CITY")
-          return "Outbound: Dalam Perjalanan";
-        if (status === "ARRIVED_DESTINATION")
-          return "Outbound: Diterima Client";
+        if (status === "DISPATCHED") return "Outbound: Perjalanan ke Client";
+
+        // ✨ NEW: Jika Outbound sudah sampai (ARRIVED), berarti seluruh pesanan benar-benar selesai!
+        if (status === "ARRIVED") return "Selesai (Diterima Client)";
       }
     }
 

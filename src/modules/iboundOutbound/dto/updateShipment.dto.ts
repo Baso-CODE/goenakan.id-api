@@ -10,25 +10,24 @@ import {
 } from "class-validator";
 import { ShipmentNoteInputDTO } from "./createShipment.dto"; // Import dari file sebelah
 
-// Status Enum yang GENERAL (Tidak menyebut nama negara)
+// 🔄 UPDATE: Status Enum disesuaikan dengan skema database terbaru
 export enum ShipmentStatus {
-  DISPATCHED = "DISPATCHED", // Baru dibuat/berangkat
-  ARRIVED_ORIGIN_WAREHOUSE = "ARRIVED_ORIGIN_WAREHOUSE", // Sampai gudang luar negeri (China/Jepang/dll)
-  DEPARTED_ORIGIN = "DEPARTED_ORIGIN", // Meninggalkan negara asal
-  IN_TRANSIT = "IN_TRANSIT", // Di perjalanan (Laut/Udara)
-  AT_CUSTOMS = "AT_CUSTOMS", // Di Bea Cukai (Negara Tujuan)
-  RELEASED_FROM_CUSTOMS = "RELEASED_FROM_CUSTOMS", // Lolos Bea Cukai
-  ARRIVED_DESTINATION = "ARRIVED_DESTINATION", // Sampai Gudang Kita (Final)
-  COMPLETED = "COMPLETED", // Selesai
+  PENDING = "PENDING",
+  PREPARED = "PREPARED",
+  DISPATCHED = "DISPATCHED",
+  ARRIVED = "ARRIVED",
   CANCELLED = "CANCELLED",
 }
 
 // === DTO UTAMA: MENAMBAH HISTORY / STEP BARU ===
 export class AddShipmentHistoryDTO {
   @IsNotEmpty()
-  @IsEnum(ShipmentStatus)
+  // 🔄 UPDATE: Sekarang hanya akan menerima 5 status dari enum baru di atas
+  @IsEnum(ShipmentStatus, {
+    message:
+      "Status tidak valid. Gunakan PENDING, PREPARED, DISPATCHED, ARRIVED, atau CANCELLED.",
+  })
   status!: ShipmentStatus;
-  // Contoh value: AT_CUSTOMS, ARRIVED_ORIGIN_WAREHOUSE
 
   @IsNotEmpty()
   @IsDateString()
@@ -47,6 +46,7 @@ export class AddShipmentHistoryDTO {
   @ValidateNested({ each: true })
   @Type(() => ShipmentNoteInputDTO)
   shipmentNotes?: ShipmentNoteInputDTO[];
+
   @IsOptional()
   @IsString()
   trackingNumber?: string;
