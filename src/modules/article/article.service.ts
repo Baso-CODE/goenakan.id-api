@@ -27,7 +27,7 @@ export class ArticleService {
 
     try {
       const uploadResult = await this.cloudinary.upload(file, {
-        folder: "articles/content", // Simpan terpisah dari cover
+        folder: "articles/content",
         resource_type: "image",
       });
 
@@ -88,6 +88,7 @@ export class ArticleService {
             content: data.content,
             coverImage: coverImageUrl,
             coverImageId: coverImagePublicId,
+            coverImageAlt: data.coverImageAlt,
             source: data.source,
             published: data.published ?? false,
             publishedAt: data.published
@@ -130,7 +131,7 @@ export class ArticleService {
   async updateArticle(
     id: string,
     data: UpdateArticleDTO,
-    coverFile?: Express.Multer.File, // Opsi menerima file gambar baru
+    coverFile?: Express.Multer.File,
   ) {
     const existing = await this.prisma.article.findUnique({
       where: { id },
@@ -158,7 +159,6 @@ export class ArticleService {
 
     if (coverFile) {
       try {
-        // Hapus cover lama dari Cloudinary (Opsional, tapi disarankan agar rapi)
         if (existing.coverImageId) {
           await this.cloudinary.delete(existing.coverImageId);
         }
@@ -177,7 +177,6 @@ export class ArticleService {
         );
       }
     }
-    // -----------------------------------------------
 
     const updateData: any = {
       ...articleData,
@@ -194,7 +193,6 @@ export class ArticleService {
       ) {
         updateData.publishedAt = new Date();
       } else if (data.published === false) {
-        // updateData.publishedAt = null;
       } else if (data.publishedAt) {
         updateData.publishedAt = new Date(data.publishedAt);
       }

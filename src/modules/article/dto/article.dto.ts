@@ -23,6 +23,9 @@ export class CreateArticleDTO {
   @IsString()
   @IsOptional()
   coverImageId?: string;
+  @IsString()
+  @IsOptional()
+  coverImageAlt?: string;
 
   @IsString()
   @IsOptional()
@@ -62,6 +65,10 @@ export class UpdateArticleDTO {
   @IsString()
   @IsOptional()
   coverImageId?: string;
+
+  @IsString()
+  @IsOptional()
+  coverImageAlt?: string;
 
   @IsString()
   @IsOptional()

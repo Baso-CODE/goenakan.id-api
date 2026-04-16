@@ -228,6 +228,7 @@ export class InvoiceService {
 
     return result;
   }
+
   async payInvoice(invoiceId: number, data: PayInvoiceDTO) {
     // 1. Cek Invoice
     const invoice = await this.prisma.invoice.findUnique({
@@ -240,13 +241,14 @@ export class InvoiceService {
     if (invoice.status === "CANCELLED")
       throw new ApiError("Cannot pay cancelled invoice", 400);
 
-    // 2. Update Status & Method
+    // 2. Update Status, Method, dan paidAt
     const updatedInvoice = await this.prisma.invoice.update({
       where: { id: invoiceId },
       data: {
         status: "PAID",
         method: data.method,
-        updatedAt: new Date(data.paymentDate),
+        paidAt: new Date(data.paymentDate),
+        paymentDate: new Date(data.paymentDate),
       },
     });
 
@@ -386,26 +388,22 @@ export class InvoiceService {
             b2c: true,
           },
         },
-
         order: {
           select: {
             id: true,
             poNumber: true,
             dateOrder: true,
-
             totalAmount: true,
-
             invoices: {
               select: {
                 id: true,
+                invoiceNumber: true,
                 category: true,
                 status: true,
                 totalAmount: true,
                 paidAt: true,
               },
             },
-
-            // Ambil Data Sales & Bank Account (Untuk Tanda Tangan & Info Transfer)
             sales: {
               select: {
                 name: true,
@@ -422,23 +420,16 @@ export class InvoiceService {
             },
           },
         },
-
-        // 3. Invoice Items (SUMBER UTAMA DATA TABLE)
         items: {
           include: {
-            // Ambil Nama Produk Master
             product: {
               select: { name: true, sku: true, materialType: true },
             },
-            // Ambil Nama Varian (Relasi langsung dari InvoiceItem)
             variant: {
               select: { variantName: true, sku: true },
             },
-            // Field 'remarks' dan 'customization' otomatis terambil
-            // karena merupakan field native di tabel InvoiceItem
           },
         },
-
         notes: {
           include: {
             category: true,
@@ -448,9 +439,44 @@ export class InvoiceService {
     });
 
     if (!invoice) throw new ApiError("Invoice not found", 404);
+    let previousInvoice = null;
+    let totalPreviousPaid = 0;
 
-    return invoice;
+    if (invoice.orderId) {
+      previousInvoice = await this.prisma.invoice.findFirst({
+        where: {
+          orderId: invoice.orderId,
+          id: { lt: invoice.id },
+        },
+        orderBy: {
+          id: "desc",
+        },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          totalAmount: true,
+          status: true,
+          category: true,
+          paidAt: true,
+        },
+      });
+
+      const pastInvoices = invoice.order!.invoices.filter(
+        (inv) => inv.id < invoice.id,
+      );
+      totalPreviousPaid = pastInvoices.reduce(
+        (sum, inv) => sum + Number(inv.totalAmount),
+        0,
+      );
+    }
+
+    return {
+      ...invoice,
+      previousInvoice,
+      totalPreviousPaid,
+    };
   }
+
   async getMonthlyRevenueChart(month: number, year: number) {
     // 1. Tentukan Range Tanggal (Awal s/d Akhir Bulan)
     const startDate = startOfMonth(new Date(year, month - 1));

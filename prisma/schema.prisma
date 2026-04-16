@@ -1359,9 +1359,10 @@ model Article {
   content String @db.LongText
 
   // Meta data
-  coverImage   String
-  coverImageId String?
-  source       String? @db.Text
+  coverImage    String
+  coverImageId  String?
+  source        String? @db.Text
+  coverImageAlt String?
 
   published   Boolean   @default(false)
   publishedAt DateTime?
@@ -1442,4 +1443,18 @@ model Portfolio {
   updatedAt DateTime @updatedAt
 
   @@map("portfolios")
+}
+
+model ContactMessage {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(255)
+  email     String   @db.VarChar(255)
+  phone     String   @db.VarChar(50)
+  interest  String?  @db.VarChar(100)
+  message   String   @db.Text
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("contact_messages")
 }
