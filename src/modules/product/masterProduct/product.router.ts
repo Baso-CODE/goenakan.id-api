@@ -43,6 +43,13 @@ export class ProductRouter {
       this.productController.getAllProducts,
     );
 
+    // GET ALL PRODUCTS PUBLIC
+    this.router.get("/public", this.productController.getAllProductsPublic);
+    this.router.get(
+      "/best-sellers",
+      this.productController.getBestSellerProducts,
+    );
+
     // GET ALL PRODUCTS FOR ORDER
     this.router.get(
       "/order",

@@ -263,17 +263,17 @@ model Department {
 // ===============================================
 
 model ProductCategory {
-  id          String  @id @default(uuid())
-  name        String  @unique
-  slug        String  @unique
-  image       String?
-  imageId     String?
-  description String? @db.Text
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  products Product[]
+  id             String    @id @default(uuid())
+  slug           String    @unique
+  name_id        String    @unique @map("name")
+  description_id String?   @map("description") @db.Text
+  name_en        String?
+  description_en String?   @db.Text
+  image          String?
+  imageId        String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  products       Product[]
 
   @@map("product_categories")
 }

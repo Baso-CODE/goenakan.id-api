@@ -59,6 +59,50 @@ export class ProductController {
     }
   };
 
+  // === GET ALL PRODUCTS ===
+  getAllProductsPublic = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      // ✨ 1. Tangkap semua parameter baru dari query URL
+      const {
+        page,
+        take,
+        search,
+        categoryId,
+        isCustom,
+        category, // Filter Client: Nama kategori
+        color, // Filter Client: Warna
+        size, // Filter Client: Ukuran
+        price, // Filter Client: Rentang harga
+        availability, // Filter Client: Ketersediaan
+        sort, // Filter Client: Urutan
+      } = req.query;
+
+      const products = await this.productService.getAllProductsPublic({
+        page: page ? Number(page) : undefined,
+        take: take ? Number(take) : undefined,
+        search: search as string,
+        categoryId: categoryId as string,
+        isCustom:
+          typeof isCustom === "string" ? isCustom === "true" : undefined,
+
+        category: category as string,
+        color: color as string,
+        size: size as string,
+        price: price as string,
+        availability: availability as string,
+        sort: sort as string,
+      });
+
+      res.status(200).json(products);
+    } catch (error) {
+      next(error);
+    }
+  };
+
   // === GET PRODUCT BY ID ===
   getProductById = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -365,6 +409,20 @@ export class ProductController {
       });
 
       res.status(200).json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === GET BEST SELLER PRODUCTS ===
+  getBestSellerProducts = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const result = await this.productService.getBestSellerProducts();
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

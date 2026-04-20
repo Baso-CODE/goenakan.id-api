@@ -3,7 +3,11 @@ import { IsNotEmpty, IsOptional, IsString } from "class-validator";
 export class CreateProductCategoryDTO {
   @IsNotEmpty()
   @IsString()
-  name!: string;
+  name_id!: string;
+
+  @IsOptional()
+  @IsString()
+  name_en?: string;
 
   @IsOptional()
   @IsString()
@@ -15,5 +19,9 @@ export class CreateProductCategoryDTO {
 
   @IsOptional()
   @IsString()
-  description?: string;
+  description_id?: string;
+
+  @IsOptional()
+  @IsString()
+  description_en?: string;
 }

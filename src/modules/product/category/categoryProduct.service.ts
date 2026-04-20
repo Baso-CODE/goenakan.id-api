@@ -75,25 +75,25 @@ export class ProductCategoryService {
     data: CreateProductCategoryDTO,
     file?: Express.Multer.File,
   ) {
-    const slug = this.slug.create(data.name);
+    // 🔄 1. Buat slug dari nama bahasa Indonesia (sebagai default url)
+    const slug = this.slug.create(data.name_id);
 
-    // 1. Validasi keberadaan kategori
+    // 🔄 2. Validasi keberadaan kategori menggunakan name_id
     const existing = await this.prisma.productCategory.findUnique({
-      where: { name: data.name },
+      where: { name_id: data.name_id },
     });
 
     if (existing) {
       throw new ApiError("Category name already exists", 400);
     }
 
-    // 2. Proses Upload Gambar ke Cloudinary
-    let imageUrl = data.image; // Cadangan jika URL sudah dikirim via DTO
+    let imageUrl = data.image;
     let imageId = data.imageId;
 
     if (file) {
       try {
         const uploadResult = await this.cloudinary.upload(file, {
-          folder: "products/categories", // Folder khusus kategori produk
+          folder: "products/categories",
           resource_type: "image",
         });
         imageUrl = uploadResult.secure_url;
@@ -107,15 +107,19 @@ export class ProductCategoryService {
       }
     }
 
-    // 3. Simpan ke Database
+    // 4. Simpan ke Database
     try {
       const category = await this.prisma.productCategory.create({
         data: {
-          name: data.name,
           slug: slug,
-          image: imageUrl, // Field baru dari schema
-          imageId: imageId, // Field baru dari schema
-          description: data.description, // Jika Anda menambahkan deskripsi
+          image: imageUrl,
+          imageId: imageId,
+
+          name_id: data.name_id,
+          description_id: data.description_id,
+
+          name_en: data.name_en,
+          description_en: data.description_en,
         },
       });
 
@@ -139,7 +143,7 @@ export class ProductCategoryService {
   async updateCategory(
     id: string,
     data: Partial<UpdateProductCategoryDTO>,
-    file?: Express.Multer.File, // Opsional, jika ada file baru yang diunggah
+    file?: Express.Multer.File,
   ) {
     // 1. Cek keberadaan kategori
     const existing = await this.prisma.productCategory.findUnique({
@@ -148,13 +152,11 @@ export class ProductCategoryService {
 
     if (!existing) throw new ApiError("Category not found", 404);
 
-    // 2. Update Slug jika nama berubah
     const slug =
-      data.name && data.name !== existing.name
-        ? this.slug.create(data.name)
+      data.name_id && data.name_id !== existing.name_id
+        ? this.slug.create(data.name_id)
         : existing.slug;
 
-    // 3. Proses Gambar Baru (jika ada)
     let imageUrl = data.image;
     let imageId = data.imageId;
 
@@ -186,11 +188,14 @@ export class ProductCategoryService {
       const updated = await this.prisma.productCategory.update({
         where: { id },
         data: {
-          name: data.name,
           slug: slug,
           image: imageUrl,
           imageId: imageId,
-          description: data.description,
+
+          name_id: data.name_id,
+          name_en: data.name_en,
+          description_id: data.description_id,
+          description_en: data.description_en,
         },
       });
 
@@ -219,14 +224,22 @@ export class ProductCategoryService {
     try {
       const categories = await this.prisma.productCategory.findMany({
         orderBy: {
-          name: "asc",
+          name_id: "asc",
         },
         select: {
           id: true,
-          name: true,
+          name_id: true,
+          name_en: true,
         },
       });
-      return categories;
+
+      const formattedCategories = categories.map((cat) => ({
+        id: cat.id,
+        name: cat.name_id,
+        name_en: cat.name_en,
+      }));
+
+      return formattedCategories;
     } catch (error) {
       console.error("❌ Error in Get All Categories List:", error);
       throw new Error(
@@ -316,25 +329,50 @@ export class ProductCategoryService {
     return buffer as unknown as Buffer;
   }
 
-  async getPublicCategories() {
+  async getPublicCategories(lang: string = "id") {
     try {
       const categories = await this.prisma.productCategory.findMany({
         select: {
           id: true,
-          name: true,
           slug: true,
-          image: true, // URL dari Cloudinary
-          description: true,
+          image: true,
+
+          // 🔄 2. Ambil kedua versi bahasa dari database
+          name_id: true,
+          name_en: true,
+          description_id: true,
+          description_en: true,
+
           _count: {
-            select: { products: true }, // Menghitung jumlah produk di tiap kategori
+            select: { products: true },
           },
         },
         orderBy: {
-          name: "asc",
+          name_id: "asc", // 🔄 Urutkan berdasarkan nama default
         },
       });
 
-      return categories;
+      // 🔄 3. Format/Mapping data sebelum dikembalikan
+      const formattedCategories = categories.map((cat) => {
+        // Tentukan nama dan deskripsi berdasarkan bahasa yang direquest
+        const finalName =
+          lang === "en" && cat.name_en ? cat.name_en : cat.name_id;
+        const finalDescription =
+          lang === "en" && cat.description_en
+            ? cat.description_en
+            : cat.description_id;
+
+        return {
+          id: cat.id,
+          slug: cat.slug,
+          image: cat.image,
+          name: finalName,
+          description: finalDescription,
+          _count: cat._count,
+        };
+      });
+
+      return formattedCategories;
     } catch (error) {
       console.error("🔥 Gagal mengambil kategori publik:", error);
       throw new ApiError("Failed to fetch categories", 500);

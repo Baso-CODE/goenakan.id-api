@@ -36,12 +36,7 @@ export class ProductCategoryRouter {
       verifyRole(["SUPER_ADMIN"]),
       this.productCategoryController.getAllCategories,
     );
-    this.router.get(
-      "/list",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
-      this.productCategoryController.getCategoryList,
-    );
+    this.router.get("/list", this.productCategoryController.getCategoryList);
 
     // === PROTECTED ROUTES ===
     this.router.get(

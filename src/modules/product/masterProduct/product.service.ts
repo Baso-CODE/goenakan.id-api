@@ -467,6 +467,7 @@ export class ProductService {
 
     return this.getProductById(id);
   }
+
   // === ADD IMAGE ===
   async addImage(
     id: string,
@@ -1128,9 +1129,8 @@ export class ProductService {
           isCustom: true,
           description: true,
           category: {
-            select: { id: true, name: true },
+            select: { id: true, name_id: true },
           },
-          // --- TAMBAHAN 1: Ambil Price Tiers ---
           priceTiers: {
             select: {
               id: true,
@@ -1161,22 +1161,18 @@ export class ProductService {
         basePrice: p.basePrice,
         isCustom: p.isCustom,
         category: p.category
-          ? { id: p.category.id, name: p.category.name }
+          ? { id: p.category.id, name: p.category.name_id }
           : null,
-
-        // Map Price Tiers (Pastikan convert Decimal ke Number jika perlu)
         priceTiers: p.priceTiers.map((tier) => ({
           id: tier.id,
           minQuantity: tier.minQuantity,
-          price: Number(tier.price), // Convert Decimal prisma ke number JS
+          price: Number(tier.price),
         })),
 
-        // --- TAMBAHAN 3: Map Variants agar tidak undefined di frontend ---
         productVariants: p.productVariants.map((v) => ({
           id: v.id,
           variantName: v.variantName || "Unnamed Variant",
           sku: v.sku,
-          // Penting: Convert Decimal ke Number, dan handle null
           price: v.price ? Number(v.price) : 0,
         })),
       }));
@@ -1198,13 +1194,13 @@ export class ProductService {
         where.createdAt.gte = new Date(startDate);
       }
       if (endDate) {
-        // Tambahkan satu hari agar tanggal akhir inklusif
         const end = new Date(endDate);
         end.setDate(end.getDate() + 1);
         where.createdAt.lt = end;
       }
-    } // Filter by Search (name or sku or slug)
+    }
 
+    // Filter by Search (name or sku or slug)
     if (search) {
       where.OR = [
         { name: { contains: search } },
@@ -1221,8 +1217,9 @@ export class ProductService {
     // Filter by isCustom status
     if (isCustom && isCustom !== "ALL") {
       where.isCustom = isCustom === "true";
-    } // 2. MENGAMBIL DATA DARI DATABASE DENGAN RELASI
+    }
 
+    // 2. MENGAMBIL DATA DARI DATABASE DENGAN RELASI
     const products = await this.prisma.product.findMany({
       where,
       select: {
@@ -1235,9 +1232,11 @@ export class ProductService {
         createdAt: true,
 
         category: {
-          select: { name: true },
-        }, // Ambil Attribute Values
+          // 🔄 UPDATE: Ambil nama kategori dari kolom yang baru (name_id)
+          select: { name_id: true },
+        },
 
+        // Ambil Attribute Values
         attributeValues: {
           select: {
             attributeValue: {
@@ -1247,23 +1246,27 @@ export class ProductService {
               select: { name: true },
             },
           },
-        }, // Ambil Price Tiers
+        },
 
+        // Ambil Price Tiers
         priceTiers: {
           select: { minQuantity: true, price: true },
           orderBy: { minQuantity: "asc" },
-        }, // Hitung jumlah Varian (opsional, untuk ringkasan)
+        },
 
+        // Hitung jumlah Varian (opsional, untuk ringkasan)
         _count: {
           select: { productVariants: true, images: true },
         },
       },
       orderBy: { createdAt: "asc" },
-    }); // 3. MEMBUAT WORKBOOK EXCEL DENGAN EXCELJS
+    });
 
+    // 3. MEMBUAT WORKBOOK EXCEL DENGAN EXCELJS
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet("Data Products"); // Menentukan Kolom (Headers)
+    const worksheet = workbook.addWorksheet("Data Products");
 
+    // Menentukan Kolom (Headers)
     worksheet.columns = [
       { header: "SKU", key: "sku", width: 20 },
       { header: "Nama Produk", key: "name", width: 45 },
@@ -1276,8 +1279,9 @@ export class ProductService {
       { header: "Jml. Varian", key: "variantCount", width: 15 },
       { header: "Jml. Gambar", key: "imageCount", width: 15 },
       { header: "Tanggal Dibuat", key: "createdAt", width: 25 },
-    ]; // Menambahkan Data Baris
+    ];
 
+    // Menambahkan Data Baris
     products.forEach((product) => {
       // Menggabungkan Attributes
       const attributesString = product.attributeValues
@@ -1297,7 +1301,7 @@ export class ProductService {
       worksheet.addRow({
         sku: product.sku,
         name: product.name,
-        category: product.category.name,
+        category: product.category?.name_id || "Uncategorized",
         basePrice: product.basePrice,
         materialType: product.materialType || "N/A",
         isCustom: product.isCustom ? "Ya" : "Tidak",
@@ -1313,8 +1317,9 @@ export class ProductService {
           minute: "2-digit",
         }),
       });
-    }); // Styling Header
+    });
 
+    // Styling Header
     const headerRow = worksheet.getRow(1);
     headerRow.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: "FFFFFF" } };
@@ -1347,8 +1352,9 @@ export class ProductService {
       });
 
     // Formatting Harga Dasar
-    worksheet.getColumn("basePrice").numFmt = "#,##0.00"; // 4. MENGHASILKAN BUFFER DAN MENGEMBALIKAN
+    worksheet.getColumn("basePrice").numFmt = "#,##0.00";
 
+    // 4. MENGHASILKAN BUFFER DAN MENGEMBALIKAN
     const buffer = await workbook.xlsx.writeBuffer();
     return buffer as unknown as Buffer;
   }
@@ -1573,7 +1579,8 @@ export class ProductService {
         sku: true,
         basePrice: true,
         category: {
-          select: { name: true },
+          // 🔄 UPDATE: Ambil nama kategori dari kolom yang baru (name_id)
+          select: { name_id: true },
         },
         images: {
           take: 1,
@@ -1600,7 +1607,10 @@ export class ProductService {
         id: item.productId,
         name: product?.name || "Unknown Product",
         sku: product?.sku || "-",
-        category: product?.category?.name || "Uncategorized",
+
+        // 🔄 UPDATE: Gunakan name_id untuk ditampilkan di frontend Admin
+        category: product?.category?.name_id || "Uncategorized",
+
         sold: totalSold,
         revenue: estimatedRevenue,
         image: product?.images[0]?.url || null,
@@ -1609,5 +1619,324 @@ export class ProductService {
     });
 
     return result;
+  }
+
+  // === GET ALL PRODUCTS PUBLIC (WITH PAGINATION, SEARCH, AND ADVANCED FILTERS) ===
+  async getAllProductsPublic(query: {
+    page?: number;
+    take?: number;
+    search?: string;
+    categoryId?: string; // Biasanya dipakai Admin
+    category?: string; // Biasanya dipakai Client (Nama Kategori)
+    isCustom?: boolean | string;
+    color?: string; // Filter Client
+    size?: string; // Filter Client
+    price?: string; // Filter Client
+    availability?: string; // Filter Client
+    sort?: string; // Filter Client
+  }) {
+    const where: any = {};
+
+    // 1. Filter Pencarian (Search)
+    if (query.search) {
+      where.OR = [
+        { name: { contains: query.search } }, // Asumsi nama produk tetap 'name' bukan 'name_id'
+        { sku: { contains: query.search } },
+      ];
+    }
+
+    // 2. Filter Custom Status
+    if (query.isCustom !== undefined) {
+      if (typeof query.isCustom === "string") {
+        where.isCustom = query.isCustom === "true";
+      } else {
+        where.isCustom = query.isCustom;
+      }
+    }
+
+    // 3. Filter Kategori (Mendukung Admin: categoryId, atau Client: category name)
+    if (query.categoryId) {
+      where.categoryId = query.categoryId;
+    } else if (query.category && query.category !== "all") {
+      // Ingat: Tabel kategori kita sekarang pakai name_id
+      where.category = {
+        name_id: { equals: query.category },
+      };
+    }
+
+    // 4. Filter Attribute (Warna & Ukuran) menggunakan Relasi Prisma
+    if (
+      (query.color && query.color !== "all") ||
+      (query.size && query.size !== "all")
+    ) {
+      where.AND = []; // Siapkan array AND untuk kondisi multiple attributes
+
+      if (query.color && query.color !== "all") {
+        where.AND.push({
+          attributeValues: {
+            some: {
+              attributeValue: { value: query.color },
+              // Sesuaikan "Color" dengan nama attribute di database kamu (misal: "Warna")
+              attribute: { name: "Color" },
+            },
+          },
+        });
+      }
+
+      if (query.size && query.size !== "all") {
+        where.AND.push({
+          attributeValues: {
+            some: {
+              attributeValue: { value: query.size },
+              // Sesuaikan "Size" dengan nama attribute di database kamu (misal: "Ukuran")
+              attribute: { name: "Size" },
+            },
+          },
+        });
+      }
+    }
+
+    // 5. Filter Rentang Harga (Base Price)
+    if (query.price && query.price !== "all") {
+      if (query.price === "under_20000") {
+        where.basePrice = { lt: 20000 };
+      } else if (query.price === "20000_50000") {
+        where.basePrice = { gte: 20000, lte: 50000 };
+      } else if (query.price === "above_50000") {
+        where.basePrice = { gt: 50000 };
+      }
+    }
+
+    // 6. Filter Ketersediaan (Availability / Stock)
+    if (query.availability && query.availability !== "all") {
+      // CATATAN: Ganti 'stock' dengan field aktual di schema kamu (misal qty, inventory, atau isAvailable)
+      // Jika kamu belum punya field stock, kamu bisa mengabaikan blok ini sementara.
+      if (query.availability === "in_stock") {
+        // where.stock = { gt: 0 };
+      } else if (query.availability === "out_of_stock") {
+        // where.stock = { equals: 0 };
+      }
+    }
+
+    // 7. Pengurutan Data (Sorting)
+    let orderBy: any = { createdAt: "desc" }; // Default pengurutan
+
+    if (query.sort) {
+      switch (query.sort) {
+        case "newest":
+          orderBy = { createdAt: "desc" };
+          break;
+        case "price_asc":
+          orderBy = { basePrice: "asc" };
+          break;
+        case "price_desc":
+          orderBy = { basePrice: "desc" };
+          break;
+        case "best_selling":
+          // CATATAN: Jika kamu punya kolom 'sold', gunakan ini. Jika tidak, fallback ke createdAt
+          // orderBy = { sold: "desc" };
+          break;
+      }
+    }
+
+    // === Pagination & Query Data ===
+    const page = Number(query.page || 1);
+    const take = Number(query.take || 6);
+
+    const [count, rawData] = await Promise.all([
+      this.prisma.product.count({ where }),
+      this.prisma.product.findMany({
+        where,
+        skip: (page - 1) * take,
+        take: take,
+        orderBy,
+        include: {
+          category: true,
+          // ✨ 1. Ambil 1 gambar utama (Featured) untuk Product Card
+          images: {
+            take: 1,
+            orderBy: { isFeatured: "desc" },
+          },
+          // ✨ 2. Ambil Price Tiers untuk harga Bulk & Min Order
+          priceTiers: {
+            orderBy: { minQuantity: "asc" },
+          },
+          // ✨ 3. Ambil data Order untuk menghitung berapa banyak yang sudah terjual
+          orderProducts: {
+            select: { quantity: true },
+          },
+        },
+      }),
+    ]);
+
+    const formattedData = rawData.map((product) => {
+      // Hitung Total Terjual (Jumlahkan semua quantity dari OrderProduct)
+      // *Jika schema OrderProduct kamu menggunakan nama field lain untuk jumlah barang, ganti 'quantity' dengan field tersebut.
+      const totalSold = product.orderProducts.reduce(
+        (sum, order) => sum + (order.quantity || 1),
+        0,
+      );
+
+      // Konversi harga dasar
+      const regularPrice = Number(product.basePrice);
+
+      // Hitung Harga Grosir (Bulk Price) dan Minimal Order
+      let bulkPrice = regularPrice;
+      let minOrder = 1;
+
+      if (product.priceTiers && product.priceTiers.length > 0) {
+        // Ambil harga yang paling murah dari Tiers (Biasanya tier dengan qty terbanyak)
+        const cheapestTier = [...product.priceTiers].sort(
+          (a, b) => Number(a.price) - Number(b.price),
+        )[0];
+
+        bulkPrice = Number(cheapestTier.price);
+        minOrder = cheapestTier.minQuantity;
+      }
+
+      // Ambil Image URL
+      const imageUrl =
+        product.images.length > 0
+          ? product.images[0].url
+          : "/images/placeholder.jpg";
+
+      return {
+        id: product.id,
+        name: product.name,
+        image: imageUrl,
+        regularPrice: regularPrice,
+        bulkPrice: bulkPrice,
+        minOrder: minOrder,
+        sold: totalSold,
+        // --- Data pendukung lainnya ---
+        isCustom: product.isCustom,
+        categoryId: product.categoryId,
+        categoryName: product.category?.name_id || "",
+        slug: product.slug,
+      };
+    });
+
+    const meta = this.pagination.generateMeta({
+      count,
+      page,
+      take,
+    });
+
+    return { data: formattedData, meta };
+  }
+
+  // === GET BEST SELLER PRODUCTS (CLIENT HOME PAGE) ===
+  async getBestSellerProducts() {
+    try {
+      const topSelling = await this.prisma.orderProduct.groupBy({
+        by: ["productId"],
+        _sum: {
+          quantity: true,
+        },
+        orderBy: {
+          _sum: {
+            quantity: "desc",
+          },
+        },
+        take: 6, // Ambil batas maksimal 6 produk
+      });
+
+      const productIds = topSelling.map((item) => item.productId);
+
+      // ✨ PERBAIKAN: Berikan tipe 'any[]' secara eksplisit
+      let rawProducts: any[] = [];
+
+      // 2. Ambil detail produk berdasarkan ID yang laris tersebut
+      if (productIds.length > 0) {
+        rawProducts = await this.prisma.product.findMany({
+          where: {
+            id: { in: productIds },
+          },
+          include: {
+            category: true,
+            images: {
+              take: 1,
+              orderBy: { isFeatured: "desc" },
+            },
+            priceTiers: {
+              orderBy: { minQuantity: "asc" },
+            },
+            orderProducts: {
+              select: { quantity: true },
+            },
+          },
+        });
+      }
+
+      // 3. FALLBACK: Jika belum ada penjualan sama sekali, ambil 6 produk terbaru
+      if (rawProducts.length === 0) {
+        rawProducts = await this.prisma.product.findMany({
+          take: 6,
+          orderBy: { createdAt: "desc" },
+          include: {
+            category: true,
+            images: {
+              take: 1,
+              orderBy: { isFeatured: "desc" },
+            },
+            priceTiers: {
+              orderBy: { minQuantity: "asc" },
+            },
+            orderProducts: {
+              select: { quantity: true },
+            },
+          },
+        });
+      }
+
+      // 4. Transformasi/Mapping Data agar cocok dengan ProductCard di Front-End
+      const formattedData = rawProducts.map((product) => {
+        // Hitung total terjual
+        const totalSold = product.orderProducts.reduce(
+          (sum: number, order: any) => sum + (order.quantity || 1),
+          0,
+        );
+
+        const regularPrice = Number(product.basePrice);
+        let bulkPrice = regularPrice;
+        let minOrder = 1;
+
+        if (product.priceTiers && product.priceTiers.length > 0) {
+          const cheapestTier = [...product.priceTiers].sort(
+            (a, b) => Number(a.price) - Number(b.price),
+          )[0];
+          bulkPrice = Number(cheapestTier.price);
+          minOrder = cheapestTier.minQuantity;
+        }
+
+        const imageUrl =
+          product.images.length > 0
+            ? product.images[0].url
+            : "/images/placeholder.jpg";
+
+        return {
+          id: product.id,
+          name: product.name,
+          slug: product.slug,
+          image: imageUrl,
+          regularPrice: regularPrice,
+          bulkPrice: bulkPrice,
+          minOrder: minOrder,
+          sold: totalSold,
+          isCustom: product.isCustom,
+          categoryName: product.category?.name_id || "",
+        };
+      });
+
+      formattedData.sort((a, b) => b.sold - a.sold);
+
+      return {
+        success: true,
+        data: formattedData,
+      };
+    } catch (error) {
+      console.error("❌ Error Get Best Seller Products:", error);
+      throw new Error("Failed to fetch best seller products");
+    }
   }
 }

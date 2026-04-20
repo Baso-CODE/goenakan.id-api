@@ -133,9 +133,14 @@ export class ProductCategoryController {
     next: NextFunction,
   ) => {
     try {
-      const result = await this.productCategoryService.getPublicCategories();
+      const lang =
+        (req.headers["x-language"] as string) ||
+        (req.headers["accept-language"] as string) ||
+        "id";
 
-      // Kita bisa tambahkan cache-control jika ingin performa lebih cepat
+      const result =
+        await this.productCategoryService.getPublicCategories(lang);
+
       res.setHeader("Cache-Control", "public, s-maxage=3600");
       res.status(200).json({
         success: true,
