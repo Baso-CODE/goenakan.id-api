@@ -146,7 +146,6 @@ export class ProductService {
         // 1. CREATE PRODUCT
         const product = await tx.product.create({
           data: {
-            // 🟡 MAPPING EKSPLISIT (Sangat aman dari field siluman)
             name: data.name,
             sku: data.sku,
             description: data.description,
@@ -1434,12 +1433,9 @@ export class ProductService {
       throw new ApiError(`Product with ID ${productId} not found`, 404);
     }
 
-    // 2. Lakukan Upsert
-    // create: dijalankan jika data SEO belum ada
-    // update: dijalankan jika data SEO sudah ada
     const seoData = await this.prisma.productSEO.upsert({
       where: {
-        productId: productId, // Kunci pencarian (Unique Key)
+        productId: productId,
       },
       create: {
         productId: productId,
@@ -1579,7 +1575,6 @@ export class ProductService {
         sku: true,
         basePrice: true,
         category: {
-          // 🔄 UPDATE: Ambil nama kategori dari kolom yang baru (name_id)
           select: { name_id: true },
         },
         images: {
@@ -1937,6 +1932,203 @@ export class ProductService {
     } catch (error) {
       console.error("❌ Error Get Best Seller Products:", error);
       throw new Error("Failed to fetch best seller products");
+    }
+  }
+
+  // === GET PRODUCT BY SLUG (PUBLIC / CLIENT PAGE) ===
+  async getProductBySlugPublic(slug: string) {
+    try {
+      const product = await this.prisma.product.findUnique({
+        where: { slug },
+        include: {
+          category: true,
+          images: {
+            orderBy: { isFeatured: "desc" },
+          },
+          videos: {
+            orderBy: { isFeatured: "desc" },
+          },
+          productVariants: {
+            include: {
+              images: {
+                orderBy: { isFeatured: "desc" },
+              },
+            },
+          },
+          priceTiers: {
+            orderBy: { minQuantity: "asc" },
+          },
+          orderProducts: {
+            select: { quantity: true },
+          },
+          attributeValues: {
+            include: {
+              attributeValue: true,
+              attribute: true,
+            },
+          },
+        },
+      });
+
+      if (!product) {
+        throw new Error("Product not found");
+      }
+
+      const totalSold = product.orderProducts.reduce(
+        (sum, order) => sum + (order.quantity || 1),
+        0,
+      );
+
+      const combinedMedia: {
+        id: string;
+        type: "image" | "video";
+        url: string;
+      }[] = [];
+
+      if (product.images && product.images.length > 0) {
+        product.images.forEach((img) => {
+          combinedMedia.push({ id: img.id, type: "image", url: img.url });
+        });
+      }
+
+      if (product.videos && product.videos.length > 0) {
+        product.videos.forEach((vid) => {
+          combinedMedia.push({ id: vid.id, type: "video", url: vid.url });
+        });
+      }
+
+      if (combinedMedia.length === 0) {
+        combinedMedia.push({
+          id: "placeholder",
+          type: "image",
+          url: "/images/placeholder.jpg",
+        });
+      }
+
+      const formattedVariants = product.productVariants.map((v) => ({
+        id: v.id,
+        name: v.variantName || v.sku,
+        images: v.images.map((img) => ({
+          id: img.id,
+          type: "image" as const,
+          url: img.url,
+        })),
+      }));
+
+      const dimensionParts = [
+        product.length,
+        product.width,
+        product.height,
+      ].filter((val) => val !== null && val !== undefined);
+      const dimensionsString =
+        dimensionParts.length > 0 ? `${dimensionParts.join(" x ")} cm` : "-";
+
+      let formattedTiers = product.priceTiers.map((tier) => {
+        let label = "";
+        if (tier.maxQuantity) {
+          label = `${tier.minQuantity} - ${tier.maxQuantity} pcs`;
+        } else {
+          label = `≥ ${tier.minQuantity} pcs`;
+        }
+
+        return {
+          minQty: tier.minQuantity,
+          maxQty: tier.maxQuantity,
+          pricePerPcs: Number(tier.price),
+          label: label,
+        };
+      });
+
+      if (formattedTiers.length === 0) {
+        formattedTiers.push({
+          minQty: 1,
+          maxQty: null,
+          pricePerPcs: Number(product.basePrice),
+          label: "1+ pcs",
+        });
+      }
+
+      return {
+        id: product.id,
+        name: product.name,
+        slug: product.slug,
+        category: product.category?.name_id || "Uncategorized",
+        sold: totalSold,
+        media: combinedMedia,
+        variants: formattedVariants,
+
+        priceTiers: formattedTiers,
+        description: product.description || "",
+        weight: product.weight ? `${product.weight} gram` : "-",
+        dimensions: dimensionsString,
+        whatsappNumber: "6281234567890",
+        accessories: [],
+      };
+    } catch (error) {
+      console.error(`❌ Error fetching product by slug (${slug}):`, error);
+      throw error;
+    }
+  }
+
+  // === GET RELATED PRODUCTS (PUBLIC) ===
+  async getRelatedProducts(slug: string) {
+    try {
+      // 1. Cari produk target untuk mendapatkan categoryId-nya
+      const targetProduct = await this.prisma.product.findUnique({
+        where: { slug },
+        select: { id: true, categoryId: true },
+      });
+
+      if (!targetProduct) {
+        throw new Error("Product not found");
+      }
+
+      // 2. Ambil produk lain di kategori yang sama
+      const relatedRaw = await this.prisma.product.findMany({
+        where: {
+          categoryId: targetProduct.categoryId,
+          id: { not: targetProduct.id }, // Kecualikan produk yang sedang dilihat
+        },
+        take: 10, // Batasi 10 produk untuk Carousel
+        orderBy: { createdAt: "desc" }, // Bisa juga diubah menjadi berdasarkan 'sold'
+        include: {
+          images: {
+            take: 1,
+            orderBy: { isFeatured: "desc" },
+          },
+          priceTiers: {
+            orderBy: { minQuantity: "asc" },
+          },
+        },
+      });
+
+      // 3. Mapping data agar sesuai dengan format frontend (Product Type)
+      const formattedRelated = relatedRaw.map((p) => {
+        let bulkPrice = Number(p.basePrice);
+        if (p.priceTiers && p.priceTiers.length > 0) {
+          const cheapestTier = [...p.priceTiers].sort(
+            (a, b) => Number(a.price) - Number(b.price),
+          )[0];
+          bulkPrice = Number(cheapestTier.price);
+        }
+
+        const imageUrl =
+          p.images.length > 0 ? p.images[0].url : "/images/placeholder.jpg";
+
+        return {
+          id: p.id,
+          name: p.name,
+          slug: p.slug,
+          image: imageUrl,
+          bulkPrice: bulkPrice,
+          regularPrice: Number(p.basePrice),
+        };
+      });
+
+      return formattedRelated;
+    } catch (error) {
+      console.error(`❌ Error fetching related products for (${slug}):`, error);
+      throw error;
     }
   }
 }

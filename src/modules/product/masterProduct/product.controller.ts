@@ -427,4 +427,43 @@ export class ProductController {
       next(error);
     }
   };
+
+  // === GET PRODUCT BY SLUG (PUBLIC) ===
+  getProductBySlugPublic = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { slug } = req.params;
+
+      const product = await this.productService.getProductBySlugPublic(slug);
+
+      res.status(200).json({
+        success: true,
+        data: product,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === GET RELATED PRODUCTS ===
+  getRelatedProducts = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { slug } = req.params;
+      const related = await this.productService.getRelatedProducts(slug);
+
+      res.status(200).json({
+        success: true,
+        data: related,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 }
