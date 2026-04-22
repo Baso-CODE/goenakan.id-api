@@ -1,13 +1,11 @@
+import { Role } from "@prisma/client";
 import { injectable } from "tsyringe";
-import { env } from "../../config";
 import { ApiError } from "../../utils/api-error";
 import { PrismaService } from "../prisma/prisma.service";
 import { prismaExclude } from "../prisma/utils";
-import { LoginDTO } from "./dto/login.dto";
 import { RegisterDTO } from "./dto/register.dto";
 import { PasswordService } from "./password.service";
 import { TokenService } from "./token.service";
-import { Role } from "@prisma/client";
 
 @injectable()
 export class AuthService {
@@ -18,37 +16,37 @@ export class AuthService {
   ) {}
 
   // === LOGIN ===
-  login = async (body: LoginDTO) => {
-    const { email, password } = body;
+  // login = async (body: LoginDTO) => {
+  //   const { email, password } = body;
 
-    const existingUser = await this.prisma.user.findFirst({
-      where: { email },
-    });
+  //   const existingUser = await this.prisma.user.findFirst({
+  //     where: { email },
+  //   });
 
-    if (!existingUser) {
-      throw new ApiError("User not found", 404);
-    }
+  //   if (!existingUser) {
+  //     throw new ApiError("User not found", 404);
+  //   }
 
-    const isPasswordValid = await this.passwordService.comparePassword(
-      password,
-      existingUser.password,
-    );
+  //   const isPasswordValid = await this.passwordService.comparePassword(
+  //     password,
+  //     existingUser.password,
+  //   );
 
-    if (!isPasswordValid) {
-      throw new ApiError("Invalid credentials", 400);
-    }
+  //   if (!isPasswordValid) {
+  //     throw new ApiError("Invalid credentials", 400);
+  //   }
 
-    const accessToken = this.tokenService.generateToken(
-      {
-        id: existingUser.id,
-        role: existingUser.role,
-      },
-      env().JWT_SECRET,
-    );
+  //   const accessToken = this.tokenService.generateToken(
+  //     {
+  //       id: existingUser.id,
+  //       role: existingUser.role,
+  //     },
+  //     env().JWT_SECRET,
+  //   );
 
-    const { password: pw, ...userWithoutPassword } = existingUser;
-    return { ...userWithoutPassword, accessToken };
-  };
+  //   const { password: pw, ...userWithoutPassword } = existingUser;
+  //   return { ...userWithoutPassword, accessToken };
+  // };
 
   // === REGISTER ===
   register = async (body: RegisterDTO) => {

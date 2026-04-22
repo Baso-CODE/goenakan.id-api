@@ -152,7 +152,7 @@ export default class App {
     this.app.use("/cart", cartRouter.getRouter());
     this.app.use("/cart", cartRouter.getRouter());
     this.app.use("/auth-web-client", authWebClientRouter.getRouter());
-    this.app.use("/address", customAddressRouter.getRouter());
+    this.app.use("/addresses", customAddressRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

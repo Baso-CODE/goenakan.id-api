@@ -1,12 +1,10 @@
-import { Request, Response, NextFunction } from "express";
+import { Role } from "@prisma/client";
+import { NextFunction, Request, Response } from "express";
+import * as jwt from "jsonwebtoken";
 import { ApiError } from "../utils/api-error";
 import { AuthenticatedRequest } from "./AuthenticatedUser";
 
-import { decode } from "next-auth/jwt";
-import { Role } from "@prisma/client";
-
 export class NextAuthMiddleware {
-  // PENTING: NEXTAUTH_SECRET harus sama di backend dan frontend
   private readonly NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET;
 
   verifyNextAuthToken = async (
@@ -20,34 +18,31 @@ export class NextAuthMiddleware {
       throw new ApiError("Unauthorized: Missing Bearer token", 401);
     }
 
-    const encryptedToken = authHeader.split(" ")[1];
+    const token = authHeader.split(" ")[1];
 
     if (!this.NEXTAUTH_SECRET) {
-      console.error("NEXTAUTH_SECRET is not set!");
-      throw new ApiError("Server configuration error", 500);
+      throw new ApiError("Server configuration error: Secret not set", 500);
     }
 
     try {
-      // 🛑 MENGGUNAKAN DECODE dari next-auth/jwt
-      const payload = await decode({
-        token: encryptedToken,
-        secret: this.NEXTAUTH_SECRET,
-      });
+      // ✨ GANTI decode() dengan jwt.verify()
+      const payload = jwt.verify(token, this.NEXTAUTH_SECRET) as any;
 
       if (!payload) {
-        throw new Error("Invalid token payload or token expired");
+        throw new ApiError("Invalid token payload", 401);
       }
 
       const authReq = req as AuthenticatedRequest;
       authReq.user = {
-        id: String(payload.id ?? payload.sub ?? ""),
-        email: String(payload.email ?? ""),
-        role: (payload.role as Role) ?? Role.SUPER_ADMIN,
+        id: payload.id,
+        email: payload.email,
+        role: (payload.role as Role) ?? Role.CUSTOMER,
       };
 
       next();
-    } catch (err) {
-      console.error("❌ Token verification failed:", err);
+    } catch (err: any) {
+      console.error("❌ Token verification failed:", err.message);
+
       throw new ApiError("Invalid or expired token", 401);
     }
   };
