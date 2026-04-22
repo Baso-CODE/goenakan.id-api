@@ -25,10 +25,25 @@ enum QuotationStatus {
   CANCELLED
 }
 
+enum WebOrderStatus {
+  PENDING_PAYMENT
+  PAID
+  PROCESSING
+  SHIPPED
+  COMPLETED
+  CANCELLED
+}
+
 enum Role {
   SUPER_ADMIN
   ADMIN_ARTICLE
   ADMIN_INVOICE
+  CUSTOMER
+}
+
+enum AccountType {
+  INDIVIDUAL
+  CORPORATE
 }
 
 enum ClientType {
@@ -135,6 +150,7 @@ model User {
   invoices            Invoice[]
   sessions            Session[]
   financeTransactions FinanceTransaction[]
+  customerProfile     CustomerProfile?
 
   @@map("users")
 }
@@ -309,6 +325,8 @@ model Product {
   productVariants ProductVariant[]
   seo             ProductSEO?
   articleProducts ArticleProduct[]
+  cartItems       CartItem[]
+  webOrderItems   WebOrderItem[]
 
   @@map("products")
 }
@@ -397,6 +415,8 @@ model ProductVariant {
   orderProducts   OrderProduct[]
   invoiceItems    InvoiceItem[]
   quotationItems  QuotationItem[]
+  cartItems       CartItem[]
+  webOrderItems   WebOrderItem[]
 
   @@map("product_variants")
 }
@@ -1331,6 +1351,156 @@ model FinanceTransaction {
   updatedAt DateTime @updatedAt
 
   @@map("finance_transactions")
+}
+
+// ===============================================
+// WEBSITE CLIENT SECTION (B2C & E-Commerce B2B)
+// ===============================================
+
+model CustomerProfile {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+
+  accountType AccountType @default(INDIVIDUAL)
+
+  // --- Kolom untuk INDIVIDUAL (B2C) ---
+  // fullName diambil dari tabel User (User.name)
+  phone String?
+
+  // --- Kolom untuk CORPORATE (B2B) ---
+  picName     String?
+  picPhone    String? // Di form namanya picNumbers
+  companyName String?
+  department  String? // Contoh: "Marketing", "Procurement"
+
+  // Alamat & Data Tambahan
+  avatarUrl String?
+  addresses CustomerAddress[]
+  carts     Cart[]
+  orders    WebOrder[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("customer_profiles")
+}
+
+model Cart {
+  id        String          @id @default(uuid())
+  profileId String          @unique // 1 User = 1 Active Cart
+  profile   CustomerProfile @relation(fields: [profileId], references: [id])
+
+  items CartItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("carts")
+}
+
+model CartItem {
+  id     String @id @default(uuid())
+  cartId String
+  cart   Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  variantId String?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id])
+
+  quantity Int
+
+  // Untuk menyimpan konfigurasi desain custom (jika ada fitur custom)
+  customization Json?
+  notes         String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cartId, productId, variantId]) // Hindari duplikat produk yang sama di keranjang
+  @@map("cart_items")
+}
+
+model CustomerAddress {
+  id        String          @id @default(uuid())
+  profileId String
+  profile   CustomerProfile @relation(fields: [profileId], references: [id])
+
+  label     String // ex: "Rumah", "Kantor"
+  recipient String // Nama penerima
+  phone     String
+
+  // Detail Alamat
+  country     String?
+  province    String?
+  city        String?
+  district    String?
+  postalCode  String?
+  fullAddress String  @db.Text
+
+  isDefault Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("customer_addresses")
+}
+
+model WebOrder {
+  id          String @id @default(uuid())
+  orderNumber String @unique
+
+  // ✨ 1. Jadikan profileId opsional (Beri tanda '?' )
+  profileId String?
+  profile   CustomerProfile? @relation(fields: [profileId], references: [id])
+
+  // ✨ 2. Tambahkan kolom khusus untuk Guest Checkout
+  guestName  String?
+  guestEmail String?
+  guestPhone String?
+
+  shippingAddress Json
+  subtotal        Decimal
+  shippingCost    Decimal
+  taxAmount       Decimal? @default(0)
+  totalAmount     Decimal
+
+  status        WebOrderStatus @default(PENDING_PAYMENT)
+  paymentMethod String?
+  paymentUrl    String?
+
+  trackingNumber String?
+  courier        String?
+
+  items WebOrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("web_orders")
+}
+
+model WebOrderItem {
+  id         String   @id @default(uuid())
+  webOrderId String
+  webOrder   WebOrder @relation(fields: [webOrderId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product         @relation(fields: [productId], references: [id])
+  variantId String?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id])
+
+  productName String // Snapshot nama produk saat dibeli
+  quantity    Int
+  price       Decimal // Harga per satuan saat dibeli
+  total       Decimal // quantity * price
+
+  customization Json?
+  notes         String?
+
+  @@map("web_order_items")
 }
 
 // ===============================================

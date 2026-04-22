@@ -29,6 +29,6 @@ COPY . .
 EXPOSE 8000
 
 # Perintah saat container jalan:
-# 1. Migrasi database
+# 1. Push skema langsung ke database (tanpa peduli riwayat migrasi)
 # 2. Jalankan aplikasi langsung dari file TypeScript
-CMD ["/bin/sh", "-c", "bunx prisma migrate deploy && bun src/index.ts"]
+CMD ["/bin/sh", "-c", "bunx prisma db push && bun src/index.ts"]
