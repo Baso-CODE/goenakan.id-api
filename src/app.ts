@@ -41,6 +41,7 @@ import { VendorCategoryRouter } from "./modules/vendor/categoryVendor/categoryVe
 import { ItemVendorRouter } from "./modules/vendor/itemVendor/itemVendor.router";
 import { ContactPlatformRouter } from "./modules/vendor/platform/platform.route";
 import { VendorRouter } from "./modules/vendor/vendorMaster/vendor.router";
+import { CustomerAddressRouter } from "./modules/web-clients/address/customer-address.router";
 import { CartRouter } from "./modules/web-clients/cart/cart.router";
 import { AuthWebClientRouter } from "./modules/web-clients/register-user/register-user.router";
 export default class App {
@@ -101,6 +102,7 @@ export default class App {
     const contactMessageRouter = container.resolve(ContactMessageRouter);
     const cartRouter = container.resolve(CartRouter);
     const authWebClientRouter = container.resolve(AuthWebClientRouter);
+    const customAddressRouter = container.resolve(CustomerAddressRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -150,6 +152,7 @@ export default class App {
     this.app.use("/cart", cartRouter.getRouter());
     this.app.use("/cart", cartRouter.getRouter());
     this.app.use("/auth-web-client", authWebClientRouter.getRouter());
+    this.app.use("/address", customAddressRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);
