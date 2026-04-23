@@ -153,8 +153,6 @@ export class CartService {
 
   // === 6. SYNC GUEST CART (Digunakan saat user login) ===
   async syncGuestCart(profileId: string, data: SyncCartDTO) {
-    // Loop semua item dari Local Storage dan masukkan ke database
-    // Menggunakan Promise.all agar eksekusi lebih cepat
     const syncPromises = data.items.map((item) =>
       this.addToCart(profileId, item),
     );

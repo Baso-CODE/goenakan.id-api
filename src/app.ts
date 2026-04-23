@@ -43,7 +43,9 @@ import { ContactPlatformRouter } from "./modules/vendor/platform/platform.route"
 import { VendorRouter } from "./modules/vendor/vendorMaster/vendor.router";
 import { CustomerAddressRouter } from "./modules/web-clients/address/customer-address.router";
 import { CartRouter } from "./modules/web-clients/cart/cart.router";
+import { CustomerProfileRouter } from "./modules/web-clients/customer-profile/customer-profile.router";
 import { AuthWebClientRouter } from "./modules/web-clients/register-user/register-user.router";
+import { WebOrderRouter } from "./modules/web-clients/web-order/web-order.router";
 export default class App {
   public app;
 
@@ -103,6 +105,8 @@ export default class App {
     const cartRouter = container.resolve(CartRouter);
     const authWebClientRouter = container.resolve(AuthWebClientRouter);
     const customAddressRouter = container.resolve(CustomerAddressRouter);
+    const customerProfileRouter = container.resolve(CustomerProfileRouter);
+    const webOrderRouter = container.resolve(WebOrderRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -150,9 +154,10 @@ export default class App {
     this.app.use("/contact-messages", contactMessageRouter.getRouter());
     this.app.use("/contact-messages", contactMessageRouter.getRouter());
     this.app.use("/cart", cartRouter.getRouter());
-    this.app.use("/cart", cartRouter.getRouter());
     this.app.use("/auth-web-client", authWebClientRouter.getRouter());
     this.app.use("/addresses", customAddressRouter.getRouter());
+    this.app.use("/customer-profile", customerProfileRouter.getRouter());
+    this.app.use("/web-orders", webOrderRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

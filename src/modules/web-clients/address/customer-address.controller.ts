@@ -32,7 +32,7 @@ export class CustomerAddressController {
   // === 1. GET ALL ADDRESSES ===
   getAddresses = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const userId = (req as any).user.id; // Didapat dari Middleware Auth
+      const userId = (req as any).user.id;
       const profileId = await this.getProfileId(userId);
 
       const addresses = await this.addressService.getAddresses(profileId);
