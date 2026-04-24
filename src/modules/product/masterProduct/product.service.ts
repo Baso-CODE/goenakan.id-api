@@ -1948,10 +1948,18 @@ export class ProductService {
           videos: {
             orderBy: { isFeatured: "desc" },
           },
+          // ✨ Tambahkan include attribute agar kita tahu varian ini warnanya apa/ukurannya apa
           productVariants: {
             include: {
               images: {
                 orderBy: { isFeatured: "desc" },
+              },
+              attributeValues: {
+                include: {
+                  attributeValue: {
+                    include: { attribute: true },
+                  },
+                },
               },
             },
           },
@@ -1974,11 +1982,13 @@ export class ProductService {
         throw new Error("Product not found");
       }
 
+      // Hitung total terjual
       const totalSold = product.orderProducts.reduce(
         (sum, order) => sum + (order.quantity || 1),
         0,
       );
 
+      // Gabungkan Media
       const combinedMedia: {
         id: string;
         type: "image" | "video";
@@ -2005,16 +2015,55 @@ export class ProductService {
         });
       }
 
-      const formattedVariants = product.productVariants.map((v) => ({
-        id: v.id,
-        name: v.variantName || v.sku,
-        images: v.images.map((img) => ({
-          id: img.id,
-          type: "image" as const,
-          url: img.url,
-        })),
-      }));
+      // ✨ FORMAT VARIAN (Inheritance / Pewarisan dari Induk)
+      const formattedVariants = product.productVariants.map((v) => {
+        // Jika varian kosong, pakai data induk
+        const vWeight = v.weight ?? product.weight;
+        const vWidth = v.width ?? product.width;
+        const vHeight = v.height ?? product.height;
+        const vLength = v.length ?? product.length;
 
+        // Format string untuk UI Varian
+        const vDimensionParts = [vLength, vWidth, vHeight].filter(
+          (val) => val !== null && val !== undefined,
+        );
+        const vDimensionsString =
+          vDimensionParts.length > 0
+            ? `${vDimensionParts.join(" x ")} cm`
+            : "-";
+
+        // Ambil atribut (contoh: Warna: Merah)
+        const attributes = v.attributeValues.map((av) => ({
+          name: av.attributeValue.attribute?.name,
+          value: av.attributeValue.value,
+        }));
+
+        return {
+          id: v.id,
+          name: v.variantName || v.sku,
+          price: v.price ? Number(v.price) : null, // Harga khusus varian (jika ada)
+          sku: v.sku,
+
+          // Data mentah untuk payload Cart
+          rawWeight: vWeight,
+          width: vWidth,
+          height: vHeight,
+          length: vLength,
+
+          // Data format untuk UI
+          weightString: vWeight ? `${vWeight} gram` : "-",
+          dimensionsString: vDimensionsString,
+
+          attributes,
+          images: v.images.map((img) => ({
+            id: img.id,
+            type: "image" as const,
+            url: img.url,
+          })),
+        };
+      });
+
+      // Format Induk (Parent)
       const dimensionParts = [
         product.length,
         product.width,
@@ -2051,16 +2100,26 @@ export class ProductService {
       return {
         id: product.id,
         name: product.name,
+        sku: product.sku,
         slug: product.slug,
         category: product.category?.name_id || "Uncategorized",
         sold: totalSold,
         media: combinedMedia,
         variants: formattedVariants,
-
         priceTiers: formattedTiers,
         description: product.description || "",
+
+        // Data Format untuk tampilan UI utama
         weight: product.weight ? `${product.weight} gram` : "-",
         dimensions: dimensionsString,
+
+        // Data Mentah Induk (untuk Cart payload jika tidak pilih varian)
+        rawWeight: product.weight,
+        width: product.width,
+        height: product.height,
+        length: product.length,
+        materialType: product.materialType,
+
         whatsappNumber: "6281234567890",
         accessories: [],
       };
