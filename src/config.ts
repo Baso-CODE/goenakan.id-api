@@ -1,7 +1,7 @@
-import { config as dotenvConfig } from "dotenv";
-dotenvConfig();
 import { plainToInstance } from "class-transformer";
 import { IsNotEmpty, IsNumber, IsString, validateSync } from "class-validator";
+import { config as dotenvConfig } from "dotenv";
+dotenvConfig();
 
 class EnvConfig {
   @IsNotEmpty()
@@ -39,6 +39,10 @@ class EnvConfig {
   @IsNotEmpty()
   @IsString()
   readonly CLOUDINARY_API_SECRET!: string;
+
+  @IsNotEmpty() // Tambahkan ini agar wajib diisi di .env
+  @IsString()
+  readonly CORS_ORIGIN!: string;
 }
 
 export const env = () => {
