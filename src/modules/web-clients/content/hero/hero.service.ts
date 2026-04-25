@@ -1,8 +1,9 @@
 import { injectable } from "tsyringe";
-import { ApiError } from "../../../utils/api-error";
-import { CloudinaryService } from "../../cloudinary/cloudinary.service";
-import { PaginationService } from "../../pagination/pagination.service";
-import { PrismaService } from "../../prisma/prisma.service";
+
+import { ApiError } from "../../../../utils/api-error";
+import { CloudinaryService } from "../../../cloudinary/cloudinary.service";
+import { PaginationService } from "../../../pagination/pagination.service";
+import { PrismaService } from "../../../prisma/prisma.service";
 import { CreateHeroSlideDTO, UpdateHeroSlideDTO } from "./dto/hero.dto";
 
 @injectable()

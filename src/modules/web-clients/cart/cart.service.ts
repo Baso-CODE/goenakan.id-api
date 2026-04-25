@@ -38,7 +38,13 @@ export class CartService {
                 slug: true,
                 basePrice: true,
                 images: { take: 1, orderBy: { isFeatured: "desc" } },
-                priceTiers: { orderBy: { minQuantity: "asc" } }, // Berguna untuk hitung harga grosir
+                priceTiers: { orderBy: { minQuantity: "asc" } },
+
+                materialType: true,
+                weight: true,
+                width: true,
+                height: true,
+                length: true,
               },
             },
             variant: {
@@ -48,6 +54,11 @@ export class CartService {
                 sku: true,
                 price: true,
                 images: { take: 1, orderBy: { isFeatured: "desc" } },
+
+                weight: true,
+                width: true,
+                height: true,
+                length: true,
               },
             },
           },

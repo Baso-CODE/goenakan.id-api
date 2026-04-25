@@ -4,9 +4,9 @@ import { Router } from "express";
 import multer from "multer";
 import { autoInjectable } from "tsyringe";
 
-import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
-import { verifyRole } from "../../../middleware/role.middleware";
-import { validateBody } from "../../../middleware/validation.middleware";
+import { NextAuthMiddleware } from "../../../../middleware/nextAuth.middleware";
+import { verifyRole } from "../../../../middleware/role.middleware";
+import { validateBody } from "../../../../middleware/validation.middleware";
 import { ClientLogoController } from "./clientLogo.controller";
 import { CreateClientLogoDTO, UpdateClientLogoDTO } from "./dto/clientLogo.dto";
 

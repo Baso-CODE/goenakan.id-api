@@ -14,13 +14,7 @@ import { AuthRouter } from "./modules/auth/auth.router";
 import { CashflowRouter } from "./modules/cashflow/cashflow.router";
 import { ClientRouter } from "./modules/client/client.router";
 import { ContactMessageRouter } from "./modules/contact-message/contact-message.router";
-import { PopupBannerRouter } from "./modules/content/banner/banner.router";
-import { BrandClientRouter } from "./modules/content/brandClient/brandClient.router";
-import { ClientLogoRouter } from "./modules/content/clientLogo/clientLogo.router";
-import { FaqRouter } from "./modules/content/faq/faq.router";
-import { HeroRouter } from "./modules/content/hero/hero.router";
-import { PortfolioRouter } from "./modules/content/portfolio/portfolio.router";
-import { AppSettingRouter } from "./modules/content/setting/setting.router";
+
 import { CurrencyRouter } from "./modules/currency/currency.router";
 import { DepartmentRouter } from "./modules/department/department.router";
 import { FinanceRouter } from "./modules/finance/finance.router";
@@ -43,7 +37,15 @@ import { ContactPlatformRouter } from "./modules/vendor/platform/platform.route"
 import { VendorRouter } from "./modules/vendor/vendorMaster/vendor.router";
 import { CustomerAddressRouter } from "./modules/web-clients/address/customer-address.router";
 import { CartRouter } from "./modules/web-clients/cart/cart.router";
+import { PopupBannerRouter } from "./modules/web-clients/content/banner/banner.router";
+import { BrandClientRouter } from "./modules/web-clients/content/brandClient/brandClient.router";
+import { ClientLogoRouter } from "./modules/web-clients/content/clientLogo/clientLogo.router";
+import { FaqRouter } from "./modules/web-clients/content/faq/faq.router";
+import { HeroRouter } from "./modules/web-clients/content/hero/hero.router";
+import { PortfolioRouter } from "./modules/web-clients/content/portfolio/portfolio.router";
+import { AppSettingRouter } from "./modules/web-clients/content/setting/setting.router";
 import { CustomerProfileRouter } from "./modules/web-clients/customer-profile/customer-profile.router";
+import { EventCategoryRouter } from "./modules/web-clients/event-category/event-category.router";
 import { AuthWebClientRouter } from "./modules/web-clients/register-user/register-user.router";
 import { WebOrderRouter } from "./modules/web-clients/web-order/web-order.router";
 export default class App {
@@ -107,6 +109,7 @@ export default class App {
     const customAddressRouter = container.resolve(CustomerAddressRouter);
     const customerProfileRouter = container.resolve(CustomerProfileRouter);
     const webOrderRouter = container.resolve(WebOrderRouter);
+    const eventCategoryRouter = container.resolve(EventCategoryRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -158,6 +161,7 @@ export default class App {
     this.app.use("/addresses", customAddressRouter.getRouter());
     this.app.use("/customer-profile", customerProfileRouter.getRouter());
     this.app.use("/web-orders", webOrderRouter.getRouter());
+    this.app.use("/event-categories", eventCategoryRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

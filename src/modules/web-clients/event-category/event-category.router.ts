@@ -4,19 +4,19 @@ import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
 import { verifyRole } from "../../../middleware/role.middleware";
-import { PortfolioController } from "./portfolio.controller";
+import { EventCategoryController } from "./event-category.controller";
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024 }, // Limit 5MB
 });
 
 @autoInjectable()
-export class PortfolioRouter {
+export class EventCategoryRouter {
   private readonly router: Router = Router();
 
   constructor(
-    private readonly portfolioController: PortfolioController,
+    private readonly eventCategoryController: EventCategoryController,
     private readonly nextAuthMiddleware: NextAuthMiddleware,
   ) {
     this.initializeRoutes();
@@ -30,19 +30,22 @@ export class PortfolioRouter {
     // 1. PUBLIC ROUTES (Tanpa Autentikasi)
     // ==========================================
 
-    // GET /api/portfolios/public (Untuk Landing Page)
-    this.router.get("/public", this.portfolioController.getPublicPortfolios);
+    // GET /api/event-categories/public (Untuk Landing Page)
+    this.router.get(
+      "/public",
+      this.eventCategoryController.getPublicEventCategories,
+    );
 
     // ==========================================
     // 2. ADMIN ROUTES (Gunakan Auth & Role)
     // ==========================================
 
-    // GET ALL PORTFOLIOS (With Pagination & Search)
+    // GET ALL EVENT CATEGORIES (With Pagination & Search)
     this.router.get(
       "/",
       auth,
       adminRole,
-      this.portfolioController.getAllPortfolios,
+      this.eventCategoryController.getAllEventCategories,
     );
 
     // GET BY ID
@@ -50,33 +53,33 @@ export class PortfolioRouter {
       "/:id",
       auth,
       adminRole,
-      this.portfolioController.getPortfolioById,
+      this.eventCategoryController.getEventCategoryById,
     );
 
-    // CREATE PORTFOLIO
+    // CREATE EVENT CATEGORY
     this.router.post(
       "/",
       auth,
       adminRole,
       upload.single("image"),
-      this.portfolioController.createPortfolio,
+      this.eventCategoryController.createEventCategory,
     );
 
-    // UPDATE PORTFOLIO
+    // UPDATE EVENT CATEGORY
     this.router.patch(
       "/:id",
       auth,
       adminRole,
       upload.single("image"),
-      this.portfolioController.updatePortfolio,
+      this.eventCategoryController.updateEventCategory,
     );
 
-    // DELETE PORTFOLIO
+    // DELETE EVENT CATEGORY
     this.router.delete(
       "/:id",
       auth,
       adminRole,
-      this.portfolioController.deletePortfolio,
+      this.eventCategoryController.deleteEventCategory,
     );
   };
 

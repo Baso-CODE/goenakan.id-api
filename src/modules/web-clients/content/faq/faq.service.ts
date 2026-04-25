@@ -1,9 +1,9 @@
 import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
-import { PaginationService } from "../../pagination/pagination.service";
-import { PrismaService } from "../../prisma/prisma.service";
 
-import { ApiError } from "../../../utils/api-error";
+import { ApiError } from "../../../../utils/api-error";
+import { PaginationService } from "../../../pagination/pagination.service";
+import { PrismaService } from "../../../prisma/prisma.service";
 import { CreateFaqDTO, UpdateFaqDTO } from "./dto/faq.dto";
 
 export interface FaqExportQuery {

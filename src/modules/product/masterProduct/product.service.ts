@@ -2113,7 +2113,6 @@ export class ProductService {
         weight: product.weight ? `${product.weight} gram` : "-",
         dimensions: dimensionsString,
 
-        // Data Mentah Induk (untuk Cart payload jika tidak pilih varian)
         rawWeight: product.weight,
         width: product.width,
         height: product.height,

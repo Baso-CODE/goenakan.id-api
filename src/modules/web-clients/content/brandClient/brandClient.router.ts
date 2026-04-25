@@ -2,8 +2,8 @@ import { Router } from "express";
 import multer from "multer";
 import { autoInjectable } from "tsyringe";
 
-import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
-import { verifyRole } from "../../../middleware/role.middleware";
+import { NextAuthMiddleware } from "../../../../middleware/nextAuth.middleware";
+import { verifyRole } from "../../../../middleware/role.middleware";
 import { BrandClientController } from "./brandClient.controller";
 
 const upload = multer({

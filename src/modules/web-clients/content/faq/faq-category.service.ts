@@ -1,10 +1,10 @@
 import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
-import { PaginationService } from "../../pagination/pagination.service"; // Sesuaikan path
-import { PrismaService } from "../../prisma/prisma.service"; // Sesuaikan path
-// Sesuaikan path
-import { ApiError } from "../../../utils/api-error";
-import { SlugService } from "../../../utils/genereateSlug";
+
+import { ApiError } from "../../../../utils/api-error";
+import { SlugService } from "../../../../utils/genereateSlug";
+import { PaginationService } from "../../../pagination/pagination.service";
+import { PrismaService } from "../../../prisma/prisma.service";
 import {
   CreateFaqCategoryDTO,
   UpdateFaqCategoryDTO,

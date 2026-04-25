@@ -1,5 +1,5 @@
 import { injectable } from "tsyringe";
-import { PrismaService } from "../../prisma/prisma.service";
+import { PrismaService } from "../../../prisma/prisma.service";
 import { UpdateAppSettingDTO } from "./dto/setting.dto";
 
 @injectable()

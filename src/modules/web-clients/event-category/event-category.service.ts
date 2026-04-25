@@ -4,11 +4,13 @@ import { SlugService } from "../../../utils/genereateSlug";
 import { CloudinaryService } from "../../cloudinary/cloudinary.service";
 import { PaginationService } from "../../pagination/pagination.service";
 import { PrismaService } from "../../prisma/prisma.service";
-import { CreatePortfolioDTO } from "./dto/createPorfolio.dto";
-import { UpdatePortfolioDTO } from "./dto/updatePorfolio.dto";
+import {
+  CreateEventCategoryDTO,
+  UpdateEventCategoryDTO,
+} from "./dto/event-category.dto";
 
 @injectable()
-export class PortfolioService {
+export class EventCategoryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cloudinary: CloudinaryService,
@@ -19,22 +21,18 @@ export class PortfolioService {
   // ====================================================================
   // 1. GET ALL FOR ADMIN (With Pagination & Search)
   // ====================================================================
-  async getAllPortfolios(query: {
+  async getAllEventCategories(query: {
     page?: number;
     take?: number;
     search?: string;
   }) {
     const where: any = {};
     if (query.search) {
-      // Pencarian bisa berdasarkan judul proyek atau nama klien
-      where.OR = [
-        { title: { contains: query.search, mode: "insensitive" } },
-        { clientName: { contains: query.search, mode: "insensitive" } },
-      ];
+      where.title = { contains: query.search, mode: "insensitive" };
     }
 
-    const count = await this.prisma.portfolio.count({ where });
-    const data = await this.prisma.portfolio.findMany({
+    const count = await this.prisma.eventCategory.count({ where });
+    const data = await this.prisma.eventCategory.findMany({
       where,
       skip: (Number(query.page || 1) - 1) * Number(query.take || 10),
       take: Number(query.take || 10),
@@ -53,17 +51,22 @@ export class PortfolioService {
   // ====================================================================
   // 2. GET BY ID
   // ====================================================================
-  async getPortfolioById(id: string) {
-    const portfolio = await this.prisma.portfolio.findUnique({ where: { id } });
-    if (!portfolio) throw new ApiError("Portfolio not found", 404);
-    return portfolio;
+  async getEventCategoryById(id: string) {
+    const category = await this.prisma.eventCategory.findUnique({
+      where: { id },
+    });
+    if (!category) throw new ApiError("Event Category not found", 404);
+    return category;
   }
 
   // ====================================================================
-  // 3. CREATE PORTFOLIO
+  // 3. CREATE EVENT CATEGORY
   // ====================================================================
-  async createPortfolio(data: CreatePortfolioDTO, file: Express.Multer.File) {
-    if (!file) throw new ApiError("Portfolio image is required", 400);
+  async createEventCategory(
+    data: CreateEventCategoryDTO,
+    file: Express.Multer.File,
+  ) {
+    if (!file) throw new ApiError("Event category image is required", 400);
 
     const slug = this.slug.create(data.title);
     let uploadResult;
@@ -71,7 +74,7 @@ export class PortfolioService {
     // --- UPLOAD KE CLOUDINARY ---
     try {
       uploadResult = await this.cloudinary.upload(file, {
-        folder: "portfolios",
+        folder: "event_categories",
       });
     } catch (error: any) {
       console.error("🔥 CLOUDINARY UPLOAD ERROR:", error);
@@ -80,23 +83,20 @@ export class PortfolioService {
 
     // --- INSERT KE DATABASE ---
     try {
-      const newPortfolio = await this.prisma.portfolio.create({
+      const newCategory = await this.prisma.eventCategory.create({
         data: {
           title: data.title,
           slug,
-          clientName: data.clientName,
-          description: data.description,
+          orderCount: Number(data.orderCount || 0),
           image: uploadResult.secure_url,
           imageId: uploadResult.public_id,
           displayOrder: Number(data.displayOrder || 0),
-          // Parsing string dari FormData ke boolean
           isActive: data.isActive ? String(data.isActive) === "true" : true,
         },
       });
 
-      return newPortfolio;
+      return newCategory;
     } catch (error: any) {
-      // ⚠️ ROLLBACK: Jika DB gagal, hapus gambar yang baru saja diupload ke Cloudinary
       if (uploadResult?.public_id) {
         await this.cloudinary.delete(uploadResult.public_id).catch(() => null);
       }
@@ -105,7 +105,7 @@ export class PortfolioService {
 
       if (error.code === "P2002") {
         throw new ApiError(
-          `Judul portfolio "${data.title}" sudah digunakan (Slug duplikat).`,
+          `Kategori event "${data.title}" sudah ada (Slug duplikat).`,
           400,
         );
       }
@@ -118,14 +118,14 @@ export class PortfolioService {
   }
 
   // ====================================================================
-  // 4. UPDATE PORTFOLIO
+  // 4. UPDATE EVENT CATEGORY
   // ====================================================================
-  async updatePortfolio(
+  async updateEventCategory(
     id: string,
-    data: UpdatePortfolioDTO,
+    data: UpdateEventCategoryDTO,
     file?: Express.Multer.File,
   ) {
-    const existing = await this.getPortfolioById(id);
+    const existing = await this.getEventCategoryById(id);
 
     let imageUrl = existing.image;
     let imageId = existing.imageId;
@@ -133,14 +133,14 @@ export class PortfolioService {
     // --- JIKA ADA FILE BARU ---
     if (file) {
       try {
-        // 1. Hapus file lama di Cloudinary agar tidak menumpuk
+        // 1. Hapus file lama
         if (existing.imageId) {
           await this.cloudinary.delete(existing.imageId).catch(() => null);
         }
 
         // 2. Upload file baru
         const uploadResult = await this.cloudinary.upload(file, {
-          folder: "portfolios",
+          folder: "event_categories",
         });
         imageUrl = uploadResult.secure_url;
         imageId = uploadResult.public_id;
@@ -157,13 +157,15 @@ export class PortfolioService {
           ? this.slug.create(data.title)
           : existing.slug;
 
-      const updatedPortfolio = await this.prisma.portfolio.update({
+      const updatedCategory = await this.prisma.eventCategory.update({
         where: { id },
         data: {
           title: data.title,
           slug,
-          clientName: data.clientName,
-          description: data.description,
+          orderCount:
+            data.orderCount !== undefined
+              ? Number(data.orderCount)
+              : existing.orderCount,
           image: imageUrl,
           imageId: imageId,
           displayOrder:
@@ -177,12 +179,12 @@ export class PortfolioService {
         },
       });
 
-      return updatedPortfolio;
+      return updatedCategory;
     } catch (error: any) {
       console.error("🔥 DATABASE UPDATE ERROR:", error);
 
       if (error.code === "P2002") {
-        throw new ApiError("Judul portfolio tersebut sudah digunakan.", 400);
+        throw new ApiError("Kategori event tersebut sudah ada.", 400);
       }
 
       throw new ApiError(
@@ -193,43 +195,43 @@ export class PortfolioService {
   }
 
   // ====================================================================
-  // 5. DELETE PORTFOLIO
+  // 5. DELETE EVENT CATEGORY
   // ====================================================================
-  async deletePortfolio(id: string) {
-    const existing = await this.getPortfolioById(id);
+  async deleteEventCategory(id: string) {
+    const existing = await this.getEventCategoryById(id);
 
     try {
-      // 1. Hapus gambar dari Cloudinary terlebih dahulu
+      // 1. Hapus gambar dari Cloudinary
       if (existing.imageId) {
         await this.cloudinary.delete(existing.imageId);
       }
 
       // 2. Hapus data dari Database
-      return await this.prisma.portfolio.delete({ where: { id } });
+      return await this.prisma.eventCategory.delete({ where: { id } });
     } catch (error: any) {
       console.error("🔥 DELETE ERROR:", error);
-      throw new ApiError("Gagal menghapus portfolio dari sistem.", 500);
+      throw new ApiError("Gagal menghapus kategori event dari sistem.", 500);
     }
   }
 
   // ====================================================================
-  // 6. GET PUBLIC PORTFOLIOS (Untuk Landing Page)
+  // 6. GET PUBLIC EVENT CATEGORIES (Untuk Carousel di Landing Page)
   // ====================================================================
-  async getPublicPortfolios() {
+  async getPublicEventCategories() {
     try {
-      return await this.prisma.portfolio.findMany({
+      return await this.prisma.eventCategory.findMany({
         where: { isActive: true },
         orderBy: { displayOrder: "asc" },
         select: {
           id: true,
           title: true,
-          clientName: true,
-          image: true,
           slug: true,
+          orderCount: true,
+          image: true,
         },
       });
     } catch (error) {
-      throw new ApiError("Gagal mengambil data portfolio publik.", 500);
+      throw new ApiError("Gagal mengambil data kategori event publik.", 500);
     }
   }
 }

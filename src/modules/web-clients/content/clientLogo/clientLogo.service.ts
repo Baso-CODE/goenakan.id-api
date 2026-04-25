@@ -1,8 +1,9 @@
 import { injectable } from "tsyringe";
-import { ApiError } from "../../../utils/api-error";
-import { CloudinaryService } from "../../cloudinary/cloudinary.service";
-import { PaginationService } from "../../pagination/pagination.service";
-import { PrismaService } from "../../prisma/prisma.service";
+
+import { ApiError } from "../../../../utils/api-error";
+import { CloudinaryService } from "../../../cloudinary/cloudinary.service";
+import { PaginationService } from "../../../pagination/pagination.service";
+import { PrismaService } from "../../../prisma/prisma.service";
 import { CreateClientLogoDTO, UpdateClientLogoDTO } from "./dto/clientLogo.dto";
 
 @injectable()
@@ -23,7 +24,6 @@ export class ClientLogoService {
   }
 
   // === GET ALL (ADMIN) ===
-  // Mengambil data untuk tabel admin dengan pagination, search, dan filter
   async getAllLogosAdmin(query: {
     page?: number;
     take?: number;
