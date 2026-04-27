@@ -1,10 +1,13 @@
-import { PrismaClient } from "@prisma/client";
 import * as argon2 from "argon2";
 import "dotenv/config";
-
-const prisma = new PrismaClient();
+import "reflect-metadata"; // Wajib untuk tsyringge
+import { container } from "tsyringe";
+import { PrismaService } from "../src/modules/prisma/prisma.service";
 
 async function main() {
+  // ✨ Resolve PrismaService dari container tsyringe
+  const prisma = container.resolve(PrismaService);
+
   const existingSuperAdmin = await prisma.user.findFirst({
     where: { role: "SUPER_ADMIN" },
   });
@@ -18,8 +21,6 @@ async function main() {
     type: argon2.argon2id,
   });
 
-  // 2. Gunakan UPSERT (Update jika ada, Create jika belum ada)
-  // Pastikan 'email' bersifat unique di schema.prisma kamu
   await prisma.user.upsert({
     where: { email: "superadmin@goenakan.id" },
     update: {
@@ -37,6 +38,13 @@ async function main() {
 
   console.log("🚀 SUPER_ADMIN password has been synced to: superadmin123");
 }
+
 main()
-  .catch((e) => console.error(e))
-  .finally(async () => await prisma.$disconnect());
+  .catch((e) => {
+    console.error("❌ Seed error:", e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    const prisma = container.resolve(PrismaService);
+    await prisma.$disconnect();
+  });

@@ -1,7 +1,7 @@
+import { Role } from "@prisma/client";
 import { NextFunction, Request, Response } from "express";
 import jwt, { TokenExpiredError } from "jsonwebtoken";
 import { ApiError } from "../utils/api-error";
-import { Role } from "@prisma/client";
 
 export interface JwtPayload {
   id: string;
