@@ -19,6 +19,8 @@ COPY prisma ./prisma/
 # Install dependencies
 RUN bun install
 
+ENV DATABASE_URL="mysql://johndoe:randompassword@localhost:3306/mydb"
+
 # Generate Prisma Client (Wajib)
 RUN bunx prisma generate
 
