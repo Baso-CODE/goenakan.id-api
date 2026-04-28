@@ -61,30 +61,31 @@ export default class App {
   private configure(): void {
     this.app.use(helmet());
 
-    // ✨ UPDATE KONFIGURASI CORS
-    const allowedOrigins = env().CORS_ORIGIN
-      ? env().CORS_ORIGIN.split(",")
-      : ["http://localhost:3000", "http://localhost:3001"];
+    // // ✨ UPDATE KONFIGURASI CORS
+    // const allowedOrigins = env().CORS_ORIGIN
+    //   ? env().CORS_ORIGIN.split(",")
+    //   : ["http://localhost:3000", "http://localhost:3001"];
 
-    this.app.use(
-      cors({
-        origin: function (origin, callback) {
-          // Izinkan request tanpa origin (seperti dari Postman/Insomnia)
-          if (!origin) return callback(null, true);
+    // this.app.use(
+    //   cors({
+    //     origin: function (origin, callback) {
+    //       // Izinkan request tanpa origin (seperti dari Postman/Insomnia)
+    //       if (!origin) return callback(null, true);
 
-          // Cek apakah origin ada di daftar allowedOrigins
-          if (allowedOrigins.indexOf(origin) !== -1) {
-            callback(null, true);
-          } else {
-            callback(new Error("Not allowed by CORS"));
-          }
-        },
-        credentials: true, // WAJIB untuk NextAuth / Token auth
-        methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-      }),
-    );
+    //       // Cek apakah origin ada di daftar allowedOrigins
+    //       if (allowedOrigins.indexOf(origin) !== -1) {
+    //         callback(null, true);
+    //       } else {
+    //         callback(new Error("Not allowed by CORS"));
+    //       }
+    //     },
+    //     credentials: true,
+    //     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    //     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    //   }),
+    // );
 
+    this.app.use(cors());
     this.app.use(json());
     this.app.use(cookieParser());
   }
