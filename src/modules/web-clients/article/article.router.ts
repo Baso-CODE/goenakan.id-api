@@ -2,8 +2,8 @@ import { Router } from "express";
 import multer from "multer";
 import { autoInjectable } from "tsyringe";
 
-import { NextAuthMiddleware } from "../../middleware/nextAuth.middleware";
-import { verifyRole } from "../../middleware/role.middleware";
+import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
+import { verifyRole } from "../../../middleware/role.middleware";
 import { ArticleController } from "./article.controller";
 
 // Konfigurasi Multer (menggunakan memory storage karena akan di-upload ke Cloudinary)

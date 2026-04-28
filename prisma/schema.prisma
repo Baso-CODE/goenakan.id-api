@@ -1572,9 +1572,9 @@ model Article {
   author   User   @relation(fields: [authorId], references: [id])
 
   // Relasi Kategori
-  categoryId String
-  category   ArticleCategory @relation(fields: [categoryId], references: [id])
-
+  categoryId      String
+  category        ArticleCategory  @relation(fields: [categoryId], references: [id])
+  articleTags     ArticleTagMap[]
   relatedProducts ArticleProduct[]
   articleBanners  ArticleBanner[]
   createdAt       DateTime         @default(now())
@@ -1608,6 +1608,26 @@ model ArticleBanner {
   updatedAt DateTime @updatedAt
 
   @@map("article_banners")
+}
+
+model ArticleTag {
+  id        String          @id @default(uuid())
+  name      String          @unique
+  slug      String          @unique
+  createdAt DateTime        @default(now())
+  articles  ArticleTagMap[]
+
+  @@map("article_tags")
+}
+
+model ArticleTagMap {
+  articleId  String
+  tagId      String
+  article    Article    @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  articleTag ArticleTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, tagId])
+  @@map("article_tag_pivot")
 }
 
 model BrandClient {

@@ -7,9 +7,7 @@ import { container } from "tsyringe";
 import { env } from "./config";
 
 import { errorMiddleware } from "./middleware/error.middleware";
-import { ArticleRouter } from "./modules/article/article.router";
-import { ArticleBannerRouter } from "./modules/article/banner/articleBanner.router";
-import { ArticleCategoryRouter } from "./modules/article/category/articleCategory.router";
+
 import { AuthRouter } from "./modules/auth/auth.router";
 import { CashflowRouter } from "./modules/cashflow/cashflow.router";
 import { ClientRouter } from "./modules/client/client.router";
@@ -36,6 +34,10 @@ import { ItemVendorRouter } from "./modules/vendor/itemVendor/itemVendor.router"
 import { ContactPlatformRouter } from "./modules/vendor/platform/platform.route";
 import { VendorRouter } from "./modules/vendor/vendorMaster/vendor.router";
 import { CustomerAddressRouter } from "./modules/web-clients/address/customer-address.router";
+import { ArticleRouter } from "./modules/web-clients/article/article.router";
+import { ArticleBannerRouter } from "./modules/web-clients/article/banner/articleBanner.router";
+import { ArticleCategoryRouter } from "./modules/web-clients/article/category/articleCategory.router";
+import { ArticleTagRouter } from "./modules/web-clients/article/tag-article/tag-article.router";
 import { CartRouter } from "./modules/web-clients/cart/cart.router";
 import { PopupBannerRouter } from "./modules/web-clients/content/banner/banner.router";
 import { BrandClientRouter } from "./modules/web-clients/content/brandClient/brandClient.router";
@@ -137,6 +139,7 @@ export default class App {
     const customerProfileRouter = container.resolve(CustomerProfileRouter);
     const webOrderRouter = container.resolve(WebOrderRouter);
     const eventCategoryRouter = container.resolve(EventCategoryRouter);
+    const tagArticleRouter = container.resolve(ArticleTagRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -189,6 +192,7 @@ export default class App {
     this.app.use("/customer-profile", customerProfileRouter.getRouter());
     this.app.use("/web-orders", webOrderRouter.getRouter());
     this.app.use("/event-categories", eventCategoryRouter.getRouter());
+    this.app.use("/article-tags", tagArticleRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

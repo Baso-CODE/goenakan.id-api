@@ -1,7 +1,8 @@
 import { injectable } from "tsyringe";
-import { ApiError } from "../../../utils/api-error";
-import { PaginationService } from "../../pagination/pagination.service";
-import { PrismaService } from "../../prisma/prisma.service";
+
+import { ApiError } from "../../../../utils/api-error";
+import { PaginationService } from "../../../pagination/pagination.service";
+import { PrismaService } from "../../../prisma/prisma.service";
 import {
   CreateArticleBannerDTO,
   UpdateArticleBannerDTO,

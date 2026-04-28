@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { autoInjectable } from "tsyringe";
 
-import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
-import { verifyRole } from "../../../middleware/role.middleware";
-import { validateBody } from "../../../middleware/validation.middleware";
+import { NextAuthMiddleware } from "../../../../middleware/nextAuth.middleware";
+import { verifyRole } from "../../../../middleware/role.middleware";
+import { validateBody } from "../../../../middleware/validation.middleware";
 import {
   CreateArticleBannerDTO,
   UpdateArticleBannerDTO,

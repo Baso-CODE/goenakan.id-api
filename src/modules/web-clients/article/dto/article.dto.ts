@@ -47,6 +47,11 @@ export class CreateArticleDTO {
   @IsString({ each: true })
   @IsOptional()
   productIds?: string[];
+
+  @IsArray({ message: "Tags harus berupa array" })
+  @IsString({ each: true, message: "Setiap tag ID harus berupa string" })
+  @IsOptional()
+  tagIds?: string[];
 }
 
 export class UpdateArticleDTO {
@@ -90,4 +95,9 @@ export class UpdateArticleDTO {
   @IsString({ each: true })
   @IsOptional()
   productIds?: string[];
+
+  @IsArray({ message: "Tags harus berupa array" })
+  @IsString({ each: true, message: "Setiap tag ID harus berupa string" })
+  @IsOptional()
+  tagIds?: string[];
 }

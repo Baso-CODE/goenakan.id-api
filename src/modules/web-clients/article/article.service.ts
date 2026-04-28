@@ -1,10 +1,10 @@
 import { injectable } from "tsyringe";
 
-import { ApiError } from "../../utils/api-error";
-import { SlugService } from "../../utils/genereateSlug";
-import { CloudinaryService } from "../cloudinary/cloudinary.service";
-import { PaginationService } from "../pagination/pagination.service";
-import { PrismaService } from "../prisma/prisma.service";
+import { ApiError } from "../../../utils/api-error";
+import { SlugService } from "../../../utils/genereateSlug";
+import { CloudinaryService } from "../../cloudinary/cloudinary.service";
+import { PaginationService } from "../../pagination/pagination.service";
+import { PrismaService } from "../../prisma/prisma.service";
 import { CreateArticleDTO, UpdateArticleDTO } from "./dto/article.dto";
 
 @injectable()
@@ -39,12 +39,12 @@ export class ArticleService {
   }
 
   // =========================================================================
-  // 2. CREATE ARTICLE (DENGAN UPLOAD COVER IMAGE)
+  // 2. CREATE ARTICLE (DENGAN UPLOAD COVER IMAGE & TAGS)
   // =========================================================================
   async createArticle(
     data: CreateArticleDTO,
     authorId: string,
-    coverFile?: Express.Multer.File, // Menerima file gambar
+    coverFile?: Express.Multer.File,
   ) {
     const slug = this.slug.create(data.title);
 
@@ -56,8 +56,7 @@ export class ArticleService {
       throw new ApiError("Article with this title/slug already exists", 400);
     }
 
-    // --- PROSES UPLOAD COVER IMAGE KE CLOUDINARY ---
-    let coverImageUrl = data.coverImage; // Bisa URL dari DTO jika sudah diupload terpisah
+    let coverImageUrl = data.coverImage;
     let coverImagePublicId = data.coverImageId;
 
     if (coverFile) {
@@ -76,7 +75,6 @@ export class ArticleService {
     if (!coverImageUrl) {
       throw new ApiError("Cover image is required", 400);
     }
-    // -----------------------------------------------
 
     try {
       const newArticle = await this.prisma.$transaction(async (tx) => {
@@ -112,9 +110,21 @@ export class ArticleService {
           });
         }
 
+        // ✨ 3. INSERT ARTICLE TAGS (Tabel Pivot Baru)
+        if (data.tagIds && data.tagIds.length > 0) {
+          await tx.articleTagMap.createMany({
+            data: data.tagIds.map((tagId) => ({
+              articleId: article.id,
+              tagId: tagId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+
         return article;
       });
 
+      // Mengambil data lengkap (termasuk relasi tag) untuk response
       return this.getArticleById(newArticle.id);
     } catch (error) {
       console.error("🔥 ERROR CREATING ARTICLE:", error);
@@ -126,7 +136,7 @@ export class ArticleService {
   }
 
   // =========================================================================
-  // 3. UPDATE ARTICLE (DENGAN OPSI UPDATE COVER IMAGE)
+  // 3. UPDATE ARTICLE (DENGAN OPSI UPDATE COVER IMAGE & TAGS)
   // =========================================================================
   async updateArticle(
     id: string,
@@ -139,7 +149,8 @@ export class ArticleService {
 
     if (!existing) throw new ApiError("Article not found", 404);
 
-    const { productIds, ...articleData } = data;
+    // ✨ 1. Destructure tagIds dari data
+    const { productIds, tagIds, ...articleData } = data;
 
     const slug = data.title ? this.slug.create(data.title) : existing.slug;
 
@@ -163,7 +174,6 @@ export class ArticleService {
           await this.cloudinary.delete(existing.coverImageId);
         }
 
-        // Upload cover baru
         const uploadResult = await this.cloudinary.upload(coverFile, {
           folder: "articles/covers",
           resource_type: "image",
@@ -200,11 +210,13 @@ export class ArticleService {
 
     try {
       const updated = await this.prisma.$transaction(async (tx) => {
+        // 1. Update data dasar artikel
         const article = await tx.article.update({
           where: { id },
           data: updateData,
         });
 
+        // 2. Sync Related Products
         if (productIds !== undefined) {
           await tx.articleProduct.deleteMany({
             where: { articleId: id },
@@ -215,6 +227,21 @@ export class ArticleService {
               data: productIds.map((productId) => ({
                 articleId: id,
                 productId: productId,
+              })),
+            });
+          }
+        }
+
+        if (tagIds !== undefined) {
+          await tx.articleTagMap.deleteMany({
+            where: { articleId: id },
+          });
+
+          if (tagIds.length > 0) {
+            await tx.articleTagMap.createMany({
+              data: tagIds.map((tagId) => ({
+                articleId: id,
+                tagId: tagId,
               })),
             });
           }
