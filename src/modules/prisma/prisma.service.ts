@@ -16,9 +16,12 @@ export class PrismaService extends PrismaClient {
     // Buat adapter MariaDB
     const adapter = new PrismaMariaDb(connectionString);
 
-    // 3. Inisialisasi PrismaClient dengan adapter
     super({
-      adapter,
+      datasources: {
+        db: {
+          url: connectionString,
+        },
+      },
       log: ["query", "info", "warn", "error"],
     });
 
