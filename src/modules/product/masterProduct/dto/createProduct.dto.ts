@@ -33,6 +33,12 @@ export class VariantImageMetadataDTO {
   price!: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: "stock must be a valid integer" })
+  @Min(0, { message: "stock cannot be negative" })
+  stock?: number = 0;
+
+  @IsOptional()
   @IsString()
   description?: string;
 
@@ -168,7 +174,13 @@ export class CreateProductDTO {
 
   @IsOptional()
   @IsString()
-  materialType?: string;
+  materialTypeId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  stock?: number;
 
   @IsNotEmpty()
   @IsString()

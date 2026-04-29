@@ -8,7 +8,7 @@ generator client {
 
 datasource db {
   provider = "mysql"
-  url      = env("DATABASE_URL")
+  // url      = env("DATABASE_URL")
 }
 
 // ===============================================
@@ -331,24 +331,24 @@ model ProductCategory {
 }
 
 model Product {
-  id           String          @id @default(uuid())
-  name         String
-  sku          String          @unique // SKU
-  slug         String          @unique
-  description  String?         @db.Text
-  basePrice    Decimal
-  isCustom     Boolean         @default(false)
-  materialType String?
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  weight       Float?
-  width        Float?
-  height       Float?
-  length       Float?
-  categoryId   String
-  category     ProductCategory @relation(fields: [categoryId], references: [id])
-
-  // Relasi Baru
+  id              String                  @id @default(uuid())
+  name            String
+  sku             String                  @unique
+  slug            String                  @unique
+  description     String?                 @db.Text
+  basePrice       Decimal
+  isCustom        Boolean                 @default(false)
+  materialTypeId  String?
+  materialType    MaterialType?           @relation(fields: [materialTypeId], references: [id])
+  stock           Int                     @default(0)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  weight          Float?
+  width           Float?
+  height          Float?
+  length          Float?
+  categoryId      String
+  category        ProductCategory         @relation(fields: [categoryId], references: [id])
   attributeValues ProductAttributeValue[]
   priceTiers      PriceTier[]
   tags            Tag[]
@@ -365,6 +365,18 @@ model Product {
   webOrderItems   WebOrderItem[]
 
   @@map("products")
+}
+
+model MaterialType {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?   @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+
+  @@map("material_types")
 }
 
 model ProductSEO {
@@ -431,9 +443,9 @@ model ProductAttributeValue {
 model ProductVariant {
   id          String   @id @default(uuid())
   sku         String   @unique
+  stock       Int      @default(0)
   variantName String?
   price       Decimal?
-  stock       Int      @default(0)
   description String?  @db.Text
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

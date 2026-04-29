@@ -1,4 +1,3 @@
-// src/prisma/prisma.service.ts
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PrismaClient } from "@prisma/client";
 import { injectable, singleton } from "tsyringe";
@@ -13,15 +12,10 @@ export class PrismaService extends PrismaClient {
       throw new Error("DATABASE_URL is not defined in .env file");
     }
 
-    // Buat adapter MariaDB
     const adapter = new PrismaMariaDb(connectionString);
 
     super({
-      datasources: {
-        db: {
-          url: connectionString,
-        },
-      },
+      adapter: adapter,
       log: ["query", "info", "warn", "error"],
     });
 

@@ -151,7 +151,8 @@ export class ProductService {
             description: data.description,
             basePrice: data.basePrice,
             isCustom: data.isCustom,
-            materialType: data.materialType,
+            materialTypeId: data.materialTypeId,
+            stock: !data.isCustom ? data.stock || 0 : 0,
             weight: data.weight,
             width: data.width,
             height: data.height,
@@ -249,6 +250,7 @@ export class ProductService {
               variantName,
               productId: product.id,
               price: variantPrice,
+              stock: data.isCustom ? meta?.stock || 0 : 0,
               description: meta?.description ?? null,
               weight: meta?.weight ?? null,
               width: meta?.width ?? null,
@@ -370,22 +372,37 @@ export class ProductService {
       }
     }
 
-    const updateData: any = { slug };
+    const updateData: any = {
+      slug,
+      materialTypeId:
+        data.materialTypeId !== undefined
+          ? data.materialTypeId
+          : existing.materialTypeId,
+    };
 
     if (data.name !== undefined) updateData.name = data.name;
     if (data.description !== undefined)
       updateData.description = data.description;
     if (data.sku !== undefined) updateData.sku = data.sku;
     if (data.basePrice !== undefined) updateData.basePrice = data.basePrice;
-    if (data.isCustom !== undefined) updateData.isCustom = data.isCustom;
-    if (data.materialType !== undefined)
-      updateData.materialType = data.materialType;
+
+    if (data.isCustom !== undefined) {
+      updateData.isCustom = data.isCustom;
+      if (data.isCustom === true) updateData.stock = 0;
+    }
+
+    if (data.stock !== undefined) {
+      const isCustomStatus = data.isCustom ?? existing.isCustom;
+      updateData.stock = isCustomStatus ? 0 : data.stock;
+    }
+
     if (data.categoryId !== undefined) updateData.categoryId = data.categoryId;
     if (data.weight !== undefined) updateData.weight = data.weight;
     if (data.width !== undefined) updateData.width = data.width;
     if (data.height !== undefined) updateData.height = data.height;
     if (data.length !== undefined) updateData.length = data.length;
 
+    // Sync Tags
     if (tagIds !== undefined) {
       updateData.tags = {
         set: tagIds.map((tagId) => ({ id: tagId })),
@@ -397,10 +414,17 @@ export class ProductService {
       data: updateData,
       include: {
         category: true,
+        materialType: true,
         images: true,
         videos: true,
         productVariants: true,
-        attributeValues: true,
+        attributeValues: {
+          include: {
+            attributeValue: {
+              include: { attribute: true },
+            },
+          },
+        },
         priceTiers: true,
         tags: true,
       },
@@ -1941,6 +1965,7 @@ export class ProductService {
       const product = await this.prisma.product.findUnique({
         where: { slug },
         include: {
+          materialType: true,
           category: true,
           images: {
             orderBy: { isFeatured: "desc" },
@@ -1948,7 +1973,6 @@ export class ProductService {
           videos: {
             orderBy: { isFeatured: "desc" },
           },
-          // ✨ Tambahkan include attribute agar kita tahu varian ini warnanya apa/ukurannya apa
           productVariants: {
             include: {
               images: {
@@ -2015,7 +2039,6 @@ export class ProductService {
         });
       }
 
-      // ✨ FORMAT VARIAN (Inheritance / Pewarisan dari Induk)
       const formattedVariants = product.productVariants.map((v) => {
         // Jika varian kosong, pakai data induk
         const vWeight = v.weight ?? product.weight;
@@ -2041,8 +2064,9 @@ export class ProductService {
         return {
           id: v.id,
           name: v.variantName || v.sku,
-          price: v.price ? Number(v.price) : null, // Harga khusus varian (jika ada)
+          price: v.price ? Number(v.price) : null,
           sku: v.sku,
+          stock: v.stock || 0,
 
           // Data mentah untuk payload Cart
           rawWeight: vWeight,
@@ -2117,8 +2141,11 @@ export class ProductService {
         width: product.width,
         height: product.height,
         length: product.length,
-        materialType: product.materialType,
-
+        materialType: product.materialType?.name || "-",
+        stock: product.isCustom
+          ? formattedVariants.reduce((a, b) => a + b.stock, 0)
+          : product.stock,
+        isCustom: product.isCustom,
         whatsappNumber: "6281234567890",
         accessories: [],
       };
@@ -2145,10 +2172,10 @@ export class ProductService {
       const relatedRaw = await this.prisma.product.findMany({
         where: {
           categoryId: targetProduct.categoryId,
-          id: { not: targetProduct.id }, // Kecualikan produk yang sedang dilihat
+          id: { not: targetProduct.id },
         },
-        take: 10, // Batasi 10 produk untuk Carousel
-        orderBy: { createdAt: "desc" }, // Bisa juga diubah menjadi berdasarkan 'sold'
+        take: 10,
+        orderBy: { createdAt: "desc" },
         include: {
           images: {
             take: 1,

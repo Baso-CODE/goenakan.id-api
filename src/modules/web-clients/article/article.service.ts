@@ -18,7 +18,6 @@ export class ArticleService {
 
   // =========================================================================
   // 1. ENDPOINT KHUSUS UNTUK TIPTAP (SINGLE IMAGE UPLOAD)
-  // Fungsi ini dipanggil secara asynchronous oleh frontend saat user insert gambar di Tiptap
   // =========================================================================
   async uploadTiptapImage(file: Express.Multer.File): Promise<{ url: string }> {
     if (!file) {

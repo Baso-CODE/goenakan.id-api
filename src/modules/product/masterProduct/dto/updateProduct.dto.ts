@@ -31,8 +31,13 @@ export class UpdateProductCoreDTO {
 
   @IsOptional()
   @IsString()
-  materialType?: string;
+  materialTypeId?: string;
 
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  stock?: number;
   @IsOptional()
   @IsString()
   categoryId?: string;

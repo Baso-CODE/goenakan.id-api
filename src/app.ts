@@ -24,6 +24,7 @@ import { OrderRouter } from "./modules/order/order.router";
 import { AttributeRouter } from "./modules/product/attributes/attributes.router";
 import { ProductCategoryRouter } from "./modules/product/category/categoryProduct.router";
 import { ProductRouter } from "./modules/product/masterProduct/product.router";
+import { MaterialTypeRouter } from "./modules/product/material-type/material-type.router";
 import { ProductTagRouter } from "./modules/product/tags/tags.router";
 import { PurchaseChannelRouter } from "./modules/purchaseChannel/purchaseChannel.router";
 import { QuotationRouter } from "./modules/quotation/quotation.router";
@@ -105,6 +106,7 @@ export default class App {
     const producTagRouter = container.resolve(ProductTagRouter);
     const producAttributesRouter = container.resolve(AttributeRouter);
     const producRouter = container.resolve(ProductRouter);
+    const materialTypeRouter = container.resolve(MaterialTypeRouter);
     const salesRouter = container.resolve(SalesRouter);
     const departmentRouter = container.resolve(DepartmentRouter);
     const purchaseChannelRouter = container.resolve(PurchaseChannelRouter);
@@ -155,6 +157,7 @@ export default class App {
     this.app.use("/product-attributes", producAttributesRouter.getRouter());
     this.app.use("/product-tags", producTagRouter.getRouter());
     this.app.use("/products", producRouter.getRouter());
+    this.app.use("/material-types", materialTypeRouter.getRouter());
     this.app.use("/sales", salesRouter.getRouter());
     this.app.use("/departments", departmentRouter.getRouter());
     this.app.use("/purchase-channels", purchaseChannelRouter.getRouter());
