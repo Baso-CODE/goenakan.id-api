@@ -31,6 +31,5 @@ COPY . .
 EXPOSE 8000
 
 # Perintah saat container jalan:
-# 1. Push skema langsung ke database (tanpa peduli riwayat migrasi)
-# 2. Jalankan aplikasi langsung dari file TypeScript
-CMD ["/bin/sh", "-c", "bunx prisma db push && bun src/index.ts"]
+# ✨ UPDATE DISINI: Tambahkan --accept-data-loss
+CMD ["/bin/sh", "-c", "bunx prisma db push --accept-data-loss && bun src/index.ts"]
