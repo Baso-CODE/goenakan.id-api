@@ -1068,13 +1068,15 @@ export class ProductService {
     return product;
   }
 
-  // === GET ALL PRODUCTS (WITH PAGINATION, SEARCH, FILTER) ===
+  // === GET ALL PRODUCTS (WITH PAGINATION, SEARCH, FILTER, & DATE RANGE) ===
   async getAllProducts(query: {
     page?: number;
     take?: number;
     search?: string;
     categoryId?: string;
     isCustom?: boolean | string;
+    startDate?: string;
+    endDate?: string;
   }) {
     const where: any = {};
 
@@ -1091,11 +1093,28 @@ export class ProductService {
       where.categoryId = query.categoryId;
     }
 
+    // === Filter Is Custom ===
     if (query.isCustom !== undefined) {
       if (typeof query.isCustom === "string") {
         where.isCustom = query.isCustom === "true";
       } else {
         where.isCustom = query.isCustom;
+      }
+    }
+
+    // === Filter Rentang Tanggal (BARU) ===
+    if (query.startDate || query.endDate) {
+      where.createdAt = {};
+      if (query.startDate) {
+        // gte = Greater Than or Equal (>=)
+        where.createdAt.gte = new Date(query.startDate);
+      }
+      if (query.endDate) {
+        // lte = Less Than or Equal (<=)
+        // Kita set ke akhir hari (23:59:59) agar data di tanggal tersebut tetap terbawa
+        const end = new Date(query.endDate);
+        end.setHours(23, 59, 59, 999);
+        where.createdAt.lte = end;
       }
     }
 

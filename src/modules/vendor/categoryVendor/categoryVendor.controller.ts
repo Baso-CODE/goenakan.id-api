@@ -1,11 +1,11 @@
 import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
-import { CreateVendorCategoryDTO } from "./dto/createCategoryVendor.dto";
-import { UpdateVendorCategoryDTO } from "./dto/updateCategoryVendor.dto";
 import {
   CategoryExportQuery,
   VendorCategoryService,
 } from "./categoryVendor.service";
+import { CreateVendorCategoryDTO } from "./dto/createCategoryVendor.dto";
+import { UpdateVendorCategoryDTO } from "./dto/updateCategoryVendor.dto";
 
 @injectable()
 export class VendorCategoryController {
@@ -36,20 +36,24 @@ export class VendorCategoryController {
     }
   };
 
-  // === GET ALL ACTIVE CATEGORIES ===
+  // === GET ALL CATEGORIES ===
   getAllCategories = async (
     req: Request,
     res: Response,
     next: NextFunction,
   ) => {
     try {
-      const { page, take, type, search } = req.query;
+      const { page, take, type, search, isActive, startDate, endDate } =
+        req.query;
 
       const result = await this.vendorCategoryService.getAllCategories({
         page: Number(page),
         take: Number(take),
         type: type as string,
         search: search as string,
+        isActive: isActive as string,
+        startDate: startDate as string,
+        endDate: endDate as string,
       });
 
       res.status(200).json(result);

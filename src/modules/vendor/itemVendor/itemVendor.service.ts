@@ -1,11 +1,11 @@
+import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
 import { ApiError } from "../../../utils/api-error";
+import { SlugService } from "../../../utils/genereateSlug";
+import { PaginationService } from "../../pagination/pagination.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateVendorItemDTO } from "./dto/createItemVendor.dto";
 import { UpdateVendorItemDTO } from "./dto/updateItemVendor.dto";
-import { PaginationService } from "../../pagination/pagination.service";
-import { SlugService } from "../../../utils/genereateSlug";
-import * as ExcelJS from "exceljs";
 
 export interface ItemVendorExportQuery {
   startDate?: string;
@@ -62,12 +62,15 @@ export class VendorItemService {
     return item;
   }
 
-  // === GET ALL ITEMS (WITH SEARCH, ACTIVE FILTER & PAGINATION) ===
+  // === GET ALL ITEMS (WITH SEARCH, ACTIVE FILTER, CATEGORY, DATE RANGE & PAGINATION) ===
   async getAllItems(query: {
     page?: number;
     take?: number;
     search?: string;
     isActive?: string;
+    categoryId?: string;
+    startDate?: string;
+    endDate?: string;
   }) {
     try {
       const page = Number(query.page) || 1;
@@ -76,16 +79,38 @@ export class VendorItemService {
 
       const where: any = {};
 
-      // === Optional search by name ===
+      // === 1. Search by name ===
       if (query.search) {
         where.name = {
           contains: query.search,
         };
       }
 
-      // === Optional filter by active status ===
+      // === 2. Filter by category ===
+      if (query.categoryId && query.categoryId !== "ALL") {
+        where.categoryId = query.categoryId;
+      }
+
+      // === 3. Filter by active status ===
       if (query.isActive && query.isActive !== "ALL") {
         where.isActive = query.isActive === "true";
+      }
+
+      // === 4. Filter by Date Range (createdAt) ===
+      if (query.startDate || query.endDate) {
+        where.createdAt = {};
+
+        if (query.startDate) {
+          // gte: Greater Than or Equal (>=)
+          where.createdAt.gte = new Date(query.startDate);
+        }
+
+        if (query.endDate) {
+          // lte: Less Than or Equal (<=)
+          const end = new Date(query.endDate);
+          end.setHours(23, 59, 59, 999);
+          where.createdAt.lte = end;
+        }
       }
 
       // === Hitung total data ===
@@ -99,6 +124,7 @@ export class VendorItemService {
         },
         skip,
         take,
+        orderBy: { createdAt: "desc" },
       });
 
       const meta = this.pagination.generateMeta({
@@ -118,7 +144,6 @@ export class VendorItemService {
       );
     }
   }
-
   // === GET ALL ACTIVE VENDOR ITEMS ===
   async getActiveItems() {
     try {

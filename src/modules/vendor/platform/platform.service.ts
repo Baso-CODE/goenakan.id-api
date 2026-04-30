@@ -1,11 +1,11 @@
+import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
-import { PrismaService } from "../../prisma/prisma.service";
 import { ApiError } from "../../../utils/api-error";
+import { SlugService } from "../../../utils/genereateSlug";
+import { PaginationService } from "../../pagination/pagination.service";
+import { PrismaService } from "../../prisma/prisma.service";
 import { CreateContactPlatformDTO } from "./dto/createContactPlatform.dto";
 import { UpdateContactPlatformDTO } from "./dto/updateContactPlatform.dto";
-import { PaginationService } from "../../pagination/pagination.service";
-import { SlugService } from "../../../utils/genereateSlug";
-import * as ExcelJS from "exceljs";
 
 export interface PlatformExportQuery {
   startDate?: string;
@@ -21,11 +21,14 @@ export class ContactPlatformService {
     private readonly slug: SlugService,
   ) {}
 
-  // === GET ALL (WITH PAGINATION) ===
+  // === GET ALL PLATFORMS (WITH PAGINATION, SEARCH, STATUS & DATE RANGE) ===
   async getAllPlatforms(query: {
     page?: number;
     take?: number;
     search?: string;
+    isActive?: string;
+    startDate?: string;
+    endDate?: string;
   }) {
     try {
       const page = Number(query.page) || 1;
@@ -33,11 +36,33 @@ export class ContactPlatformService {
       const skip = (page - 1) * take;
 
       const where: any = {};
+
       if (query.search) {
         where.OR = [
           { name: { contains: query.search } },
           { slug: { contains: query.search } },
         ];
+      }
+
+      // 2. Filter Status Aktif (isActive)
+      if (query.isActive && query.isActive !== "ALL") {
+        where.isActive = query.isActive === "true";
+      }
+
+      // 3. Filter Rentang Tanggal (createdAt)
+      if (query.startDate || query.endDate) {
+        where.createdAt = {};
+
+        if (query.startDate) {
+          // gte: mulai dari tanggal ini
+          where.createdAt.gte = new Date(query.startDate);
+        }
+
+        if (query.endDate) {
+          const end = new Date(query.endDate);
+          end.setHours(23, 59, 59, 999);
+          where.createdAt.lte = end;
+        }
       }
 
       const count = await this.prisma.contactPlatform.count({ where });

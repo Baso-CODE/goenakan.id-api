@@ -42,13 +42,16 @@ export class ProductController {
   // === GET ALL PRODUCTS ===
   getAllProducts = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { page, take, search, categoryId, isCustom } = req.query;
+      const { page, take, search, categoryId, isCustom, startDate, endDate } =
+        req.query;
 
       const products = await this.productService.getAllProducts({
         page: page ? Number(page) : 1,
         take: take ? Number(take) : 10,
         search: search as string,
         categoryId: categoryId as string,
+        startDate: startDate as string,
+        endDate: endDate as string,
         isCustom:
           typeof isCustom === "string" ? isCustom === "true" : undefined,
       });
@@ -66,19 +69,18 @@ export class ProductController {
     next: NextFunction,
   ) => {
     try {
-      // ✨ 1. Tangkap semua parameter baru dari query URL
       const {
         page,
         take,
         search,
         categoryId,
         isCustom,
-        category, // Filter Client: Nama kategori
-        color, // Filter Client: Warna
-        size, // Filter Client: Ukuran
-        price, // Filter Client: Rentang harga
-        availability, // Filter Client: Ketersediaan
-        sort, // Filter Client: Urutan
+        category,
+        color,
+        size,
+        price,
+        availability,
+        sort,
       } = req.query;
 
       const products = await this.productService.getAllProductsPublic({
@@ -162,7 +164,9 @@ export class ProductController {
     } catch (error) {
       next(error);
     }
-  }; // === ADD IMAGE ===
+  };
+
+  // === ADD IMAGE ===
   addImage = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;

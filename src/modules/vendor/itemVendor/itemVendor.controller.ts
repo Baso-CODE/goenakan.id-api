@@ -22,19 +22,24 @@ export class ItemVendorController {
   // ✅ Get All Items
   getAllItems = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { page, take, isActive, search } = req.query;
+      const { page, take, isActive, search, categoryId, startDate, endDate } =
+        req.query;
+
       const items = await this.vendorItemService.getAllItems({
         page: Number(page),
         take: Number(take),
         isActive: isActive as string,
         search: search as string,
+        categoryId: categoryId as string,
+        startDate: startDate as string,
+        endDate: endDate as string,
       });
+
       res.status(200).json(items);
     } catch (error) {
       next(error);
     }
   };
-
   getActiveItems = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const items = await this.vendorItemService.getActiveItems();

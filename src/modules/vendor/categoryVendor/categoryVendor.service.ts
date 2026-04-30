@@ -1,12 +1,12 @@
-import { injectable } from "tsyringe";
-import { PrismaService } from "../../prisma/prisma.service";
-import { ApiError } from "../../../utils/api-error";
-import { CreateVendorCategoryDTO } from "./dto/createCategoryVendor.dto";
-import { UpdateVendorCategoryDTO } from "./dto/updateCategoryVendor.dto";
-import { PaginationService } from "../../pagination/pagination.service";
-import { SlugService } from "../../../utils/genereateSlug";
 import { VendorType } from "@prisma/client";
 import * as ExcelJS from "exceljs";
+import { injectable } from "tsyringe";
+import { ApiError } from "../../../utils/api-error";
+import { SlugService } from "../../../utils/genereateSlug";
+import { PaginationService } from "../../pagination/pagination.service";
+import { PrismaService } from "../../prisma/prisma.service";
+import { CreateVendorCategoryDTO } from "./dto/createCategoryVendor.dto";
+import { UpdateVendorCategoryDTO } from "./dto/updateCategoryVendor.dto";
 
 export interface CategoryExportQuery {
   startDate?: string;
@@ -22,12 +22,15 @@ export class VendorCategoryService {
     private readonly slug: SlugService,
   ) {}
 
-  // === GET ALL ACTIVE CATEGORIES (WITH PAGINATION) ===
+  // === GET ALL CATEGORIES (WITH SEARCH, STATUS, DATE RANGE & PAGINATION) ===
   async getAllCategories(query: {
     page?: number;
     take?: number;
     type?: string;
     search?: string;
+    isActive?: string;
+    startDate?: string;
+    endDate?: string;
   }) {
     try {
       const page = Number(query.page) || 1;
@@ -36,16 +39,39 @@ export class VendorCategoryService {
 
       const where: any = {};
 
-      // === Optional filter by type ===
+      // 1. Filter berdasarkan tipe (jika ada)
       if (query.type && query.type !== "ALL") {
         where.type = query.type;
       }
 
-      // === Optional search ===
+      // 2. Filter berdasarkan status aktif (isActive)
+      if (query.isActive && query.isActive !== "ALL") {
+        where.isActive = query.isActive === "true";
+      }
+
+      // 3. Filter berdasarkan pencarian nama
       if (query.search) {
         where.name = {
           contains: query.search,
         };
+      }
+
+      // 4. Filter berdasarkan rentang tanggal (createdAt)
+      if (query.startDate || query.endDate) {
+        where.createdAt = {};
+
+        if (query.startDate) {
+          // gte: Greater Than or Equal (>=)
+          where.createdAt.gte = new Date(query.startDate);
+        }
+
+        if (query.endDate) {
+          // lte: Less Than or Equal (<=)
+          const end = new Date(query.endDate);
+          // Set ke akhir hari (23:59:59) agar data di hari tersebut tetap terbawa
+          end.setHours(23, 59, 59, 999);
+          where.createdAt.lte = end;
+        }
       }
 
       // === Total data ===
@@ -59,7 +85,6 @@ export class VendorCategoryService {
         take,
       });
 
-      // === Gunakan PaginationService (kalau kamu mau bentuk responsenya rapi) ===
       const meta = this.pagination.generateMeta({
         count,
         page,
@@ -72,7 +97,9 @@ export class VendorCategoryService {
       };
     } catch (error) {
       console.error("❌ Error in Get All Category Vendor:", error);
-      throw new Error("Failed to fetch clients. See server log for details.");
+      throw new Error(
+        "Failed to fetch vendor categories. See server log for details.",
+      );
     }
   }
 

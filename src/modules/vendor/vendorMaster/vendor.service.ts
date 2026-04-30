@@ -93,12 +93,14 @@ export class VendorService {
     }
   }
 
-  // === GET ALL VENDORS (WITH PAGINATION, SEARCH, FILTER ACTIVE) ===
+  // === GET ALL VENDORS (WITH PAGINATION, SEARCH, FILTER, & DATE RANGE) ===
   async getAllVendors(query: {
     page?: number;
     take?: number;
     search?: string;
     isActive?: string;
+    startDate?: string;
+    endDate?: string;
   }) {
     try {
       const page = Number(query.page) || 1;
@@ -107,6 +109,7 @@ export class VendorService {
 
       const where: any = {};
 
+      // Filter Pencarian
       if (query.search) {
         where.OR = [
           { companyName: { contains: query.search } },
@@ -115,8 +118,24 @@ export class VendorService {
         ];
       }
 
+      // Filter Status Aktif
       if (query.isActive && query.isActive !== "ALL") {
         where.isActive = query.isActive === "true";
+      }
+
+      // === FILTER RENTANG TANGGAL (BARU) ===
+      if (query.startDate || query.endDate) {
+        where.createdAt = {};
+
+        if (query.startDate) {
+          where.createdAt.gte = new Date(query.startDate);
+        }
+
+        if (query.endDate) {
+          const end = new Date(query.endDate);
+          end.setHours(23, 59, 59, 999);
+          where.createdAt.lte = end;
+        }
       }
 
       const count = await this.prisma.vendor.count({ where });
@@ -157,7 +176,6 @@ export class VendorService {
       throw new Error("Failed to fetch vendors.");
     }
   }
-
   // === GET ALL VENDORS FOR ORDER (simplified, only id & name) ===
   async getAllVendorsForOrder() {
     try {

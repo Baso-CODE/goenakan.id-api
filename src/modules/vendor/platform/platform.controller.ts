@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from "express";
+import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
 import { CreateContactPlatformDTO } from "./dto/createContactPlatform.dto";
 import { UpdateContactPlatformDTO } from "./dto/updateContactPlatform.dto";
@@ -24,15 +24,17 @@ export class ContactPlatformController {
     }
   };
 
-  // === GET ALL PLATFORMS (WITH PAGINATION) ===
+  // === GET ALL PLATFORMS ===
   getAllPlatforms = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { page, take, search } = req.query;
-
+      const { page, take, search, isActive, startDate, endDate } = req.query;
       const result = await this.contactPlatformService.getAllPlatforms({
         page: page ? Number(page) : undefined,
         take: take ? Number(take) : undefined,
         search: search ? String(search) : undefined,
+        isActive: isActive as string,
+        startDate: startDate as string,
+        endDate: endDate as string,
       });
 
       res.status(200).json(result);
