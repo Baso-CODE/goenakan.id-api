@@ -39,6 +39,7 @@ import { ArticleRouter } from "./modules/web-clients/article/article.router";
 import { ArticleBannerRouter } from "./modules/web-clients/article/banner/articleBanner.router";
 import { ArticleCategoryRouter } from "./modules/web-clients/article/category/articleCategory.router";
 import { ArticleTagRouter } from "./modules/web-clients/article/tag-article/tag-article.router";
+import { BannerProductRouter } from "./modules/web-clients/banner-product/banner-product.router";
 import { CartRouter } from "./modules/web-clients/cart/cart.router";
 import { PopupBannerRouter } from "./modules/web-clients/content/banner/banner.router";
 import { BrandClientRouter } from "./modules/web-clients/content/brandClient/brandClient.router";
@@ -64,7 +65,6 @@ export default class App {
   private configure(): void {
     this.app.use(helmet());
 
-    // // ✨ UPDATE KONFIGURASI CORS
     const allowedOrigins = env().CORS_ORIGIN
       ? env().CORS_ORIGIN.split(",")
       : [
@@ -78,7 +78,6 @@ export default class App {
         origin: function (origin, callback) {
           if (!origin) return callback(null, true);
 
-          // Cek apakah origin ada di daftar allowedOrigins
           if (allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
           } else {
@@ -142,6 +141,7 @@ export default class App {
     const webOrderRouter = container.resolve(WebOrderRouter);
     const eventCategoryRouter = container.resolve(EventCategoryRouter);
     const tagArticleRouter = container.resolve(ArticleTagRouter);
+    const bannerProductRouter = container.resolve(BannerProductRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -196,6 +196,7 @@ export default class App {
     this.app.use("/web-orders", webOrderRouter.getRouter());
     this.app.use("/event-categories", eventCategoryRouter.getRouter());
     this.app.use("/article-tags", tagArticleRouter.getRouter());
+    this.app.use("/banner-products", bannerProductRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

@@ -1660,17 +1660,15 @@ model BrandClient {
 }
 
 model Portfolio {
-  id           String  @id @default(cuid())
-  title        String
-  slug         String  @unique
-  clientName   String
-  description  String? @db.Text
-  image        String
-  imageId      String
-  displayOrder Int     @default(0)
-  isActive     Boolean @default(true)
-
-  // Standard Timestamps
+  id              String         @id @default(cuid())
+  title           String
+  slug            String         @unique
+  clientName      String
+  description     String?        @db.Text
+  image           String
+  imageId         String
+  displayOrder    Int            @default(0)
+  isActive        Boolean        @default(true)
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   eventCategory   EventCategory? @relation(fields: [eventCategoryId], references: [id])
@@ -1680,19 +1678,17 @@ model Portfolio {
 }
 
 model EventCategory {
-  id           String  @id @default(cuid())
+  id           String      @id @default(cuid())
   title        String
-  slug         String  @unique
-  orderCount   Int     @default(0)
+  slug         String      @unique
+  orderCount   Int         @default(0)
   image        String
   imageId      String
-  displayOrder Int     @default(0)
-  isActive     Boolean @default(true)
-
-  // === Timestamps ===
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-  portfolios Portfolio[]
+  displayOrder Int         @default(0)
+  isActive     Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  portfolios   Portfolio[]
 
   @@map("event_categories")
 }
@@ -1709,4 +1705,19 @@ model ContactMessage {
   updatedAt DateTime @updatedAt
 
   @@map("contact_messages")
+}
+
+model HeroBannerProduct {
+  id            String   @id @default(uuid())
+  title         String?  @db.Text
+  subtitle      String?  @db.Text
+  imageUrl      String
+  imagePublicId String?
+  linkUrl       String?
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("hero_banners")
 }
