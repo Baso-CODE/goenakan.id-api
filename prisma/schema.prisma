@@ -343,6 +343,7 @@ model ItemCategory {
   itemNames         ItemName[]
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
+  products          Product[]
 
   @@map("item_categories")
 }
@@ -381,6 +382,8 @@ model Product {
   length          Float?
   categoryId      String
   category        ProductCategory         @relation(fields: [categoryId], references: [id])
+  itemCategoryId  String?
+  itemCategory    ItemCategory?           @relation(fields: [itemCategoryId], references: [id])
   itemNameId      String?
   itemName        ItemName?               @relation(fields: [itemNameId], references: [id])
   attributeValues ProductAttributeValue[]

@@ -63,6 +63,25 @@ export class ProductService {
       );
     }
 
+    if (data.itemNameId) {
+      const itemNameData = await this.prisma.itemName.findUnique({
+        where: { id: data.itemNameId },
+        include: { itemCategory: true },
+      });
+
+      if (!itemNameData) {
+        throw new ApiError("Item Name yang dipilih tidak ditemukan", 404);
+      }
+
+      // Pastikan Item Name ini benar-benar berasal dari Product Category yang dipilih
+      if (itemNameData.itemCategory.productCategoryId !== data.categoryId) {
+        throw new ApiError(
+          "Hirarki tidak valid: Item Name tidak termasuk dalam Product Category yang dipilih",
+          400,
+        );
+      }
+    }
+
     // --- Validasi Price Tiers (Tidak Berubah) ---
     if (data.priceTiers && data.priceTiers.length > 0) {
       const sortedTiers = data.priceTiers.sort(
@@ -158,6 +177,8 @@ export class ProductService {
             height: data.height,
             length: data.length,
             categoryId: data.categoryId,
+            itemCategoryId: data.itemCategoryId,
+            itemNameId: data.itemNameId,
             slug,
 
             // Relasi Tag
@@ -397,6 +418,12 @@ export class ProductService {
     }
 
     if (data.categoryId !== undefined) updateData.categoryId = data.categoryId;
+
+    // ✨ BARU: Memasukkan update untuk Item Category dan Item Name
+    if (data.itemCategoryId !== undefined)
+      updateData.itemCategoryId = data.itemCategoryId;
+    if (data.itemNameId !== undefined) updateData.itemNameId = data.itemNameId;
+
     if (data.weight !== undefined) updateData.weight = data.weight;
     if (data.width !== undefined) updateData.width = data.width;
     if (data.height !== undefined) updateData.height = data.height;
@@ -414,6 +441,8 @@ export class ProductService {
       data: updateData,
       include: {
         category: true,
+        itemCategory: true, // ✨ BARU: Mengembalikan data relasi Item Category
+        itemName: true, // ✨ BARU: Mengembalikan data relasi Item Name
         materialType: true,
         images: true,
         videos: true,
@@ -1023,16 +1052,19 @@ export class ProductService {
     };
   }
 
-  // === GET PRODUCT BY ID (INCLUDE MEDIA, VARIANTS, ATTRIBUTES) ===
+  // === GET PRODUCT BY ID (INCLUDE MEDIA, VARIANTS, ATTRIBUTES, HIERARCHY) ===
   async getProductById(id: string) {
     const product = await this.prisma.product.findUnique({
       where: { id },
       include: {
         category: true,
+        itemCategory: true,
+        itemName: true,
         priceTiers: true,
         images: true,
         videos: true,
         tags: true,
+        materialType: true,
 
         attributeValues: {
           include: {
@@ -1516,27 +1548,83 @@ export class ProductService {
     return seoData || {};
   }
 
-  // === GENERATE SKU OTOMATIS BERBASIS NAMA PRODUK ===
-  async generateSku(productName: string): Promise<string> {
-    if (!productName) {
-      throw new ApiError("Product Name is required to generate SKU", 400);
+  // === GENERATE SKU OTOMATIS BERBASIS HIRARKI & MATERIAL ===
+  async generateSku(params: {
+    productName: string;
+    categoryId: string;
+    itemCategoryId: string;
+    itemNameId: string;
+    materialTypeId: string;
+  }): Promise<string> {
+    const {
+      productName,
+      categoryId,
+      itemCategoryId,
+      itemNameId,
+      materialTypeId,
+    } = params;
+
+    // 1. Validasi Input
+    if (
+      !productName ||
+      !categoryId ||
+      !itemCategoryId ||
+      !itemNameId ||
+      !materialTypeId
+    ) {
+      throw new ApiError(
+        "Semua pilihan kategori dan material wajib diisi untuk membuat SKU",
+        400,
+      );
     }
 
+    // 2. Ambil semua kode hirarki secara bersamaan (Parallel Fetch)
+    const [cat, itemCat, itemName, mat] = await Promise.all([
+      this.prisma.productCategory.findUnique({
+        where: { id: categoryId },
+        select: { code: true },
+      }),
+      this.prisma.itemCategory.findUnique({
+        where: { id: itemCategoryId },
+        select: { code: true },
+      }),
+      this.prisma.itemName.findUnique({
+        where: { id: itemNameId },
+        select: { code: true },
+      }),
+      this.prisma.materialType.findUnique({
+        where: { id: materialTypeId },
+        select: { code: true },
+      }),
+    ]);
+
+    // Validasi apakah kode tersedia
+    if (!cat?.code || !itemCat?.code || !itemName?.code || !mat?.code) {
+      throw new ApiError(
+        "Salah satu master data belum memiliki 'code'. Harap update master data terlebih dahulu.",
+        400,
+      );
+    }
+
+    // 3. Buat prefix dari nama produk (Logika 2 huruf awal)
     const words = productName.trim().split(/\s+/);
-    let prefix = "";
-
+    let namePrefix = "";
     if (words.length >= 2) {
-      prefix = (words[0][0] + words[1][0]).toUpperCase();
+      namePrefix = (words[0][0] + words[1][0]).toUpperCase();
     } else if (words.length === 1 && words[0].length >= 2) {
-      prefix = words[0].substring(0, 2).toUpperCase();
+      namePrefix = words[0].substring(0, 2).toUpperCase();
     } else {
-      prefix = (words[0][0] + "X").toUpperCase();
+      namePrefix = (words[0][0] + "X").toUpperCase();
     }
 
+    // 4. Rangkai Base Prefix: CAT-ITEMCAT-NAME-MAT-PREFIX
+    const basePrefix = `${cat.code}-${itemCat.code}-${itemName.code}-${mat.code}-${namePrefix}`;
+
+    // 5. Cari nomor urut terakhir di database berdasarkan basePrefix
     const lastProduct = await this.prisma.product.findFirst({
       where: {
         sku: {
-          startsWith: prefix,
+          startsWith: basePrefix,
         },
       },
       orderBy: {
@@ -1550,7 +1638,8 @@ export class ProductService {
     let nextSequence = 1;
 
     if (lastProduct && lastProduct.sku) {
-      const numericPart = lastProduct.sku.replace(prefix, "");
+      // Mengambil bagian nomor urut setelah prefix
+      const numericPart = lastProduct.sku.replace(basePrefix, "");
       const lastNumber = parseInt(numericPart, 10);
 
       if (!isNaN(lastNumber)) {
@@ -1558,7 +1647,8 @@ export class ProductService {
       }
     }
 
-    const newSku = `${prefix}${nextSequence.toString().padStart(4, "0")}`;
+    // 6. Hasil Akhir (Contoh: ELE-LAP-MAC-ALU-MA0001)
+    const newSku = `${basePrefix}${nextSequence.toString().padStart(4, "0")}`;
 
     return newSku;
   }

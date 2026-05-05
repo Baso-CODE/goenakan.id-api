@@ -38,9 +38,18 @@ export class UpdateProductCoreDTO {
   @IsNumber()
   @Min(0)
   stock?: number;
+
   @IsOptional()
   @IsString()
   categoryId?: string;
+
+  @IsString()
+  @IsOptional()
+  itemCategoryId?: string;
+
+  @IsString()
+  @IsOptional()
+  itemNameId?: string;
 
   @IsOptional()
   @IsArray()

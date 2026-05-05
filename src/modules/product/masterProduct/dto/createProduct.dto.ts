@@ -7,6 +7,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
   ValidateNested,
 } from "class-validator";
@@ -185,6 +186,16 @@ export class CreateProductDTO {
   @IsNotEmpty()
   @IsString()
   categoryId!: string;
+
+  @IsString({ message: "ID Item Category harus berupa string" })
+  @IsNotEmpty({ message: "ID Item Category wajib diisi" })
+  @IsUUID("4")
+  itemCategoryId!: string;
+
+  @IsString({ message: "ID Item Name harus berupa string" })
+  @IsOptional()
+  @IsUUID("4")
+  itemNameId?: string;
 
   @IsOptional()
   @IsArray()

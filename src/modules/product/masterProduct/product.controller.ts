@@ -391,10 +391,24 @@ export class ProductController {
     }
   };
 
+  // === GENERATE SKU CONTROLLER ===
   generateSku = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { name } = req.body;
-      const sku = await this.productService.generateSku(name);
+      const {
+        productName,
+        categoryId,
+        itemCategoryId,
+        itemNameId,
+        materialTypeId,
+      } = req.body;
+
+      const sku = await this.productService.generateSku({
+        productName,
+        categoryId,
+        itemCategoryId,
+        itemNameId,
+        materialTypeId,
+      });
 
       res.status(200).json({ sku });
     } catch (error) {
