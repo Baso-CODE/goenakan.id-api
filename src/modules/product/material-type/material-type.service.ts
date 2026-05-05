@@ -74,9 +74,13 @@ export class MaterialTypeService {
       throw new ApiError("Failed to fetch material types", 500);
     }
   }
+
   // === CREATE MATERIAL TYPE ===
   async createMaterialType(data: CreateMaterialTypeDTO) {
     const slug = this.slug.create(data.name);
+
+    // Autogenerate code: Ambil 3 huruf pertama dan jadikan huruf kapital
+    const generatedCode = data.name.substring(0, 3).toUpperCase();
 
     // Validasi Duplikasi Nama
     const existing = await this.prisma.materialType.findUnique({
@@ -92,15 +96,24 @@ export class MaterialTypeService {
         data: {
           name: data.name,
           slug: slug,
+          code: generatedCode, // Menyimpan kode yang sudah di-generate
           description: data.description,
         },
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("🔥 DATABASE ERROR:", error);
+
+      // Menangkap error jika kebetulan ada kode (3 huruf) yang sama persis di database
+      if (error.code === "P2002") {
+        throw new ApiError(
+          "Material code already exists. Please use a different name.",
+          400,
+        );
+      }
+
       throw new ApiError("Failed to create material type", 500);
     }
   }
-
   // === GET BY ID ===
   async getMaterialTypeById(id: string) {
     const material = await this.prisma.materialType.findUnique({
@@ -120,6 +133,10 @@ export class MaterialTypeService {
 
     const slug = data.name ? this.slug.create(data.name) : existing.slug;
 
+    const generatedCode = data.name
+      ? data.name.substring(0, 3).toUpperCase()
+      : existing.code;
+
     // Cek duplikasi jika nama berubah
     if (data.name && data.name !== existing.name) {
       const duplicate = await this.prisma.materialType.findUnique({
@@ -134,11 +151,20 @@ export class MaterialTypeService {
         data: {
           name: data.name,
           slug: slug,
+          code: generatedCode, // Memperbarui kode jika nama berubah
           description: data.description,
         },
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("🔥 DATABASE UPDATE ERROR:", error);
+
+      if (error.code === "P2002") {
+        throw new ApiError(
+          "Material code already exists. Please use a different name.",
+          400,
+        );
+      }
+
       throw new ApiError("Failed to update material type", 500);
     }
   }

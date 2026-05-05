@@ -315,19 +315,51 @@ model Department {
 // ===============================================
 
 model ProductCategory {
-  id             String    @id @default(uuid())
-  slug           String    @unique
-  name_id        String    @unique @map("name")
-  description_id String?   @map("description") @db.Text
+  id             String         @id @default(uuid())
+  slug           String         @unique
+  name_id        String         @unique @map("name")
+  description_id String?        @map("description") @db.Text
   name_en        String?
-  description_en String?   @db.Text
+  description_en String?        @db.Text
   image          String?
   imageId        String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  code           String?        @unique
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
   products       Product[]
+  itemCategories ItemCategory[]
 
   @@map("product_categories")
+}
+
+model ItemCategory {
+  id                String          @id @default(uuid())
+  name              String
+  slug              String          @unique
+  code              String          @unique
+  description       String?         @db.Text
+  productCategoryId String
+  productCategory   ProductCategory @relation(fields: [productCategoryId], references: [id])
+  itemNames         ItemName[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@map("item_categories")
+}
+
+model ItemName {
+  id             String       @id @default(uuid())
+  name           String
+  slug           String       @unique
+  code           String       @unique
+  description    String?      @db.Text
+  itemCategoryId String
+  itemCategory   ItemCategory @relation(fields: [itemCategoryId], references: [id])
+  products       Product[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@map("item_names")
 }
 
 model Product {
@@ -349,6 +381,8 @@ model Product {
   length          Float?
   categoryId      String
   category        ProductCategory         @relation(fields: [categoryId], references: [id])
+  itemNameId      String?
+  itemName        ItemName?               @relation(fields: [itemNameId], references: [id])
   attributeValues ProductAttributeValue[]
   priceTiers      PriceTier[]
   tags            Tag[]
@@ -372,6 +406,7 @@ model MaterialType {
   name        String    @unique
   slug        String    @unique
   description String?   @db.Text
+  code        String?   @unique
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   products    Product[]

@@ -70,15 +70,18 @@ export class ProductCategoryService {
     }
   }
 
-  // === CREATE CATEGORY DENGAN UPLOAD IMAGE ===
+  // === CREATE CATEGORY DENGAN UPLOAD IMAGE & AUTO-CODE ===
   async createCategory(
     data: CreateProductCategoryDTO,
     file?: Express.Multer.File,
   ) {
-    // 🔄 1. Buat slug dari nama bahasa Indonesia (sebagai default url)
+    // 🔄 1. Buat slug dari nama bahasa Indonesia
     const slug = this.slug.create(data.name_id);
 
-    // 🔄 2. Validasi keberadaan kategori menggunakan name_id
+    // 🔄 2. Autogenerate code: Ambil 3 huruf pertama dari name_id (Kapital)
+    const generatedCode = data.name_id.substring(0, 3).toUpperCase();
+
+    // 🔄 3. Validasi keberadaan kategori menggunakan name_id
     const existing = await this.prisma.productCategory.findUnique({
       where: { name_id: data.name_id },
     });
@@ -112,6 +115,7 @@ export class ProductCategoryService {
       const category = await this.prisma.productCategory.create({
         data: {
           slug: slug,
+          code: generatedCode, // Menyimpan kode otomatis
           image: imageUrl,
           imageId: imageId,
 
@@ -124,12 +128,18 @@ export class ProductCategoryService {
       });
 
       return category;
-    } catch (error) {
+    } catch (error: any) {
       console.error("🔥 DATABASE ERROR:", error);
+      // Cek jika terjadi error duplikasi code (P2002 di Prisma)
+      if (error.code === "P2002") {
+        throw new ApiError(
+          `Category code "${generatedCode}" is already taken.`,
+          400,
+        );
+      }
       throw new ApiError("Failed to create product category in database", 500);
     }
   }
-
   // === GET CATEGORY BY ID ===
   async getCategoryById(id: string) {
     const category = await this.prisma.productCategory.findUnique({
@@ -139,7 +149,7 @@ export class ProductCategoryService {
     return category;
   }
 
-  // === UPDATE CATEGORY DENGAN IMAGE REPLACEMENT ===
+  // === UPDATE CATEGORY DENGAN IMAGE REPLACEMENT & CODE UPDATE ===
   async updateCategory(
     id: string,
     data: Partial<UpdateProductCategoryDTO>,
@@ -152,10 +162,17 @@ export class ProductCategoryService {
 
     if (!existing) throw new ApiError("Category not found", 404);
 
+    // 🔄 Update slug jika nama berubah
     const slug =
       data.name_id && data.name_id !== existing.name_id
         ? this.slug.create(data.name_id)
         : existing.slug;
+
+    // 🔄 Update code jika nama berubah
+    const generatedCode =
+      data.name_id && data.name_id !== existing.name_id
+        ? data.name_id.substring(0, 3).toUpperCase()
+        : existing.code;
 
     let imageUrl = data.image;
     let imageId = data.imageId;
@@ -171,7 +188,6 @@ export class ProductCategoryService {
           });
         }
 
-        // --- UPLOAD GAMBAR BARU ---
         const uploadResult = await this.cloudinary.upload(file, {
           folder: "products/categories",
           resource_type: "image",
@@ -189,6 +205,7 @@ export class ProductCategoryService {
         where: { id },
         data: {
           slug: slug,
+          code: generatedCode, // Update kode jika nama berubah
           image: imageUrl,
           imageId: imageId,
 
@@ -200,8 +217,11 @@ export class ProductCategoryService {
       });
 
       return updated;
-    } catch (error) {
+    } catch (error: any) {
       console.error("🔥 DATABASE UPDATE ERROR:", error);
+      if (error.code === "P2002") {
+        throw new ApiError(`Category code already exists.`, 400);
+      }
       throw new ApiError("Failed to update product category in database", 500);
     }
   }
