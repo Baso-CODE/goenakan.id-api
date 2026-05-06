@@ -6,7 +6,6 @@ import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
 import { verifyRole } from "../../../middleware/role.middleware";
 import { ArticleController } from "./article.controller";
 
-// Konfigurasi Multer (menggunakan memory storage karena akan di-upload ke Cloudinary)
 const upload = multer({ storage: multer.memoryStorage() });
 
 @autoInjectable()
@@ -70,26 +69,35 @@ export class ArticleRouter {
     // Contoh di frontend: fetch(`/api/articles/slug/cara-membuat-baju`)
     this.router.get("/slug/:slug", this.articleController.getArticleBySlug);
 
+    // =========================================================================
     // CREATE ARTICLE
+    // =========================================================================
     this.router.post(
       "/",
       auth,
       verifyRole(requiredRole),
-      upload.single("coverFile"), // Frontend mengirim gambar cover dengan field "coverFile"
-      // validateBody(CreateArticleDTO), // Aktifkan jika DTO sudah support FormData (Lihat catatan di bawah)
+      // ✨ PERBAIKAN DI SINI: Menggunakan upload.fields untuk menerima banyak jenis file
+      upload.fields([
+        { name: "coverFile", maxCount: 1 }, // Mengizinkan 1 file untuk desktop
+        { name: "coverMobileFile", maxCount: 1 }, // Mengizinkan 1 file untuk mobile
+      ]),
       this.articleController.createArticle,
     );
 
-    // UPDATE ARTICLE
+    // =========================================================================
+    // UPDATE ARTICLE (Pastikan kamu memperbarui rute ini juga ya!)
+    // =========================================================================
     this.router.patch(
       "/:id",
       auth,
       verifyRole(requiredRole),
-      upload.single("coverFile"),
-      // validateBody(UpdateArticleDTO),
+      // ✨ PERBAIKAN DI SINI JUGA
+      upload.fields([
+        { name: "coverFile", maxCount: 1 },
+        { name: "coverMobileFile", maxCount: 1 },
+      ]),
       this.articleController.updateArticle,
     );
-
     // DELETE ARTICLE
     this.router.delete(
       "/:id",

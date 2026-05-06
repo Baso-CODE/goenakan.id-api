@@ -24,20 +24,37 @@ export class ArticleController {
     }
   };
 
-  // === CREATE ARTICLE ===
+  // =========================================================================
+  // 1. CREATE ARTICLE
+  // =========================================================================
   createArticle = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const data: CreateArticleDTO = req.body;
-      const file = req.file as Express.Multer.File;
 
+      // ✨ TAMBAHAN 1: Menangkap multiple files dari Multer
+      // Kita menggunakan req.files untuk menangkap lebih dari satu input file
+      const files = req.files as
+        | { [fieldname: string]: Express.Multer.File[] }
+        | undefined;
+
+      const coverFile = files?.coverFile?.[0]; // Ambil file pertama dari array coverFile
+      const coverMobileFile = files?.coverMobileFile?.[0]; // Ambil file pertama dari array coverMobileFile
+
+      // ✨ Parsing tipe data boolean dari FormData
       if (typeof data.published === "string") {
         data.published = data.published === "true";
       }
 
+      // ✨ Parsing tipe data array (productIds) dari FormData
       if (typeof data.productIds === "string") {
         data.productIds = (data.productIds as string)
           .split(",")
-          .filter(Boolean);
+          .filter(Boolean); // filter(Boolean) untuk membuang string kosong
+      }
+
+      // ✨ TAMBAHAN 2: Parsing tipe data array (tagIds) dari FormData
+      if (typeof data.tagIds === "string") {
+        data.tagIds = (data.tagIds as string).split(",").filter(Boolean);
       }
 
       const authorId = (req as any).user?.id;
@@ -48,10 +65,12 @@ export class ArticleController {
           .json({ message: "Unauthorized. Author ID is missing." });
       }
 
+      // ✨ TAMBAHAN 3: Meneruskan coverMobileFile ke Service
       const result = await this.articleService.createArticle(
         data,
         authorId,
-        file,
+        coverFile,
+        coverMobileFile,
       );
       res.status(201).send(result);
     } catch (error) {
@@ -59,27 +78,45 @@ export class ArticleController {
     }
   };
 
-  // === UPDATE ARTICLE ===
+  // =========================================================================
+  // 2. UPDATE ARTICLE
+  // =========================================================================
   updateArticle = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;
       const data: UpdateArticleDTO = req.body;
-      const file = req.file as Express.Multer.File | undefined;
 
+      // ✨ TAMBAHAN 1: Menangkap multiple files dari Multer
+      const files = req.files as
+        | { [fieldname: string]: Express.Multer.File[] }
+        | undefined;
+
+      const coverFile = files?.coverFile?.[0];
+      const coverMobileFile = files?.coverMobileFile?.[0];
+
+      // ✨ Parsing tipe data boolean
       if (typeof data.published === "string") {
         data.published = data.published === "true";
       }
 
+      // ✨ Parsing tipe data array (productIds)
       if (typeof data.productIds === "string") {
         data.productIds = (data.productIds as string)
           .split(",")
           .filter(Boolean);
       }
 
+      // ✨ TAMBAHAN 2: Parsing tipe data array (tagIds)
+      if (typeof data.tagIds === "string") {
+        data.tagIds = (data.tagIds as string).split(",").filter(Boolean);
+      }
+
+      // ✨ TAMBAHAN 3: Meneruskan coverMobileFile ke Service
       const updatedArticle = await this.articleService.updateArticle(
         id,
         data,
-        file,
+        coverFile,
+        coverMobileFile, // File mobile masuk ke parameter ke-4
       );
 
       res.status(200).send(updatedArticle);

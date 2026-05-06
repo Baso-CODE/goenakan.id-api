@@ -38,12 +38,13 @@ export class ArticleService {
   }
 
   // =========================================================================
-  // 2. CREATE ARTICLE (DENGAN UPLOAD COVER IMAGE & TAGS)
+  // 2. CREATE ARTICLE (DENGAN UPLOAD COVER IMAGE, MOBILE IMAGE & TAGS)
   // =========================================================================
   async createArticle(
     data: CreateArticleDTO,
     authorId: string,
     coverFile?: Express.Multer.File,
+    coverMobileFile?: Express.Multer.File,
   ) {
     const slug = this.slug.create(data.title);
 
@@ -55,6 +56,7 @@ export class ArticleService {
       throw new ApiError("Article with this title/slug already exists", 400);
     }
 
+    // --- UPLOAD GAMBAR DESKTOP ---
     let coverImageUrl = data.coverImage;
     let coverImagePublicId = data.coverImageId;
 
@@ -72,9 +74,33 @@ export class ArticleService {
     }
 
     if (!coverImageUrl) {
-      throw new ApiError("Cover image is required", 400);
+      throw new ApiError("Cover image desktop is required", 400);
     }
 
+    // ✨ TAMBAHAN: UPLOAD GAMBAR MOBILE (Opsional) ---
+    let coverImageMobileUrl = data.coverImageMobile;
+    let coverImageMobilePublicId = data.coverImageMobileId;
+
+    if (coverMobileFile) {
+      try {
+        const uploadResultMobile = await this.cloudinary.upload(
+          coverMobileFile,
+          {
+            folder: "articles/covers/mobile", // Disimpan di sub-folder khusus mobile
+            resource_type: "image",
+          },
+        );
+        coverImageMobileUrl = uploadResultMobile.secure_url;
+        coverImageMobilePublicId = uploadResultMobile.public_id;
+      } catch (error) {
+        throw new ApiError(
+          "Failed to upload mobile cover image to Cloudinary",
+          500,
+        );
+      }
+    }
+
+    // --- SIMPAN KE DATABASE ---
     try {
       const newArticle = await this.prisma.$transaction(async (tx) => {
         // 1. Create Article
@@ -83,10 +109,18 @@ export class ArticleService {
             title: data.title,
             slug,
             content: data.content,
+            source: data.source,
+
+            // Meta data Gambar Desktop
             coverImage: coverImageUrl,
             coverImageId: coverImagePublicId,
             coverImageAlt: data.coverImageAlt,
-            source: data.source,
+
+            authorName: data.authorName,
+            focusKeywords: data.focusKeywords,
+            coverImageMobile: coverImageMobileUrl,
+            coverImageMobileId: coverImageMobilePublicId,
+
             published: data.published ?? false,
             publishedAt: data.published
               ? data.publishedAt
@@ -109,7 +143,7 @@ export class ArticleService {
           });
         }
 
-        // ✨ 3. INSERT ARTICLE TAGS (Tabel Pivot Baru)
+        // 3. INSERT ARTICLE TAGS (Tabel Pivot Baru)
         if (data.tagIds && data.tagIds.length > 0) {
           await tx.articleTagMap.createMany({
             data: data.tagIds.map((tagId) => ({
@@ -135,12 +169,13 @@ export class ArticleService {
   }
 
   // =========================================================================
-  // 3. UPDATE ARTICLE (DENGAN OPSI UPDATE COVER IMAGE & TAGS)
+  // 3. UPDATE ARTICLE (DENGAN OPSI UPDATE COVER IMAGE, MOBILE IMAGE & TAGS)
   // =========================================================================
   async updateArticle(
     id: string,
     data: UpdateArticleDTO,
     coverFile?: Express.Multer.File,
+    coverMobileFile?: Express.Multer.File,
   ) {
     const existing = await this.prisma.article.findUnique({
       where: { id },
@@ -148,11 +183,11 @@ export class ArticleService {
 
     if (!existing) throw new ApiError("Article not found", 404);
 
-    // ✨ 1. Destructure tagIds dari data
     const { productIds, tagIds, ...articleData } = data;
 
     const slug = data.title ? this.slug.create(data.title) : existing.slug;
 
+    // Cek duplikasi judul jika judul diubah
     if (data.title && data.title !== existing.title) {
       const duplicate = await this.prisma.article.findFirst({
         where: { slug, id: { not: id } },
@@ -163,7 +198,7 @@ export class ArticleService {
       }
     }
 
-    // --- PROSES UPDATE COVER IMAGE KE CLOUDINARY ---
+    // --- PROSES UPDATE COVER IMAGE DESKTOP KE CLOUDINARY ---
     let coverImageUrl = existing.coverImage;
     let coverImagePublicId = existing.coverImageId;
 
@@ -187,13 +222,46 @@ export class ArticleService {
       }
     }
 
+    // ✨ TAMBAHAN: PROSES UPDATE COVER IMAGE MOBILE KE CLOUDINARY ---
+    let coverImageMobileUrl = existing.coverImageMobile;
+    let coverImageMobilePublicId = existing.coverImageMobileId;
+
+    if (coverMobileFile) {
+      try {
+        if (existing.coverImageMobileId) {
+          await this.cloudinary.delete(existing.coverImageMobileId);
+        }
+
+        // Upload gambar mobile yang baru
+        const uploadResultMobile = await this.cloudinary.upload(
+          coverMobileFile,
+          {
+            folder: "articles/covers/mobile", // Simpan di sub-folder khusus mobile
+            resource_type: "image",
+          },
+        );
+
+        coverImageMobileUrl = uploadResultMobile.secure_url;
+        coverImageMobilePublicId = uploadResultMobile.public_id;
+      } catch (error) {
+        throw new ApiError(
+          "Failed to upload new mobile cover image to Cloudinary",
+          500,
+        );
+      }
+    }
+
+    // --- MENGGABUNGKAN DATA UNTUK DISIMPAN ---
     const updateData: any = {
-      ...articleData,
+      ...articleData, // Otomatis berisi authorName, focusKeywords, title, content, dll
       slug,
       coverImage: coverImageUrl,
       coverImageId: coverImagePublicId,
+      coverImageMobile: coverImageMobileUrl, // ✨ TAMBAHAN: URL gambar mobile
+      coverImageMobileId: coverImageMobilePublicId, // ✨ TAMBAHAN: ID gambar mobile
     };
 
+    // Logika Tanggal Publish
     if (data.published !== undefined) {
       if (
         data.published === true &&
@@ -202,6 +270,7 @@ export class ArticleService {
       ) {
         updateData.publishedAt = new Date();
       } else if (data.published === false) {
+        // Jika di-unpublish, biarkan saja logic sesuai kebutuhanmu
       } else if (data.publishedAt) {
         updateData.publishedAt = new Date(data.publishedAt);
       }
@@ -231,6 +300,7 @@ export class ArticleService {
           }
         }
 
+        // 3. Sync Article Tags
         if (tagIds !== undefined) {
           await tx.articleTagMap.deleteMany({
             where: { articleId: id },
@@ -258,7 +328,6 @@ export class ArticleService {
       );
     }
   }
-
   // === GET RELEVANT ARTICLES (BERDASARKAN KATEGORI) ===
   async getRelevantArticles(
     categoryId: string,
