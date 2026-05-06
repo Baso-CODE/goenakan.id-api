@@ -1615,7 +1615,7 @@ model Article {
   source             String?   @db.Text
   published          Boolean   @default(false)
   publishedAt        DateTime?
-  authorName         String    @db.VarChar(100)
+  authorName         String?   @db.VarChar(100)
   authorId           String
   author             User      @relation(fields: [authorId], references: [id])
 

@@ -1,4 +1,3 @@
-// src/modules/web-order/web-order.controller.ts
 import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -30,6 +29,40 @@ export class WebOrderController {
 
     return profile;
   }
+
+  // === 0. CREATE NEW ORDER ===
+  createOrder = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // 1. Ambil data dari frontend
+      // (Isinya form alamat, items/keranjang, subtotal, totalAmount, dll)
+      const orderData = req.body;
+
+      // 2. Cek apakah ada user yang sedang login (opsional)
+      const user = (req as any).user;
+      let profileId = null;
+
+      if (user && user.id) {
+        const profile = await this.getOrCreateProfile(user.id);
+        profileId = profile.id;
+      }
+
+      // 3. Panggil Service untuk menyimpan pesanan ke database Prisma
+      // Pastikan kamu sudah membuat fungsi createOrder di WebOrderService ya!
+      const newOrder = await this.orderService.createOrder(
+        orderData,
+        profileId,
+      );
+
+      // 4. Kembalikan respons sukses berformat JSON
+      res.status(201).json({
+        success: true,
+        message: "Pesanan berhasil dibuat",
+        data: newOrder, // Wajib mengembalikan ID pesanan di sini
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 
   // === 1. GET ALL MY ORDERS ===
   getMyOrders = async (req: Request, res: Response, next: NextFunction) => {
@@ -88,6 +121,41 @@ export class WebOrderController {
       });
     } catch (error) {
       next(error);
+    }
+  };
+
+  // === 4. CREATE PAYMENT (MIDTRANS) ===
+  createPayment = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { orderId } = req.params;
+
+      const user = (req as any).user;
+
+      if (user && user.id) {
+        await this.getOrCreateProfile(user.id);
+      }
+
+      const transaction = await this.orderService.createPayment(orderId);
+
+      res.status(200).json({
+        success: true,
+        message: "Token pembayaran berhasil dibuat",
+        data: transaction,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === 5. MIDTRANS WEBHOOK RECEIVER ===
+  midtransWebhook = async (req: Request, res: Response) => {
+    try {
+      await this.orderService.handleMidtransNotification(req.body);
+
+      res.status(200).json({ status: "ok" });
+    } catch (error) {
+      console.error("Webhook Error:", error);
+      res.status(500).json({ error: "Internal Server Error" });
     }
   };
 }

@@ -1,5 +1,4 @@
-// src/modules/web-order/web-order.router.ts
-import { Router } from "express";
+import { NextFunction, Request, Response, Router } from "express";
 import { injectable } from "tsyringe";
 import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
 import { validateBody } from "../../../middleware/validation.middleware";
@@ -18,26 +17,41 @@ export class WebOrderRouter {
   }
 
   private initializeRoutes = (): void => {
-    // Ambil fungsi verifikasi token JWS
     const auth = this.nextAuthMiddleware.verifyNextAuthToken;
 
-    // Proteksi semua route pesanan wajib login
-    this.router.use(auth);
+    const optionalAuth = (req: Request, res: Response, next: NextFunction) => {
+      if (
+        req.headers.authorization &&
+        req.headers.authorization.startsWith("Bearer ")
+      ) {
+        return auth(req, res, next);
+      }
+      next();
+    };
+    // ==========================================================
+    // 🌍 ENDPOINT PUBLIK (Bisa Diakses Tanpa Login / Guest)
+    // ==========================================================
 
-    // === Endpoint Pesanan Customer ===
+    this.router.post("/", optionalAuth, this.orderController.createOrder);
 
-    // Mengambil semua riwayat pesanan (Bisa pakai query ?status=...)
-    // GET: /api/web-orders
-    this.router.get("/", this.orderController.getMyOrders);
+    this.router.post(
+      "/:orderId/pay",
+      optionalAuth,
+      this.orderController.createPayment,
+    );
+    this.router.post("/webhook/midtrans", this.orderController.midtransWebhook);
 
-    // Mengambil detail spesifik satu pesanan
-    // GET: /api/web-orders/:orderId
-    this.router.get("/:orderId", this.orderController.getOrderDetail);
+    // ==========================================================
+    // 🔒 ENDPOINT PRIVAT (Wajib Login)
+    // ==========================================================
 
-    // Membatalkan pesanan
-    // PATCH: /api/web-orders/:orderId/cancel
+    this.router.get("/", auth, this.orderController.getMyOrders);
+
+    this.router.get("/:orderId", auth, this.orderController.getOrderDetail);
+
     this.router.patch(
       "/:orderId/cancel",
+      auth,
       validateBody(CancelOrderDTO),
       this.orderController.cancelMyOrder,
     );
