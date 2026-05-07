@@ -96,7 +96,6 @@ export class WebOrderService {
       throw new ApiError("Order ini tidak membutuhkan pembayaran", 400);
     }
 
-    // 2. Siapkan array item_details dari keranjang belanja
     const itemDetails = order.items.map((item) => ({
       id: item.productId,
       price: Math.round(Number(item.price)),
@@ -104,7 +103,6 @@ export class WebOrderService {
       name: item.productName.substring(0, 50),
     }));
 
-    // ✨ PERBAIKAN: Masukkan Ongkos Kirim sebagai "Item" agar hitungan Midtrans seimbang
     if (order.shippingCost && Number(order.shippingCost) > 0) {
       itemDetails.push({
         id: "SHIPPING-FEE",
@@ -114,7 +112,6 @@ export class WebOrderService {
       });
     }
 
-    // ✨ PERBAIKAN: Masukkan Pajak (Tax) jika nantinya kamu menggunakannya
     if (order.taxAmount && Number(order.taxAmount) > 0) {
       itemDetails.push({
         id: "TAX-FEE",
@@ -124,11 +121,15 @@ export class WebOrderService {
       });
     }
 
+    // ✨ SOLUSI: Buat Order ID khusus Midtrans (Tambahkan garis bawah dan timestamp)
+    // Contoh output: "ORD-1715000000-99_1715005000"
+    const midtransOrderId = `${order.orderNumber}_${Date.now()}`;
+
     // 3. Siapkan parameter akhir untuk Midtrans
     const parameter = {
       transaction_details: {
-        order_id: order.orderNumber,
-        gross_amount: Math.round(Number(order.totalAmount)), // Harus persis sama dengan total semua itemDetails
+        order_id: midtransOrderId, // ✨ Gunakan ID modifikasi di sini
+        gross_amount: Math.round(Number(order.totalAmount)),
       },
       item_details: itemDetails,
       customer_details: {
@@ -139,10 +140,8 @@ export class WebOrderService {
     };
 
     try {
-      // 4. Minta token ke Midtrans
       const transaction = await snap.createTransaction(parameter);
 
-      // 5. Update WebOrder dengan paymentUrl
       await this.prisma.webOrder.update({
         where: { id: orderId },
         data: { paymentUrl: transaction.redirect_url },
@@ -150,7 +149,6 @@ export class WebOrderService {
 
       return transaction;
     } catch (error: any) {
-      // ✨ Logging tambahan untuk melihat error asli dari Midtrans di terminal backend-mu
       console.error(
         ">>> ERROR MIDTRANS ASLI:",
         error?.ApiResponse || error.message,
@@ -162,7 +160,6 @@ export class WebOrderService {
       );
     }
   }
-
   // === CREATE NEW ORDER ===
   async createOrder(data: any, profileId: string | null) {
     const { form, items, note, subtotal, shippingCost, totalAmount } = data;
@@ -213,9 +210,14 @@ export class WebOrderService {
       const statusResponse = await (coreApi as any).transaction.notification(
         notificationRaw,
       );
-      const orderId = statusResponse.order_id;
+
+      const rawOrderId = statusResponse.order_id; // Contoh: "ORD-12345-67_1715005000"
       const transactionStatus = statusResponse.transaction_status;
       const fraudStatus = statusResponse.fraud_status;
+
+      // ✨ SOLUSI: Pisahkan ID asli dari timestamp menggunakan pemisah "_"
+      // Ini akan mengambil bagian depan saja (Contoh: "ORD-12345-67")
+      const actualOrderNumber = rawOrderId.split("_")[0];
 
       let newStatus: WebOrderStatus | undefined;
 
@@ -238,7 +240,7 @@ export class WebOrderService {
 
       if (newStatus) {
         await this.prisma.webOrder.update({
-          where: { orderNumber: orderId },
+          where: { orderNumber: actualOrderNumber }, // ✨ Gunakan ID asli untuk mencari di Prisma
           data: { status: newStatus },
         });
       }
