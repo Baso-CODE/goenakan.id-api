@@ -1474,7 +1474,7 @@ model CustomerProfile {
 
 model Cart {
   id        String          @id @default(uuid())
-  profileId String          @unique // 1 User = 1 Active Cart
+  profileId String          @unique
   profile   CustomerProfile @relation(fields: [profileId], references: [id])
 
   items CartItem[]
@@ -1498,7 +1498,6 @@ model CartItem {
 
   quantity Int
 
-  // Untuk menyimpan konfigurasi desain custom (jika ada fitur custom)
   customization Json?
   notes         String? @db.Text
 
@@ -1510,26 +1509,21 @@ model CartItem {
 }
 
 model CustomerAddress {
-  id        String          @id @default(uuid())
-  profileId String
-  profile   CustomerProfile @relation(fields: [profileId], references: [id])
-
-  label     String // ex: "Rumah", "Kantor"
-  recipient String // Nama penerima
-  phone     String
-
-  // Detail Alamat
+  id          String          @id @default(uuid())
+  profileId   String
+  profile     CustomerProfile @relation(fields: [profileId], references: [id])
+  label       String
+  recipient   String
+  phone       String
   country     String?
   province    String?
   city        String?
   district    String?
   postalCode  String?
-  fullAddress String  @db.Text
-
-  isDefault Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  fullAddress String          @db.Text
+  isDefault   Boolean         @default(false)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
   @@map("customer_addresses")
 }
@@ -1545,6 +1539,7 @@ model WebOrder {
   shippingAddress Json
   subtotal        Decimal
   shippingCost    Decimal
+  customerNote    String?          @db.Text
   taxAmount       Decimal?         @default(0)
   totalAmount     Decimal
   status          WebOrderStatus   @default(PENDING_PAYMENT)
@@ -1553,25 +1548,21 @@ model WebOrder {
   paymentUrl      String?
   trackingNumber  String?
   courier         String?
-
-  items WebOrderItem[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  items           WebOrderItem[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   @@map("web_orders")
 }
 
 model WebOrderItem {
-  id         String   @id @default(uuid())
-  webOrderId String
-  webOrder   WebOrder @relation(fields: [webOrderId], references: [id], onDelete: Cascade)
-
-  productId String
-  product   Product         @relation(fields: [productId], references: [id])
-  variantId String?
-  variant   ProductVariant? @relation(fields: [variantId], references: [id])
-
+  id          String          @id @default(uuid())
+  webOrderId  String
+  webOrder    WebOrder        @relation(fields: [webOrderId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product         @relation(fields: [productId], references: [id])
+  variantId   String?
+  variant     ProductVariant? @relation(fields: [variantId], references: [id])
   productName String
   quantity    Int
   price       Decimal

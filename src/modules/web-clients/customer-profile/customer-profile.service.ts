@@ -12,7 +12,7 @@ import {
 export class CustomerProfileService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // 1. Ambil Profile berdasarkan User ID
+  // Di dalam class CustomerProfileService
   async getProfileByUserId(userId: string) {
     const profile = await this.prisma.customerProfile.findUnique({
       where: { userId },
@@ -24,12 +24,23 @@ export class CustomerProfileService {
             image: true,
           },
         },
+        addresses: {
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
       },
     });
 
     if (!profile) {
-      // Jika profile belum ada, kita buatkan yang default (Individual)
-      return this.createProfile({ userId, accountType: "INDIVIDUAL" });
+      // Jika tidak ada, buat baru
+      return this.prisma.customerProfile.create({
+        data: { userId, accountType: "INDIVIDUAL" },
+        include: {
+          user: { select: { name: true, email: true } },
+          addresses: true,
+        },
+      });
     }
 
     return profile;
@@ -52,7 +63,6 @@ export class CustomerProfileService {
   }
 
   // 3. Update Profile
-  // customer-profile.service.ts
   async updateProfile(userId: string, data: UpdateCustomerProfileDTO) {
     const { name, ...profileData } = data;
 

@@ -1,56 +1,17 @@
 // src/modules/customer-profile/customer-profile.controller.ts
 import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
-import { PrismaService } from "../../prisma/prisma.service";
 import { CustomerProfileService } from "./customer-profile.service";
 
 @injectable()
 export class CustomerProfileController {
-  constructor(
-    private readonly profileService: CustomerProfileService,
-    private readonly prisma: PrismaService,
-  ) {}
-
-  private async getOrCreateProfile(userId: string) {
-    let profile = await this.prisma.customerProfile.findUnique({
-      where: { userId },
-      include: {
-        user: {
-          select: {
-            name: true,
-            email: true,
-            image: true,
-          },
-        },
-      },
-    });
-
-    if (!profile) {
-      profile = await this.prisma.customerProfile.create({
-        data: {
-          userId,
-          accountType: "INDIVIDUAL",
-        },
-        include: {
-          user: {
-            select: {
-              name: true,
-              email: true,
-              image: true,
-            },
-          },
-        },
-      });
-    }
-
-    return profile;
-  }
+  constructor(private readonly profileService: CustomerProfileService) {}
 
   getMe = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = (req as any).user.id;
 
-      const profile = await this.getOrCreateProfile(userId);
+      const profile = await this.profileService.getProfileByUserId(userId);
 
       res.status(200).json({
         success: true,
@@ -65,8 +26,6 @@ export class CustomerProfileController {
   updateMe = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = (req as any).user.id;
-
-      await this.getOrCreateProfile(userId);
 
       const result = await this.profileService.updateProfile(userId, req.body);
 

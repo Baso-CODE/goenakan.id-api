@@ -28,7 +28,6 @@ export class CustomerProfileRouter {
     // GET: /api/customer-profile/me
     this.router.get("/me", this.profileController.getMe);
 
-    // Memperbarui data profil (menggunakan PATCH agar parsial)
     // PATCH: /api/customer-profile/update
     this.router.patch(
       "/update",

@@ -4,6 +4,7 @@ import { injectable } from "tsyringe";
 import { coreApi, snap } from "../../../lib/midtrans";
 import { ApiError } from "../../../utils/api-error";
 import { PrismaService } from "../../prisma/prisma.service";
+import { CreateWebOrderDTO } from "./dto/web-order.dto";
 
 @injectable()
 export class WebOrderService {
@@ -41,7 +42,36 @@ export class WebOrderService {
         profileId: profileId,
       },
       include: {
-        items: true,
+        items: {
+          include: {
+            product: {
+              include: {
+                images: {
+                  where: { isFeatured: true },
+                  take: 1,
+                },
+                materialType: true,
+              },
+            },
+            variant: {
+              include: {
+                images: {
+                  where: { isFeatured: true },
+                  take: 1,
+                },
+                attributeValues: {
+                  include: {
+                    attributeValue: {
+                      include: {
+                        attribute: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -51,7 +81,6 @@ export class WebOrderService {
 
     return order;
   }
-
   async cancelOrder(profileId: string, orderId: string, reason: string) {
     const order = await this.prisma.webOrder.findFirst({
       where: {
@@ -121,14 +150,11 @@ export class WebOrderService {
       });
     }
 
-    // ✨ SOLUSI: Buat Order ID khusus Midtrans (Tambahkan garis bawah dan timestamp)
-    // Contoh output: "ORD-1715000000-99_1715005000"
     const midtransOrderId = `${order.orderNumber}_${Date.now()}`;
 
-    // 3. Siapkan parameter akhir untuk Midtrans
     const parameter = {
       transaction_details: {
-        order_id: midtransOrderId, // ✨ Gunakan ID modifikasi di sini
+        order_id: midtransOrderId,
         gross_amount: Math.round(Number(order.totalAmount)),
       },
       item_details: itemDetails,
@@ -160,36 +186,42 @@ export class WebOrderService {
       );
     }
   }
+
   // === CREATE NEW ORDER ===
-  async createOrder(data: any, profileId: string | null) {
+  async createOrder(data: CreateWebOrderDTO, profileId: string | null) {
     const { form, items, note, subtotal, shippingCost, totalAmount } = data;
+
+    // Generate Order Number
     const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 100)}`;
 
-    const newOrder = await this.prisma.webOrder.create({
+    return await this.prisma.webOrder.create({
       data: {
         orderNumber: orderNumber,
         profileId: profileId,
-
-        // Data Tamu / Pembeli
         guestName: form.fullName,
         guestEmail: form.email,
         guestPhone: form.phone,
+        customerNote: note || null,
 
         shippingAddress: {
+          recipient: form.fullName,
+          phone: form.phone,
           country: form.country,
+          province: form.province,
           city: form.city,
-          address: form.address,
-          customerNote: note || "",
+          district: form.district,
+          postalCode: form.postalCode,
+          fullAddress: form.address,
         },
 
-        // Data Keuangan
         subtotal: subtotal,
         shippingCost: shippingCost,
         totalAmount: totalAmount,
         status: "PENDING_PAYMENT",
+
         items: {
-          create: items.map((item: any) => ({
-            productId: item.productId || item.id,
+          create: items.map((item) => ({
+            productId: item.productId,
             variantId: item.variantId || null,
             productName: item.name,
             quantity: item.quantity,
@@ -199,9 +231,10 @@ export class WebOrderService {
           })),
         },
       },
+      include: {
+        items: true,
+      },
     });
-
-    return newOrder;
   }
 
   // === 5. HANDLE MIDTRANS WEBHOOK / NOTIFICATION ===
@@ -211,13 +244,12 @@ export class WebOrderService {
         notificationRaw,
       );
 
-      const rawOrderId = statusResponse.order_id; // Contoh: "ORD-12345-67_1715005000"
+      const rawOrderId = statusResponse.order_id;
       const transactionStatus = statusResponse.transaction_status;
       const fraudStatus = statusResponse.fraud_status;
 
-      // ✨ SOLUSI: Pisahkan ID asli dari timestamp menggunakan pemisah "_"
-      // Ini akan mengambil bagian depan saja (Contoh: "ORD-12345-67")
       const actualOrderNumber = rawOrderId.split("_")[0];
+      const paymentMethodFromMidtrans = statusResponse.payment_type;
 
       let newStatus: WebOrderStatus | undefined;
 
@@ -240,8 +272,11 @@ export class WebOrderService {
 
       if (newStatus) {
         await this.prisma.webOrder.update({
-          where: { orderNumber: actualOrderNumber }, // ✨ Gunakan ID asli untuk mencari di Prisma
-          data: { status: newStatus },
+          where: { orderNumber: actualOrderNumber },
+          data: {
+            status: newStatus,
+            paymentMethod: paymentMethodFromMidtrans,
+          },
         });
       }
 
