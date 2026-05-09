@@ -43,43 +43,62 @@ export class ContactService {
   // =========================================================================
   // 2. GET ALL MESSAGES (Untuk dipakai di Dashboard Admin)
   // =========================================================================
-  async getAllContactMessages(query: ContactQuery) {
-    const { page, take, search, isRead } = query;
-    const where: any = {};
+  async getAllContactMessages(query: {
+    page?: number;
+    take?: number;
+    search?: string;
+    isRead?: string | boolean;
+  }) {
+    try {
+      const page = Number(query.page) || 1;
+      const take = Number(query.take) || 10;
+      const skip = (page - 1) * take;
 
-    // Fitur pencarian berdasarkan Nama, Email, atau Nomor HP
-    if (search && search.trim() !== "") {
-      const searchTerm = search.trim();
-      where.OR = [
-        { name: { contains: searchTerm } },
-        { email: { contains: searchTerm } },
-        { phone: { contains: searchTerm } },
-      ];
+      const where: any = {};
+
+      // === Filter Pencarian ===
+      if (query.search && query.search.trim() !== "") {
+        const searchTerm = query.search.trim();
+        where.OR = [
+          { name: { contains: searchTerm } },
+          { email: { contains: searchTerm } },
+          { phone: { contains: searchTerm } },
+        ];
+      }
+
+      // === Filter Status Baca ===
+      if (query.isRead !== undefined && query.isRead !== "") {
+        where.isRead = query.isRead === "true" || query.isRead === true;
+      }
+
+      // === Total data untuk pagination ===
+      const count = await this.prisma.contactMessage.count({ where });
+
+      // === Ambil data pesan ===
+      const data = await this.prisma.contactMessage.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: "desc" },
+      });
+
+      // === Metadata pagination ===
+      const meta = this.pagination.generateMeta({
+        count,
+        page,
+        take,
+      });
+
+      return {
+        data,
+        meta,
+      };
+    } catch (error) {
+      console.error("❌ Error in Get All Contact Messages:", error);
+      throw new Error(
+        "Failed to fetch contact messages. See server log for details.",
+      );
     }
-
-    // Filter status baca (Opsional: berguna jika admin ingin melihat "Pesan Belum Dibaca")
-    if (isRead !== undefined && isRead !== "") {
-      where.isRead = isRead === "true" || isRead === true;
-    }
-
-    // Hitung total data untuk pagination
-    const count = await this.prisma.contactMessage.count({ where });
-
-    // Ambil data (Diurutkan dari yang paling baru / createdAt: 'desc')
-    const messages = await this.prisma.contactMessage.findMany({
-      where,
-      skip: (Number(page || 1) - 1) * Number(take || 10),
-      take: Number(take || 10),
-      orderBy: { createdAt: "desc" },
-    });
-
-    const meta = this.pagination.generateMeta({
-      page: Number(page || 1),
-      take: Number(take || 10),
-      count,
-    });
-
-    return { data: messages, meta };
   }
 
   // =========================================================================

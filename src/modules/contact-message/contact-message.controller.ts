@@ -31,12 +31,16 @@ export class ContactController {
   // =========================================================================
   getAllMessages = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // Parameter filter dan pagination ada di req.query
-      const query = req.query;
+      const { page, take, search, isRead } = req.query;
 
-      const result = await this.contactService.getAllContactMessages(query);
+      const result = await this.contactService.getAllContactMessages({
+        page: Number(page),
+        take: Number(take),
+        search: search as string,
+        isRead: isRead as string | boolean,
+      });
 
-      res.status(200).json(result); // result sudah berisi { data, meta } dari service
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

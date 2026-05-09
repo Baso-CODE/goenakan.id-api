@@ -47,7 +47,7 @@ export class WebOrderService {
             product: {
               include: {
                 images: {
-                  where: { isFeatured: true },
+                  // where: { isFeatured: true },
                   take: 1,
                 },
                 materialType: true,
@@ -56,7 +56,7 @@ export class WebOrderService {
             variant: {
               include: {
                 images: {
-                  where: { isFeatured: true },
+                  // where: { isFeatured: true },
                   take: 1,
                 },
                 attributeValues: {
