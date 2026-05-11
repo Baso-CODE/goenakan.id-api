@@ -1,3 +1,4 @@
+import { Type } from "class-transformer";
 import {
   IsArray,
   IsBoolean,
@@ -7,7 +8,9 @@ import {
   IsString,
   MaxLength,
   MinLength,
+  ValidateNested,
 } from "class-validator";
+import { ArticleSeoDTO } from "./articleSEO.dto";
 
 export class CreateArticleDTO {
   @IsString()
@@ -65,6 +68,11 @@ export class CreateArticleDTO {
   @IsString()
   @IsNotEmpty({ message: "Kategori artikel wajib dipilih" })
   categoryId!: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ArticleSeoDTO)
+  seo?: ArticleSeoDTO;
 
   @IsArray()
   @IsString({ each: true })
@@ -132,6 +140,11 @@ export class UpdateArticleDTO {
   @IsString()
   @IsOptional()
   categoryId?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ArticleSeoDTO)
+  seo?: ArticleSeoDTO;
 
   @IsArray()
   @IsString({ each: true })

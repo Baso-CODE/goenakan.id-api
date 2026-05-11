@@ -129,6 +129,21 @@ export class ArticleService {
               : null,
             categoryId: data.categoryId,
             authorId: authorId,
+            ...(data.seo && {
+              seo: {
+                create: {
+                  metaTitle: data.seo.metaTitle,
+                  metaDescription: data.seo.metaDescription,
+                  keywords: data.seo.keywords,
+                  canonicalUrl: data.seo.canonicalUrl,
+                  ogTitle: data.seo.ogTitle,
+                  ogDescription: data.seo.ogDescription,
+                  ogImage: data.seo.ogImage,
+                  robots: data.seo.robots,
+                  structuredData: data.seo.structuredData,
+                },
+              },
+            }),
           },
         });
 

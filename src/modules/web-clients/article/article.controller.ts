@@ -40,21 +40,26 @@ export class ArticleController {
       const coverFile = files?.coverFile?.[0]; // Ambil file pertama dari array coverFile
       const coverMobileFile = files?.coverMobileFile?.[0]; // Ambil file pertama dari array coverMobileFile
 
-      // ✨ Parsing tipe data boolean dari FormData
       if (typeof data.published === "string") {
         data.published = data.published === "true";
       }
 
-      // ✨ Parsing tipe data array (productIds) dari FormData
       if (typeof data.productIds === "string") {
         data.productIds = (data.productIds as string)
           .split(",")
           .filter(Boolean); // filter(Boolean) untuk membuang string kosong
       }
 
-      // ✨ TAMBAHAN 2: Parsing tipe data array (tagIds) dari FormData
       if (typeof data.tagIds === "string") {
         data.tagIds = (data.tagIds as string).split(",").filter(Boolean);
+      }
+
+      if (typeof data.seo === "string") {
+        try {
+          data.seo = JSON.parse(data.seo);
+        } catch (e) {
+          console.warn("Gagal parsing JSON SEO");
+        }
       }
 
       const authorId = (req as any).user?.id;

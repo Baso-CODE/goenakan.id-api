@@ -40,6 +40,7 @@ import { CustomerAddressRouter } from "./modules/web-clients/address/customer-ad
 import { ArticleRouter } from "./modules/web-clients/article/article.router";
 import { ArticleBannerRouter } from "./modules/web-clients/article/banner/articleBanner.router";
 import { ArticleCategoryRouter } from "./modules/web-clients/article/category/articleCategory.router";
+import { ArticleSeoRouter } from "./modules/web-clients/article/seo/articleSEO.router";
 import { ArticleTagRouter } from "./modules/web-clients/article/tag-article/tag-article.router";
 import { BannerProductRouter } from "./modules/web-clients/banner-product/banner-product.router";
 import { CartRouter } from "./modules/web-clients/cart/cart.router";
@@ -135,6 +136,7 @@ export default class App {
     const categoryArticleRouter = container.resolve(ArticleCategoryRouter);
     const articleBannerRouter = container.resolve(ArticleBannerRouter);
     const articleRouter = container.resolve(ArticleRouter);
+    const articleSeoRouter = container.resolve(ArticleSeoRouter);
     const brandClientRouter = container.resolve(BrandClientRouter);
     const portfolioRouter = container.resolve(PortfolioRouter);
     const contactMessageRouter = container.resolve(ContactMessageRouter);
@@ -191,6 +193,7 @@ export default class App {
     this.app.use("/article-categories", categoryArticleRouter.getRouter());
     this.app.use("/articles-banners", articleBannerRouter.getRouter());
     this.app.use("/articles", articleRouter.getRouter());
+    this.app.use("/article-seo", articleSeoRouter.getRouter());
     this.app.use("/brand-clients", brandClientRouter.getRouter());
     this.app.use("/portfolios", portfolioRouter.getRouter());
     this.app.use("/contact-messages", contactMessageRouter.getRouter());

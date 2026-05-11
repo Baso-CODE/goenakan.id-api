@@ -1618,6 +1618,7 @@ model Article {
   articleBanners  ArticleBanner[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
+  seo             ArticleSEO?
 
   @@map("articles")
 }
@@ -1667,6 +1668,26 @@ model ArticleTagMap {
 
   @@id([articleId, tagId])
   @@map("article_tag_pivot")
+}
+
+model ArticleSEO {
+  id              String  @id @default(cuid())
+  metaTitle       String? @db.VarChar(255)
+  metaDescription String? @db.Text
+  keywords        String? @db.Text
+  canonicalUrl    String? @db.VarChar(255)
+  ogTitle         String? @db.VarChar(255)
+  ogDescription   String? @db.Text
+  ogImage         String? @db.VarChar(255)
+  robots          String? @default("index, follow") @db.VarChar(50)
+  structuredData  String? @db.LongText
+  articleId       String  @unique
+  article         Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("article_seo")
 }
 
 model BrandClient {
