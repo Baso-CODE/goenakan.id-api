@@ -343,6 +343,7 @@ export class ArticleService {
       );
     }
   }
+
   // === GET RELEVANT ARTICLES (BERDASARKAN KATEGORI) ===
   async getRelevantArticles(
     categoryId: string,
@@ -383,6 +384,7 @@ export class ArticleService {
         author: {
           select: { id: true, name: true, email: true },
         },
+        seo: true,
         relatedProducts: {
           include: {
             product: {
