@@ -261,7 +261,7 @@ export class OrderService {
       const productData: any = {
         product: { connect: { id: item.productId } },
         quantity: item.quantity,
-        unitPrice: finalPrice, // ✅ harga dari user
+        unitPrice: finalPrice,
         variant: item.variantId
           ? { connect: { id: item.variantId } }
           : undefined,
@@ -616,8 +616,8 @@ export class OrderService {
         : "-",
       clientInfo: clientInfo,
       sales: {
-        name: order.sales.name,
-        phone: order.sales.phone,
+        name: order.sales?.name || "-",
+        phone: order.sales?.phone || "-",
       },
 
       // Data Products yang sudah ada field 'remainingQuantity'
@@ -850,7 +850,7 @@ export class OrderService {
         salesCategory: order.salesCategory,
         clientName: clientName,
         clientType: clientType,
-        salesName: order.sales.name,
+        salesName: order.sales?.name || "-",
         totalAmount: Number(order.totalAmount),
         products: productsString,
         vendors: vendorsString,
