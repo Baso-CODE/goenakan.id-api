@@ -14,6 +14,13 @@ datasource db {
 // ===============================================
 // ENUMS & MASTER TABLES
 // ===============================================
+enum OrderStatus {
+  PENDING // Menunggu pembayaran / konfirmasi
+  PROCESSING // Sedang diproses / diproduksi
+  SHIPPED // Sedang dikirim (jika ada pengiriman fisik)
+  COMPLETED // Selesai
+  CANCELLED // Dibatalkan (baik dari web maupun manual)
+}
 
 enum QuotationStatus {
   DRAFT
@@ -155,6 +162,7 @@ model User {
   financeTransactions FinanceTransaction[]
   customerProfile     CustomerProfile?
   accounts            Account[]
+  client              Client?
 
   @@map("users")
 }
@@ -221,6 +229,8 @@ model Client {
   id        String     @id @default(uuid())
   custCode  String     @unique
   type      ClientType
+  userId    String?    @unique
+  user      User?      @relation(fields: [userId], references: [id])
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
@@ -823,23 +833,26 @@ model SalesBank {
 // ===============================================
 
 model Order {
-  id                String           @id @default(uuid())
-  dateOrder         DateTime
-  salesCategory     SalesCategory
-  poNumber          String
-  clientId          String
-  salesId           String
-  shippingAddress   String
-  totalAmount       Decimal
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-  clientB2BPICId    String?
-  pic               ClientB2BPIC?    @relation(fields: [clientB2BPICId], references: [id])
-  purchaseChannelId String?
-  purchaseChannel   PurchaseChannel? @relation(fields: [purchaseChannelId], references: [id])
-
+  id                 String                @id @default(uuid())
+  orderNumber        String?               @unique
+  dateOrder          DateTime
+  salesCategory      SalesCategory
+  poNumber           String?
+  clientId           String
+  salesId            String?
+  shippingAddress    String
+  totalAmount        Decimal
+  status             OrderStatus           @default(PENDING)
+  webOrderId         String?               @unique
+  webOrder           WebOrder?             @relation(fields: [webOrderId], references: [id])
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  clientB2BPICId     String?
+  pic                ClientB2BPIC?         @relation(fields: [clientB2BPICId], references: [id])
+  purchaseChannelId  String?
+  purchaseChannel    PurchaseChannel?      @relation(fields: [purchaseChannelId], references: [id])
   client             Client                @relation(fields: [clientId], references: [id])
-  sales              Sales                 @relation(fields: [salesId], references: [id])
+  sales              Sales?                @relation(fields: [salesId], references: [id])
   products           OrderProduct[]
   vendors            OrderVendor[]
   cashflows          Cashflow[]
@@ -1546,9 +1559,8 @@ model WebOrder {
   canceledReason  String?          @db.Text
   paymentMethod   String?
   paymentUrl      String?
-  trackingNumber  String?
-  courier         String?
   items           WebOrderItem[]
+  order           Order?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 

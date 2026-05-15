@@ -13,6 +13,7 @@ import { CashflowRouter } from "./modules/cashflow/cashflow.router";
 import { ClientRouter } from "./modules/client/client.router";
 import { ContactMessageRouter } from "./modules/contact-message/contact-message.router";
 
+import { AnalyticsRouter } from "./modules/analytics/analytics.router";
 import { CurrencyRouter } from "./modules/currency/currency.router";
 import { DepartmentRouter } from "./modules/department/department.router";
 import { FinanceRouter } from "./modules/finance/finance.router";
@@ -148,6 +149,7 @@ export default class App {
     const eventCategoryRouter = container.resolve(EventCategoryRouter);
     const tagArticleRouter = container.resolve(ArticleTagRouter);
     const bannerProductRouter = container.resolve(BannerProductRouter);
+    const analyticsRouter = container.resolve(AnalyticsRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -206,6 +208,7 @@ export default class App {
     this.app.use("/event-categories", eventCategoryRouter.getRouter());
     this.app.use("/article-tags", tagArticleRouter.getRouter());
     this.app.use("/banner-products", bannerProductRouter.getRouter());
+    this.app.use("/analytics", analyticsRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

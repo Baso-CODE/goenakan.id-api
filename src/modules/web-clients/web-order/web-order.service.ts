@@ -1,5 +1,5 @@
 // src/modules/web-order/web-order.service.ts
-import { WebOrderStatus } from "@prisma/client";
+import { ClientType, SalesCategory, WebOrderStatus } from "@prisma/client";
 import { injectable } from "tsyringe";
 import { coreApi, snap } from "../../../lib/midtrans";
 import { ApiError } from "../../../utils/api-error";
@@ -81,6 +81,7 @@ export class WebOrderService {
 
     return order;
   }
+
   async cancelOrder(profileId: string, orderId: string, reason: string) {
     const order = await this.prisma.webOrder.findFirst({
       where: {
@@ -248,11 +249,13 @@ export class WebOrderService {
       const transactionStatus = statusResponse.transaction_status;
       const fraudStatus = statusResponse.fraud_status;
 
+      // Misal format order_id dari midtrans: ORD-12345_171000000
       const actualOrderNumber = rawOrderId.split("_")[0];
       const paymentMethodFromMidtrans = statusResponse.payment_type;
 
       let newStatus: WebOrderStatus | undefined;
 
+      // 1. Tentukan Status Berdasarkan Notifikasi Midtrans
       if (
         transactionStatus === "capture" ||
         transactionStatus === "settlement"
@@ -270,20 +273,165 @@ export class WebOrderService {
         newStatus = "PENDING_PAYMENT";
       }
 
+      // 2. Jalankan Proses Update Berdasarkan Status
       if (newStatus) {
-        await this.prisma.webOrder.update({
-          where: { orderNumber: actualOrderNumber },
-          data: {
-            status: newStatus,
-            paymentMethod: paymentMethodFromMidtrans,
-          },
-        });
+        if (newStatus === "PAID") {
+          // ==============================================================
+          // 🌟 LOGIKA BARU: JIKA LUNAS, KONVERSI KE ORDER UTAMA & CLIENT
+          // ==============================================================
+          await this.processPaidWebOrder(
+            actualOrderNumber,
+            paymentMethodFromMidtrans,
+          );
+        } else {
+          // Jika status selain PAID (misal CANCELLED/PENDING), update biasa saja
+          await this.prisma.webOrder.update({
+            where: { orderNumber: actualOrderNumber },
+            data: {
+              status: newStatus,
+              paymentMethod: paymentMethodFromMidtrans,
+            },
+          });
+        }
       }
 
       return { success: true };
     } catch (error) {
-      console.error("Gagal memproses Webhook Midtrans:", error);
+      console.error("🔥 Gagal memproses Webhook Midtrans:", error);
       throw new Error("Gagal memproses notifikasi");
     }
+  }
+
+  // =========================================================================
+  // 🌟 FUNGSI BARU: PROSES KONVERSI KE SISTEM UTAMA (ORDER & CLIENT)
+  // =========================================================================
+  private async processPaidWebOrder(
+    orderNumber: string,
+    paymentMethod: string,
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Ambil Data Web Order secara lengkap
+      const webOrder = await tx.webOrder.findUnique({
+        where: { orderNumber },
+        include: {
+          profile: true,
+          items: true,
+        },
+      });
+
+      if (!webOrder) throw new Error("Web Order tidak ditemukan");
+      // Mencegah konversi ganda jika webhook terkirim dua kali dari Midtrans
+      if (webOrder.status === "PAID" || webOrder.status === "PROCESSING")
+        return;
+
+      // 2. Siapkan ID Client (Tentukan apakah B2C atau B2B)
+      let clientIdToUse = "";
+
+      const existingClient = webOrder.profile?.userId
+        ? await tx.client.findFirst({
+            where: { userId: webOrder.profile.userId },
+          })
+        : null;
+
+      if (existingClient) {
+        clientIdToUse = existingClient.id;
+      } else {
+        const isCorporate = webOrder.profile?.accountType === "CORPORATE";
+        const clientType = isCorporate ? ClientType.B2B : ClientType.B2C;
+
+        // Buat record utama di tabel Client
+        const newClient = await tx.client.create({
+          data: {
+            custCode: `CUST-WEB-${Date.now()}`,
+            type: clientType,
+            userId: webOrder.profile?.userId || undefined,
+          },
+        });
+        clientIdToUse = newClient.id;
+
+        // Ambil Channel Website (Wajib ada di database)
+        const webChannel = await tx.purchaseChannel.findUnique({
+          where: { slug: "website" },
+        });
+        if (!webChannel)
+          throw new Error(
+            "Mohon buat data PurchaseChannel dengan slug 'website' di database!",
+          );
+
+        // Pisahkan penyimpanan B2B dan B2C
+        if (isCorporate) {
+          // Asumsi kamu punya data Department, kita ambil yang pertama sebagai default
+          const defaultDept = await tx.department.findFirst();
+          if (!defaultDept)
+            throw new Error("Belum ada data Department di database untuk B2B!");
+
+          await tx.clientB2B.create({
+            data: {
+              id: newClient.id,
+              companyName: webOrder.profile?.companyName || "Perusahaan Web",
+              departmentId: defaultDept.id,
+              website: "-",
+              phone: webOrder.profile?.picPhone || webOrder.guestPhone,
+              fullAddress: JSON.stringify(webOrder.shippingAddress),
+              purchaseChannelId: webChannel.id,
+            },
+          });
+        } else {
+          await tx.clientB2C.create({
+            data: {
+              id: newClient.id,
+              prefix: "Mr/Ms",
+              name: webOrder.guestName || "Guest",
+              phone: webOrder.guestPhone,
+              fullAddress: JSON.stringify(webOrder.shippingAddress),
+              purchaseChannelId: webChannel.id,
+            },
+          });
+        }
+      }
+
+      // 3. Ambil ID Purchase Channel untuk Order
+      const websiteChannel = await tx.purchaseChannel.findUnique({
+        where: { slug: "website" },
+      });
+      const totalOrders = await tx.order.count();
+      const sequence = String(totalOrders + 1).padStart(4, "0");
+      const generatedPoNumber = `GI-PO${sequence}`;
+      // 4. Buat Order Utama di dalam ekosistem perusahaan
+      await tx.order.create({
+        data: {
+          orderNumber: `ORD-${Date.now()}`,
+          dateOrder: new Date(),
+          salesCategory: SalesCategory.SALES,
+          poNumber: generatedPoNumber,
+          clientId: clientIdToUse,
+          purchaseChannelId: websiteChannel!.id,
+          shippingAddress: JSON.stringify(webOrder.shippingAddress),
+          totalAmount: webOrder.totalAmount,
+          webOrderId: webOrder.id, // Sambungkan referensi order aslinya
+
+          // Memindahkan barang belanjaan dari keranjang (WebOrderItem) ke OrderProduct
+          products: {
+            create: webOrder.items.map((item) => ({
+              productId: item.productId,
+              variantId: item.variantId,
+              quantity: item.quantity,
+              unitPrice: item.price,
+              customization: item.customization || undefined,
+              remarks: item.notes,
+            })),
+          },
+        },
+      });
+
+      // 5. Update Status WebOrder menjadi PAID
+      await tx.webOrder.update({
+        where: { id: webOrder.id },
+        data: {
+          status: "PAID",
+          paymentMethod: paymentMethod,
+        },
+      });
+    });
   }
 }
