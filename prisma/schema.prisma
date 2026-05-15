@@ -1080,7 +1080,7 @@ model DeliveryNote {
 
 model Quotation {
   id              String          @id @default(uuid())
-  quotationNumber String          @unique
+  quotationNumber String?         @unique
   date            DateTime        @default(now())
   validUntil      DateTime?
   status          QuotationStatus @default(DRAFT)
