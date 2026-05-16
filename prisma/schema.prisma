@@ -1,5 +1,14 @@
 // ===============================================
-// PRISMA SCHEMA — GOENAKAN ID
+// PRISMA SCHEMA — GOENAKAN ID (UPDATED)
+// ===============================================
+// CHANGELOG:
+// - Tambah indexes di tabel yang sering di-query analytics
+// - Tambah targetEndDate di ProductionTracker (untuk late delivery)
+// - Tambah uuid kolom di Invoice (dual ID, non-breaking)
+// - Tambah flag isMarketing di FinanceCategory (untuk CAC)
+// - Tambah snapshot fields di OrderProduct (historical accuracy)
+// - Drop kolom 'currency' (String) di CashflowRevenue/Cost - pakai FK saja
+// - Fix typo: lowercase 'currency' relation field
 // ===============================================
 
 generator client {
@@ -15,11 +24,11 @@ datasource db {
 // ENUMS & MASTER TABLES
 // ===============================================
 enum OrderStatus {
-  PENDING // Menunggu pembayaran / konfirmasi
-  PROCESSING // Sedang diproses / diproduksi
-  SHIPPED // Sedang dikirim (jika ada pengiriman fisik)
-  COMPLETED // Selesai
-  CANCELLED // Dibatalkan (baik dari web maupun manual)
+  PENDING
+  PROCESSING
+  SHIPPED
+  COMPLETED
+  CANCELLED
 }
 
 enum QuotationStatus {
@@ -164,6 +173,7 @@ model User {
   accounts            Account[]
   client              Client?
 
+  @@index([role])
   @@map("users")
 }
 
@@ -184,6 +194,7 @@ model Account {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@index([userId])
   @@map("accounts")
 }
 
@@ -194,6 +205,7 @@ model Session {
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
   @@map("sessions")
 }
 
@@ -217,7 +229,6 @@ model PurchaseChannel {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relasi ke B2B dan B2C
   clientsB2B ClientB2B[]
   clientsB2C ClientB2C[]
   orders     Order[]
@@ -240,6 +251,7 @@ model Client {
   invoices   Invoice[]
   quotations Quotation[]
 
+  @@index([type])
   @@map("clients")
 }
 
@@ -262,6 +274,9 @@ model ClientB2C {
 
   client Client @relation(fields: [id], references: [id])
 
+  @@index([purchaseChannelId])
+  @@index([city])
+  @@index([province])
   @@map("clients_b2c")
 }
 
@@ -273,6 +288,7 @@ model ClientB2B {
 
   phone   String?
   email   String?
+  // CATATAN: website tetap non-nullable. Kalau perlu diubah, lakukan migration terpisah.
   website String
 
   country     String?
@@ -289,6 +305,10 @@ model ClientB2B {
   pics   ClientB2BPIC[]
   client Client         @relation(fields: [id], references: [id])
 
+  @@index([departmentId])
+  @@index([purchaseChannelId])
+  @@index([city])
+  @@index([province])
   @@map("clients_b2b")
 }
 
@@ -304,6 +324,7 @@ model ClientB2BPIC {
   orders     Order[]
   quotations Quotation[]
 
+  @@index([clientB2BId])
   @@map("client_b2b_pics")
 }
 
@@ -355,6 +376,7 @@ model ItemCategory {
   updatedAt         DateTime        @updatedAt
   products          Product[]
 
+  @@index([productCategoryId])
   @@map("item_categories")
 }
 
@@ -370,6 +392,7 @@ model ItemName {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
+  @@index([itemCategoryId])
   @@map("item_names")
 }
 
@@ -411,6 +434,10 @@ model Product {
   cartItems       CartItem[]
   webOrderItems   WebOrderItem[]
 
+  @@index([categoryId])
+  @@index([itemCategoryId])
+  @@index([itemNameId])
+  @@index([materialTypeId])
   @@map("products")
 }
 
@@ -470,6 +497,7 @@ model AttributeValue {
   products                      ProductAttributeValue[]
   productVariantAttributeValues ProductVariantAttributeValue[]
 
+  @@index([attributeId])
   @@map("attribute_values")
 }
 
@@ -485,6 +513,8 @@ model ProductAttributeValue {
   attributeId      String?
 
   @@unique([productId, attributeValueId])
+  @@index([attributeValueId])
+  @@index([attributeId])
   @@map("product_attribute_values")
 }
 
@@ -514,6 +544,7 @@ model ProductVariant {
   cartItems       CartItem[]
   webOrderItems   WebOrderItem[]
 
+  @@index([productId])
   @@map("product_variants")
 }
 
@@ -527,6 +558,7 @@ model ProductVariantAttributeValue {
   attributeValue   AttributeValue @relation(fields: [attributeValueId], references: [id])
 
   @@unique([variantId, attributeValueId])
+  @@index([attributeValueId])
   @@map("product_variant_attribute_values")
 }
 
@@ -540,6 +572,7 @@ model PriceTier {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
 
+  @@index([productId])
   @@map("price_tiers")
 }
 
@@ -553,6 +586,7 @@ model ProductVariantImage {
   variantId String
   variant   ProductVariant @relation(fields: [variantId], references: [id])
 
+  @@index([variantId])
   @@map("product_variant_images")
 }
 
@@ -566,6 +600,7 @@ model ProductImage {
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
+  @@index([productId])
   @@map("product_images")
 }
 
@@ -577,10 +612,10 @@ model ProductVideo {
   isFeatured Boolean @default(false)
   altText    String?
 
-  // Relasi ke Produk
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
+  @@index([productId])
   @@map("product_videos")
 }
 
@@ -590,6 +625,7 @@ model ProductVideo {
 
 model Invoice {
   id            Int             @id @default(autoincrement())
+  uuid          String?         @unique @default(uuid())
   invoiceNumber String?         @unique
   clientId      String
   userId        String
@@ -611,6 +647,12 @@ model Invoice {
   items  InvoiceItem[]
   notes  InvoiceNote[]
 
+  @@index([clientId])
+  @@index([userId])
+  @@index([orderId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([createdAt])
   @@map("invoices")
 }
 
@@ -629,6 +671,9 @@ model InvoiceItem {
   product Product         @relation(fields: [productId], references: [id])
   variant ProductVariant? @relation(fields: [variantId], references: [id])
 
+  @@index([invoiceId])
+  @@index([productId])
+  @@index([variantId])
   @@map("invoice_items")
 }
 
@@ -646,7 +691,7 @@ model Tag {
 }
 
 // ===============================================
-// INVOICE NOTE SECTION (NEW)
+// INVOICE NOTE SECTION
 // ===============================================
 
 model NoteCategory {
@@ -674,6 +719,7 @@ model NoteTemplate {
 
   category NoteCategory @relation(fields: [categoryId], references: [id])
 
+  @@index([categoryId])
   @@map("note_templates")
 }
 
@@ -689,6 +735,8 @@ model InvoiceNote {
   invoice  Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   category NoteCategory @relation(fields: [categoryId], references: [id])
 
+  @@index([invoiceId])
+  @@index([categoryId])
   @@map("invoice_notes")
 }
 
@@ -697,22 +745,22 @@ model InvoiceNote {
 // ===============================================
 
 model Vendor {
-  id             String              @id @default(uuid())
-  companyName    String
-  slug           String              @unique
-  picName        String
-  country        String?
-  province       String?
-  city           String?
-  district       String?
-  subDistrict    String?
-  postalCode     String?
-  address        String?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
-  isActive       Boolean             @default(true)
-  trackingUrl    String?             @db.Text
-  // === RELATIONS ===
+  id          String   @id @default(uuid())
+  companyName String
+  slug        String   @unique
+  picName     String
+  country     String?
+  province    String?
+  city        String?
+  district    String?
+  subDistrict String?
+  postalCode  String?
+  address     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  isActive    Boolean  @default(true)
+  trackingUrl String?  @db.Text
+
   vendorItems    VendorVendorItem[]
   cashflowCost   CashflowCost[]
   orderVendors   OrderVendor[]
@@ -720,6 +768,7 @@ model Vendor {
   productionJobs ProductionTracker[]
   shipments      Shipment[]
 
+  @@index([isActive])
   @@map("vendors")
 }
 
@@ -749,6 +798,7 @@ model VendorItem {
   category    VendorCategory     @relation(fields: [categoryId], references: [id])
   vendors     VendorVendorItem[]
 
+  @@index([categoryId])
   @@map("vendor_items")
 }
 
@@ -759,6 +809,7 @@ model VendorVendorItem {
   item     VendorItem @relation(fields: [itemId], references: [id])
 
   @@id([vendorId, itemId])
+  @@index([itemId])
   @@map("vendor_vendor_items")
 }
 
@@ -778,6 +829,8 @@ model VendorContact {
   vendor   Vendor          @relation(fields: [vendorId], references: [id])
   platform ContactPlatform @relation(fields: [platformId], references: [id])
 
+  @@index([vendorId])
+  @@index([platformId])
   @@map("vendor_contacts")
 }
 
@@ -795,7 +848,7 @@ model ContactPlatform {
 }
 
 // ===============================================
-// SALES SECTION (NEW)
+// SALES SECTION
 // ===============================================
 
 model Sales {
@@ -813,6 +866,7 @@ model Sales {
   financeTransactions FinanceTransaction[]
   quotations          Quotation[]
 
+  @@index([isActive])
   @@map("sales")
 }
 
@@ -864,17 +918,33 @@ model Order {
   cashflowSummary    CashflowSummary[]
   sampleFollowUps    OrderSampleFollowUp[]
 
+  // === INDEXES UNTUK ANALYTICS ===
+  @@index([dateOrder])
+  @@index([status])
+  @@index([dateOrder, status])
+  @@index([clientId])
+  @@index([clientId, status])
+  @@index([salesCategory])
+  @@index([salesCategory, status])
+  @@index([salesId])
+  @@index([purchaseChannelId])
+  @@index([clientB2BPICId])
   @@map("orders")
 }
 
 model OrderProduct {
-  id                 String              @id @default(uuid())
-  orderId            String
-  productId          String
-  quantity           Int
-  unitPrice          Decimal
-  customization      Json?
-  remarks            String?
+  id            String  @id @default(uuid())
+  orderId       String
+  productId     String
+  quantity      Int
+  unitPrice     Decimal
+  customization Json?
+  remarks       String?
+
+  // === SNAPSHOT FIELDS (untuk historical accuracy jika product diubah/dihapus) ===
+  productNameSnapshot String?
+  skuSnapshot         String?
+
   order              Order               @relation(fields: [orderId], references: [id])
   product            Product             @relation(fields: [productId], references: [id])
   variantId          String?
@@ -882,6 +952,9 @@ model OrderProduct {
   productionTrackers ProductionTracker[]
   shipmentItems      ShipmentItem[]
 
+  @@index([orderId])
+  @@index([productId])
+  @@index([variantId])
   @@map("order_products")
 }
 
@@ -895,6 +968,8 @@ model OrderVendor {
   order          Order  @relation(fields: [orderId], references: [id])
   vendor         Vendor @relation(fields: [vendorId], references: [id])
 
+  @@index([orderId])
+  @@index([vendorId])
   @@map("order_vendors")
 }
 
@@ -915,6 +990,9 @@ model OrderSampleFollowUp {
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
+  @@index([orderId])
+  @@index([date])
+  @@index([isDone])
   @@map("order_sample_follow_ups")
 }
 
@@ -932,23 +1010,13 @@ model Cashflow {
   updatedAt   DateTime     @updatedAt
   order       Order        @relation(fields: [orderId], references: [id])
 
+  @@index([orderId])
+  @@index([type])
   @@map("cashflows")
 }
 
-// model InboundOutbound {
-//   id      String    @id @default(uuid())
-//   orderId String
-//   type    InOutType
-//   date    DateTime
-//   remarks String
-//   order   Order     @relation(fields: [orderId], references: [id])
-
-//   @@map("inbound_outbound")
-// }
-
 // ===============================================
-// PRODUCTION TRACKING (NEW)
-// Mencatat waktu produksi barang di pabrik/vendor
+// PRODUCTION TRACKING
 // ===============================================
 
 model ProductionTracker {
@@ -959,6 +1027,10 @@ model ProductionTracker {
   step           Int              @default(1)
   quantity       Int
   startDate      DateTime?
+  // === FIELD BARU untuk LATE DELIVERY detection ===
+  // Target tanggal selesai produksi yang dijanjikan ke client/vendor.
+  // Jika endDate > targetEndDate, dianggap LATE.
+  targetEndDate  DateTime?
   endDate        DateTime?
   status         ProductionStatus @default(PENDING)
   remarks        String?
@@ -966,17 +1038,21 @@ model ProductionTracker {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
   order        Order        @relation(fields: [orderId], references: [id])
   orderProduct OrderProduct @relation(fields: [orderProductId], references: [id])
   vendor       Vendor       @relation(fields: [vendorId], references: [id])
 
+  @@index([orderId])
+  @@index([orderProductId])
+  @@index([vendorId])
+  @@index([status])
+  @@index([endDate])
+  @@index([targetEndDate])
   @@map("production_trackers")
 }
 
 // ===============================================
-// LOGISTICS / SHIPMENT SYSTEM (NEW)
-// Mencatat pergerakan barang (Inbound & Outbound)
+// LOGISTICS / SHIPMENT SYSTEM
 // ===============================================
 
 model Shipment {
@@ -995,17 +1071,23 @@ model Shipment {
   destination        String?
   departureDate      DateTime?
   arrivalDate        DateTime?
+  // === FIELD BARU: target tanggal sampai (untuk SLA shipping) ===
+  targetArrivalDate  DateTime?
 
   notes ShipmentNote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
   order  Order          @relation(fields: [orderId], references: [id])
   vendor Vendor?        @relation(fields: [vendorId], references: [id])
   items  ShipmentItem[]
 
+  @@index([orderId])
+  @@index([vendorId])
+  @@index([status])
+  @@index([arrivalDate])
+  @@index([departureDate])
   @@map("shipments")
 }
 
@@ -1019,6 +1101,9 @@ model ShipmentHistory {
   date       DateTime @default(now())
 
   createdAt DateTime @default(now())
+
+  @@index([shipmentId])
+  @@index([date])
 }
 
 model ShipmentItem {
@@ -1028,10 +1113,11 @@ model ShipmentItem {
   totalCarton    Int?   @default(0)
   quantity       Int
 
-  // Relations
   shipment     Shipment     @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
   orderProduct OrderProduct @relation(fields: [orderProductId], references: [id])
 
+  @@index([shipmentId])
+  @@index([orderProductId])
   @@map("shipment_items")
 }
 
@@ -1047,7 +1133,6 @@ model ShipmentNoteCategory {
   @@map("shipment_note_categories")
 }
 
-// Tabel Transaksi Catatan per Shipment
 model ShipmentNote {
   id         String @id @default(uuid())
   shipmentId String
@@ -1056,10 +1141,11 @@ model ShipmentNote {
 
   createdAt DateTime @default(now())
 
-  // Relations
   shipment Shipment             @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
   category ShipmentNoteCategory @relation(fields: [categoryId], references: [id])
 
+  @@index([shipmentId])
+  @@index([categoryId])
   @@map("shipment_notes")
 }
 
@@ -1075,6 +1161,9 @@ model DeliveryNote {
   updatedAt      DateTime       @updatedAt
   order          Order          @relation(fields: [orderId], references: [id])
 
+  @@index([orderId])
+  @@index([status])
+  @@index([deliveryDate])
   @@map("delivery_notes")
 }
 
@@ -1096,18 +1185,19 @@ model Quotation {
   manualClientPhone   String?
   manualClientAddress String? @db.Text
 
-  // === FINANCIALS ===
   subTotal       Decimal  @default(0)
   taxAmount      Decimal? @default(0)
   discountAmount Decimal? @default(0)
   totalAmount    Decimal  @default(0)
+
+  // === FIELD BARU: tanggal saat status berubah jadi ACCEPTED (untuk lead time akurat) ===
+  acceptedAt DateTime?
 
   notes QuotationNote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // === RELATIONS ===
   orderId   String?
   order     Order?              @relation(fields: [orderId], references: [id])
   salesId   String?
@@ -1115,6 +1205,13 @@ model Quotation {
   items     QuotationItem[]
   followUps QuotationFollowUp[]
 
+  @@index([clientId])
+  @@index([picId])
+  @@index([salesId])
+  @@index([orderId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([acceptedAt])
   @@map("quotations")
 }
 
@@ -1144,6 +1241,8 @@ model QuotationNote {
   quotation Quotation             @relation(fields: [quotationId], references: [id], onDelete: Cascade)
   category  QuotationNoteCategory @relation(fields: [categoryId], references: [id])
 
+  @@index([quotationId])
+  @@index([categoryId])
   @@map("quotation_notes")
 }
 
@@ -1151,7 +1250,6 @@ model QuotationFollowUp {
   id          String   @id @default(cuid())
   quotationId String
   date        DateTime @default(now())
-  // === FIELD BARU ===
   name        String?
   method      String?
   notes       String?  @db.Text
@@ -1162,37 +1260,10 @@ model QuotationFollowUp {
 
   quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
 
+  @@index([quotationId])
+  @@index([date])
   @@map("quotation_follow_ups")
 }
-
-// model QuotationItem {
-//   id          String @id @default(uuid())
-//   quotationId String
-
-//   productId String?
-//   product   Product? @relation(fields: [productId], references: [id])
-
-//   variantId String?
-//   variant   ProductVariant? @relation(fields: [variantId], references: [id])
-
-//   productName String
-//   description String? @db.Text
-
-//   quantity   Int
-//   unitPrice  Decimal
-//   discount   Decimal? @default(0)
-//   totalPrice Decimal
-
-//   customization Json?
-//   remarks       String?
-
-//   imageUrl      String?
-//   imagePublicId String?
-
-//   quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
-
-//   @@map("quotation_items")
-// }
 
 model QuotationItem {
   id            String              @id @default(cuid())
@@ -1211,6 +1282,9 @@ model QuotationItem {
   quotation     Quotation           @relation(fields: [quotationId], references: [id], onDelete: Cascade)
   tiers         QuotationItemTier[]
 
+  @@index([quotationId])
+  @@index([productId])
+  @@index([variantId])
   @@map("quotation_items")
 }
 
@@ -1224,6 +1298,7 @@ model QuotationItemTier {
   totalPrice      Decimal
   item            QuotationItem @relation(fields: [quotationItemId], references: [id], onDelete: Cascade)
 
+  @@index([quotationItemId])
   @@map("quotation_item_tiers")
 }
 
@@ -1243,6 +1318,8 @@ model CashflowSummary {
   revenues     CashflowRevenue[]
   costs        CashflowCost[]
 
+  @@index([orderId])
+  @@index([baseCurrencyId])
   @@map("cashflow_summaries")
 }
 
@@ -1254,16 +1331,20 @@ model CashflowRevenue {
   unitPrice    Decimal
   quantity     Int
   total        Decimal
-  currency     String
+  // CATATAN: kolom 'currency' String dihapus. Pakai FK currencyCode saja.
   exchangeRate Decimal?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   summary      CashflowSummary @relation(fields: [cashflowId], references: [id])
   product      Product?        @relation(fields: [productId], references: [id])
-  Currency     Currency?       @relation(fields: [currencyCode], references: [code])
+  // Fix: lowercase relation field name (consistency)
+  currency     Currency?       @relation(fields: [currencyCode], references: [code])
   currencyCode String?
 
+  @@index([cashflowId])
+  @@index([productId])
+  @@index([currencyCode])
   @@map("cashflow_revenue")
 }
 
@@ -1275,16 +1356,19 @@ model CashflowCost {
   costPerUnit  Decimal
   quantity     Int
   total        Decimal
-  currency     String
+  // CATATAN: kolom 'currency' String dihapus. Pakai FK currencyCode saja.
   exchangeRate Decimal?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   summary      CashflowSummary @relation(fields: [cashflowId], references: [id])
   vendor       Vendor?         @relation(fields: [vendorId], references: [id])
-  Currency     Currency?       @relation(fields: [currencyCode], references: [code])
+  currency     Currency?       @relation(fields: [currencyCode], references: [code])
   currencyCode String?
 
+  @@index([cashflowId])
+  @@index([vendorId])
+  @@index([currencyCode])
   @@map("cashflow_cost")
 }
 
@@ -1293,9 +1377,9 @@ model CashflowCost {
 // ===============================================
 
 model Currency {
-  code   String @id // ex: IDR, USD
-  symbol String // ex: Rp, $
-  name   String // ex: Rupiah, US Dollar
+  code   String @id
+  symbol String
+  name   String
 
   cashflowSummaries CashflowSummary[]
   cashflowRevenues  CashflowRevenue[]
@@ -1333,10 +1417,10 @@ model Faq {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  // Relasi ke Kategori
   categoryId String
   category   FaqCategory @relation(fields: [categoryId], references: [id])
 
+  @@index([categoryId])
   @@map("faqs")
 }
 
@@ -1384,11 +1468,9 @@ model ClientLogo {
   id   String @id @default(uuid())
   name String
 
-  // === IMAGE ===
   imageUrl      String
   imagePublicId String
 
-  // === CONFIG ===
   altText    String?
   websiteUrl String?
 
@@ -1414,16 +1496,21 @@ model AppSetting {
 
 model FinanceCategory {
   id          String          @id @default(uuid())
-  name        String          @unique // Contoh: "Gaji Karyawan", "Listrik", "Sewa Gedung"
+  name        String          @unique
   slug        String          @unique
   type        TransactionType
   description String?
   isActive    Boolean         @default(true)
+  // === FLAG BARU untuk CAC calculation ===
+  // Tandai kategori yang termasuk biaya marketing/akuisisi pelanggan.
+  isMarketing Boolean         @default(false)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
   transactions FinanceTransaction[]
 
+  @@index([type])
+  @@index([isMarketing])
   @@map("finance_categories")
 }
 
@@ -1449,6 +1536,12 @@ model FinanceTransaction {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([transactionDate])
+  @@index([type])
+  @@index([type, transactionDate])
+  @@index([categoryId])
+  @@index([salesId])
+  @@index([createdBy])
   @@map("finance_transactions")
 }
 
@@ -1463,17 +1556,13 @@ model CustomerProfile {
 
   accountType AccountType @default(INDIVIDUAL)
 
-  // --- Kolom untuk INDIVIDUAL (B2C) ---
-  // fullName diambil dari tabel User (User.name)
   phone String?
 
-  // --- Kolom untuk CORPORATE (B2B) ---
   picName     String?
-  picPhone    String? // Di form namanya picNumbers
+  picPhone    String?
   companyName String?
-  department  String? // Contoh: "Marketing", "Procurement"
+  department  String?
 
-  // Alamat & Data Tambahan
   avatarUrl String?
   addresses CustomerAddress[]
   carts     Cart[]
@@ -1482,6 +1571,7 @@ model CustomerProfile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([accountType])
   @@map("customer_profiles")
 }
 
@@ -1518,6 +1608,8 @@ model CartItem {
   updatedAt DateTime @updatedAt
 
   @@unique([cartId, productId, variantId])
+  @@index([productId])
+  @@index([variantId])
   @@map("cart_items")
 }
 
@@ -1538,6 +1630,7 @@ model CustomerAddress {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
+  @@index([profileId])
   @@map("customer_addresses")
 }
 
@@ -1564,6 +1657,9 @@ model WebOrder {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
+  @@index([profileId])
+  @@index([status])
+  @@index([createdAt])
   @@map("web_orders")
 }
 
@@ -1583,6 +1679,9 @@ model WebOrderItem {
   customization Json?
   notes         String?
 
+  @@index([webOrderId])
+  @@index([productId])
+  @@index([variantId])
   @@map("web_order_items")
 }
 
@@ -1592,7 +1691,7 @@ model WebOrderItem {
 
 model ArticleCategory {
   id          String   @id @default(uuid())
-  name        String   @unique // contoh: "Tutorial", "Tips & Trik"
+  name        String   @unique
   slug        String   @unique
   description String?  @db.Text
   isActive    Boolean  @default(true)
@@ -1622,7 +1721,6 @@ model Article {
   authorId           String
   author             User      @relation(fields: [authorId], references: [id])
 
-  // Relasi Kategori
   categoryId      String
   category        ArticleCategory  @relation(fields: [categoryId], references: [id])
   articleTags     ArticleTagMap[]
@@ -1632,6 +1730,10 @@ model Article {
   updatedAt       DateTime         @updatedAt
   seo             ArticleSEO?
 
+  @@index([authorId])
+  @@index([categoryId])
+  @@index([published])
+  @@index([publishedAt])
   @@map("articles")
 }
 
@@ -1643,6 +1745,7 @@ model ArticleProduct {
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@id([articleId, productId])
+  @@index([productId])
   @@map("article_products")
 }
 
@@ -1659,6 +1762,7 @@ model ArticleBanner {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([articleId])
   @@map("article_banners")
 }
 
@@ -1679,6 +1783,7 @@ model ArticleTagMap {
   articleTag ArticleTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([articleId, tagId])
+  @@index([tagId])
   @@map("article_tag_pivot")
 }
 
@@ -1734,6 +1839,7 @@ model Portfolio {
   eventCategory   EventCategory? @relation(fields: [eventCategoryId], references: [id])
   eventCategoryId String?
 
+  @@index([eventCategoryId])
   @@map("portfolios")
 }
 
@@ -1764,6 +1870,7 @@ model ContactMessage {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([isRead])
   @@map("contact_messages")
 }
 
