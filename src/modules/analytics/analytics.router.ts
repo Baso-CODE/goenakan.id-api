@@ -45,12 +45,12 @@ export class AnalyticsRouter {
     // ENDPOINT TAB 4: OPERATIONS (Template untuk dikerjakan nanti)
     // URL: GET /api/analytics/operations?range=...
     // =========================================================================
-    // this.router.get(
-    //   "/operations",
-    //   this.nextAuthMiddleware.verifyNextAuthToken,
-    //   verifyRole(["SUPER_ADMIN"]),
-    //   this.analyticsController.getOperations,
-    // );
+    this.router.get(
+      "/operations",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.analyticsController.getOpsAnalytics,
+    );
   };
 
   getRouter(): Router {

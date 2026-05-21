@@ -1748,27 +1748,27 @@ export class ProductService {
 
     return result;
   }
-
   // === GET ALL PRODUCTS PUBLIC (WITH PAGINATION, SEARCH, AND ADVANCED FILTERS) ===
   async getAllProductsPublic(query: {
     page?: number;
     take?: number;
     search?: string;
-    categoryId?: string; // Biasanya dipakai Admin
-    category?: string; // Biasanya dipakai Client (Nama Kategori)
+    categoryId?: string;
+    category?: string;
     isCustom?: boolean | string;
-    color?: string; // Filter Client
-    size?: string; // Filter Client
-    price?: string; // Filter Client
-    availability?: string; // Filter Client
-    sort?: string; // Filter Client
+    // ✨ color dan size dihapus dari sini
+    minPrice?: string;
+    maxPrice?: string;
+    attributes?: string; // ✨ PARAMETER BARU UNTUK SEMUA ATRIBUT
+    availability?: string;
+    sort?: string;
   }) {
     const where: any = {};
 
     // 1. Filter Pencarian (Search)
     if (query.search) {
       where.OR = [
-        { name: { contains: query.search } }, // Asumsi nama produk tetap 'name' bukan 'name_id'
+        { name: { contains: query.search } },
         { sku: { contains: query.search } },
       ];
     }
@@ -1782,72 +1782,86 @@ export class ProductService {
       }
     }
 
-    // 3. Filter Kategori (Mendukung Admin: categoryId, atau Client: category name)
+    // 3. Filter Kategori
     if (query.categoryId) {
       where.categoryId = query.categoryId;
     } else if (query.category && query.category !== "all") {
-      // Ingat: Tabel kategori kita sekarang pakai name_id
       where.category = {
         name_id: { equals: query.category },
       };
     }
 
-    // 4. Filter Attribute (Warna & Ukuran) menggunakan Relasi Prisma
-    if (
-      (query.color && query.color !== "all") ||
-      (query.size && query.size !== "all")
-    ) {
-      where.AND = []; // Siapkan array AND untuk kondisi multiple attributes
+    // ✨ 4. LOGIKA BARU: Filter Semua Atribut Secara Dinamis (Mendukung Produk Base & Varian)
+    if (query.attributes) {
+      try {
+        const parsedAttrs = JSON.parse(query.attributes);
 
-      if (query.color && query.color !== "all") {
-        where.AND.push({
-          attributeValues: {
-            some: {
-              attributeValue: { value: query.color },
-              // Sesuaikan "Color" dengan nama attribute di database kamu (misal: "Warna")
-              attribute: { name: "Color" },
-            },
-          },
-        });
-      }
+        for (const [attrName, attrValue] of Object.entries(parsedAttrs)) {
+          if (attrValue && attrValue !== "all") {
+            if (!where.AND) where.AND = [];
 
-      if (query.size && query.size !== "all") {
-        where.AND.push({
-          attributeValues: {
-            some: {
-              attributeValue: { value: query.size },
-              // Sesuaikan "Size" dengan nama attribute di database kamu (misal: "Ukuran")
-              attribute: { name: "Size" },
-            },
-          },
-        });
+            // Kita gunakan OR agar Prisma mencari di level Product ATAU level Variant
+            where.AND.push({
+              OR: [
+                // Pengecekan 1: Cari di atribut produk utama
+                {
+                  attributeValues: {
+                    some: {
+                      attributeValue: {
+                        value: String(attrValue),
+                        // ✨ PERBAIKAN: Masukkan pengecekan nama atribut ke DALAM attributeValue
+                        attribute: { name: attrName },
+                      },
+                    },
+                  },
+                },
+                // Pengecekan 2: Cari di atribut varian produk
+                {
+                  productVariants: {
+                    some: {
+                      attributeValues: {
+                        some: {
+                          attributeValue: {
+                            value: String(attrValue),
+                            // ✨ PERBAIKAN: Masukkan pengecekan nama atribut ke DALAM attributeValue
+                            attribute: { name: attrName },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              ],
+            });
+          }
+        }
+      } catch (error) {
+        console.error("Gagal membaca filter attributes:", error);
       }
     }
 
-    // 5. Filter Rentang Harga (Base Price)
-    if (query.price && query.price !== "all") {
-      if (query.price === "under_20000") {
-        where.basePrice = { lt: 20000 };
-      } else if (query.price === "20000_50000") {
-        where.basePrice = { gte: 20000, lte: 50000 };
-      } else if (query.price === "above_50000") {
-        where.basePrice = { gt: 50000 };
+    // ✨ 5. LOGIKA BARU: Filter Rentang Harga Spesifik (Min & Max Price)
+    if (query.minPrice || query.maxPrice) {
+      where.basePrice = {};
+      if (query.minPrice) {
+        where.basePrice.gte = Number(query.minPrice); // Minimal
+      }
+      if (query.maxPrice) {
+        where.basePrice.lte = Number(query.maxPrice); // Maksimal
       }
     }
 
     // 6. Filter Ketersediaan (Availability / Stock)
     if (query.availability && query.availability !== "all") {
-      // CATATAN: Ganti 'stock' dengan field aktual di schema kamu (misal qty, inventory, atau isAvailable)
-      // Jika kamu belum punya field stock, kamu bisa mengabaikan blok ini sementara.
       if (query.availability === "in_stock") {
-        // where.stock = { gt: 0 };
+        where.stock = { gt: 0 };
       } else if (query.availability === "out_of_stock") {
-        // where.stock = { equals: 0 };
+        where.stock = { equals: 0 };
       }
     }
 
     // 7. Pengurutan Data (Sorting)
-    let orderBy: any = { createdAt: "desc" }; // Default pengurutan
+    let orderBy: any = { createdAt: "desc" };
 
     if (query.sort) {
       switch (query.sort) {
@@ -1861,8 +1875,7 @@ export class ProductService {
           orderBy = { basePrice: "desc" };
           break;
         case "best_selling":
-          // CATATAN: Jika kamu punya kolom 'sold', gunakan ini. Jika tidak, fallback ke createdAt
-          // orderBy = { sold: "desc" };
+          // Prisma belum mendukung sort agregasi. Biarkan default.
           break;
       }
     }
@@ -1880,16 +1893,13 @@ export class ProductService {
         orderBy,
         include: {
           category: true,
-          // ✨ 1. Ambil 1 gambar utama (Featured) untuk Product Card
           images: {
             take: 1,
             orderBy: { isFeatured: "desc" },
           },
-          // ✨ 2. Ambil Price Tiers untuk harga Bulk & Min Order
           priceTiers: {
             orderBy: { minQuantity: "asc" },
           },
-          // ✨ 3. Ambil data Order untuk menghitung berapa banyak yang sudah terjual
           orderProducts: {
             select: { quantity: true },
           },
@@ -1897,23 +1907,18 @@ export class ProductService {
       }),
     ]);
 
+    // Format Data...
     const formattedData = rawData.map((product) => {
-      // Hitung Total Terjual (Jumlahkan semua quantity dari OrderProduct)
-      // *Jika schema OrderProduct kamu menggunakan nama field lain untuk jumlah barang, ganti 'quantity' dengan field tersebut.
       const totalSold = product.orderProducts.reduce(
         (sum, order) => sum + (order.quantity || 1),
         0,
       );
 
-      // Konversi harga dasar
       const regularPrice = Number(product.basePrice);
-
-      // Hitung Harga Grosir (Bulk Price) dan Minimal Order
       let bulkPrice = regularPrice;
       let minOrder = 1;
 
       if (product.priceTiers && product.priceTiers.length > 0) {
-        // Ambil harga yang paling murah dari Tiers (Biasanya tier dengan qty terbanyak)
         const cheapestTier = [...product.priceTiers].sort(
           (a, b) => Number(a.price) - Number(b.price),
         )[0];
@@ -1922,7 +1927,6 @@ export class ProductService {
         minOrder = cheapestTier.minQuantity;
       }
 
-      // Ambil Image URL
       const imageUrl =
         product.images.length > 0
           ? product.images[0].url
@@ -1936,7 +1940,6 @@ export class ProductService {
         bulkPrice: bulkPrice,
         minOrder: minOrder,
         sold: totalSold,
-        // --- Data pendukung lainnya ---
         isCustom: product.isCustom,
         categoryId: product.categoryId,
         categoryName: product.category?.name_id || "",
@@ -1944,11 +1947,7 @@ export class ProductService {
       };
     });
 
-    const meta = this.pagination.generateMeta({
-      count,
-      page,
-      take,
-    });
+    const meta = this.pagination.generateMeta({ count, page, take });
 
     return { data: formattedData, meta };
   }
@@ -2324,5 +2323,26 @@ export class ProductService {
       console.error(`❌ Error fetching related products for (${slug}):`, error);
       throw error;
     }
+  }
+
+  async getProductFilterOptions() {
+    const categories = await this.prisma.productCategory.findMany({
+      select: { id: true, name_id: true },
+      orderBy: { name_id: "asc" },
+    });
+
+    const attributes = await this.prisma.attribute.findMany({
+      include: {
+        values: { select: { id: true, value: true } },
+      },
+    });
+
+    return {
+      categories: categories.map((c) => ({ label: c.name_id, value: c.id })),
+      attributes: attributes.map((attr) => ({
+        name: attr.name,
+        options: attr.values.map((v) => ({ label: v.value, value: v.value })),
+      })),
+    };
   }
 }

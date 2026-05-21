@@ -76,11 +76,12 @@ export class ProductController {
         categoryId,
         isCustom,
         category,
-        color,
-        size,
-        price,
+        // ✨ color dan size sudah dihapus dari sini
+        minPrice,
+        maxPrice,
         availability,
         sort,
+        attributes, // ✨ TAMBAHAN: Tangkap attributes berupa JSON string
       } = req.query;
 
       const products = await this.productService.getAllProductsPublic({
@@ -90,13 +91,12 @@ export class ProductController {
         categoryId: categoryId as string,
         isCustom:
           typeof isCustom === "string" ? isCustom === "true" : undefined,
-
         category: category as string,
-        color: color as string,
-        size: size as string,
-        price: price as string,
+        minPrice: minPrice as string,
+        maxPrice: maxPrice as string,
         availability: availability as string,
         sort: sort as string,
+        attributes: attributes as string, // ✨ TAMBAHAN: Teruskan ke service
       });
 
       res.status(200).json(products);
@@ -480,6 +480,20 @@ export class ProductController {
         success: true,
         data: related,
       });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === GET FILTER PRODUCTS ===
+  getFIlterProducts = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const result = await this.productService.getProductFilterOptions();
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

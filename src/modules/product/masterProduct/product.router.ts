@@ -46,6 +46,10 @@ export class ProductRouter {
     // GET ALL PRODUCTS PUBLIC
     this.router.get("/public", this.productController.getAllProductsPublic);
     this.router.get(
+      "/public/filters",
+      this.productController.getFIlterProducts,
+    );
+    this.router.get(
       "/public/:slug",
       this.productController.getProductBySlugPublic,
     );

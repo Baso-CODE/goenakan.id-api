@@ -387,6 +387,8 @@ export class QuotationService {
 
     let maxSequence = 0;
     for (const q of allQuotations) {
+      if (!q.quotationNumber) continue;
+
       const parts = q.quotationNumber.split("_");
       if (parts.length >= 2) {
         const num = parseInt(parts[1], 10);
