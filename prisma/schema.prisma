@@ -1253,7 +1253,7 @@ model CashflowRevenue {
   unitPrice    Decimal
   quantity     Int
   total        Decimal
-  currency     String
+  currency     String   @default("IDR")
   exchangeRate Decimal?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -1274,7 +1274,7 @@ model CashflowCost {
   costPerUnit  Decimal
   quantity     Int
   total        Decimal
-  currency     String
+  currency     String   @default("IDR")
   exchangeRate Decimal?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -1292,10 +1292,9 @@ model CashflowCost {
 // ===============================================
 
 model Currency {
-  code   String @id // ex: IDR, USD
-  symbol String // ex: Rp, $
-  name   String // ex: Rupiah, US Dollar
-
+  code              String            @id
+  symbol            String
+  name              String
   cashflowSummaries CashflowSummary[]
   cashflowRevenues  CashflowRevenue[]
   cashflowCosts     CashflowCost[]
