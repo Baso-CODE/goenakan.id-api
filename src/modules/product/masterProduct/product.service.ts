@@ -6,7 +6,7 @@ import { SlugService } from "../../../utils/genereateSlug";
 import { CloudinaryService } from "../../cloudinary/cloudinary.service";
 import { PaginationService } from "../../pagination/pagination.service";
 import { PrismaService } from "../../prisma/prisma.service";
-import { CreateProductDTO } from "./dto/createProduct.dto";
+import { CreatePriceTierDTO, CreateProductDTO } from "./dto/createProduct.dto";
 import { ProductSeoDTO } from "./dto/productSEO.dto";
 import { UpdateProductAttributesDTO } from "./dto/updateAttributes.dto";
 import { UpdateProductCoreDTO } from "./dto/updateProduct.dto";
@@ -73,7 +73,6 @@ export class ProductService {
         throw new ApiError("Item Name yang dipilih tidak ditemukan", 404);
       }
 
-      // Pastikan Item Name ini benar-benar berasal dari Product Category yang dipilih
       if (itemNameData.itemCategory.productCategoryId !== data.categoryId) {
         throw new ApiError(
           "Hirarki tidak valid: Item Name tidak termasuk dalam Product Category yang dipilih",
@@ -82,19 +81,16 @@ export class ProductService {
       }
     }
 
-    // --- Validasi Price Tiers (Tidak Berubah) ---
-    if (data.priceTiers && data.priceTiers.length > 0) {
-      const sortedTiers = data.priceTiers.sort(
-        (a, b) => a.minQuantity - b.minQuantity,
-      );
-
+    // --- Helper untuk Validasi Price Tiers (Bisa dipakai ulang) ---
+    const validateTiers = (tiers: CreatePriceTierDTO[], context: string) => {
+      const sortedTiers = tiers.sort((a, b) => a.minQuantity - b.minQuantity);
       for (let i = 0; i < sortedTiers.length; i++) {
         const current = sortedTiers[i];
         const next = sortedTiers[i + 1];
 
         if (current.maxQuantity && current.minQuantity > current.maxQuantity) {
           throw new ApiError(
-            `Invalid tier range: ${current.minQuantity} - ${current.maxQuantity}`,
+            `Invalid tier range in ${context}: ${current.minQuantity} - ${current.maxQuantity}`,
             400,
           );
         }
@@ -105,11 +101,25 @@ export class ProductService {
           next.minQuantity <= current.maxQuantity
         ) {
           throw new ApiError(
-            `Price tiers overlap between range ending at ${current.maxQuantity} and starting at ${next.minQuantity}`,
+            `Price tiers overlap in ${context} between range ending at ${current.maxQuantity} and starting at ${next.minQuantity}`,
             400,
           );
         }
       }
+    };
+
+    // --- Validasi Price Tiers Produk Utama ---
+    if (data.priceTiers && data.priceTiers.length > 0) {
+      validateTiers(data.priceTiers, "Base Product");
+    }
+
+    // ✨ TAMBAHAN BARU: Validasi Price Tiers untuk setiap Varian
+    if (data.variantImagesMetadata && data.variantImagesMetadata.length > 0) {
+      data.variantImagesMetadata.forEach((meta) => {
+        if (meta.priceTiers && meta.priceTiers.length > 0) {
+          validateTiers(meta.priceTiers, `Variant Index ${meta.variantIndex}`);
+        }
+      });
     }
 
     const {
@@ -180,16 +190,10 @@ export class ProductService {
             itemCategoryId: data.itemCategoryId,
             itemNameId: data.itemNameId,
             slug,
-
-            // Relasi Tag
             tags:
               tagIds.length > 0
-                ? {
-                    connect: tagIds.map((id) => ({ id })),
-                  }
+                ? { connect: tagIds.map((id) => ({ id })) }
                 : undefined,
-
-            // Relasi Price Tiers
             priceTiers:
               priceTiers.length > 0
                 ? {
@@ -231,13 +235,9 @@ export class ProductService {
         if (attributes.length > 0) {
           const allAttributeValues = await this.prisma.attributeValue.findMany({
             where: {
-              id: {
-                in: attributes.flatMap((attr) => attr.valueIds),
-              },
+              id: { in: attributes.flatMap((attr) => attr.valueIds) },
             },
-            include: {
-              attribute: true,
-            },
+            include: { attribute: true },
           });
 
           const listOfValueGroups = attributes.map((attr) => attr.valueIds);
@@ -257,11 +257,9 @@ export class ProductService {
               .filter(Boolean);
 
             const variantName = variantNameParts.join(" • ");
-
             const meta = variantImagesMetadata.find(
               (m) => m.variantIndex === index,
             );
-
             const variantPrice = meta?.price
               ? meta.price.toString()
               : data.basePrice.toString();
@@ -284,6 +282,19 @@ export class ProductService {
                   })),
                 },
               },
+              // ✨ TAMBAHAN BARU: Memasukkan Price Tiers Varian jika ada
+              priceTiers:
+                meta?.priceTiers && meta.priceTiers.length > 0
+                  ? {
+                      createMany: {
+                        data: meta.priceTiers.map((tier) => ({
+                          minQuantity: tier.minQuantity,
+                          maxQuantity: tier.maxQuantity ?? null,
+                          price: tier.price.toString(),
+                        })),
+                      },
+                    }
+                  : undefined,
             };
           });
 
@@ -305,7 +316,6 @@ export class ProductService {
             if (!variant) continue;
 
             const filesForVariant = files.variantImages[variantIndex] || [];
-
             if (filesForVariant.length === 0) continue;
 
             const uploadedVariantImages = [];
@@ -705,8 +715,8 @@ export class ProductService {
       });
       variantIndexCounter = remainingVariants + 1;
     }
-    // 4. PROCESS EACH VARIANT (CREATE/UPDATE)
 
+    // 4. PROCESS EACH VARIANT (CREATE/UPDATE)
     for (let index = 0; index < variants.length; index++) {
       const v = variants[index];
 
@@ -720,6 +730,7 @@ export class ProductService {
           finalSku = `${productCore.sku}-VAR-${variantIndexCounter}`;
           variantIndexCounter++;
         }
+
         const created = await this.prisma.productVariant.create({
           data: {
             productId,
@@ -732,6 +743,19 @@ export class ProductService {
             width: v.width ?? null,
             height: v.height ?? null,
             length: v.length ?? null,
+            priceTiers:
+              v.priceTiers && v.priceTiers.length > 0
+                ? {
+                    createMany: {
+                      data: v.priceTiers.map((tier) => ({
+                        minQuantity: tier.minQuantity,
+                        maxQuantity: tier.maxQuantity ?? null,
+                        price: tier.price.toString(),
+                        productId: null,
+                      })),
+                    },
+                  }
+                : undefined,
           },
         });
         variantId = created.id;
@@ -740,6 +764,7 @@ export class ProductService {
           const existing = existingVariants.find((e) => e.id === variantId);
           finalSku = existing?.sku ?? "";
         }
+
         await this.prisma.productVariant.update({
           where: { id: variantId },
           data: {
@@ -754,6 +779,23 @@ export class ProductService {
             length: v.length ?? null,
           },
         });
+
+        await this.prisma.priceTier.deleteMany({
+          where: { variantId: variantId },
+        });
+
+        // 2. Buat price tier baru jika ada
+        if (v.priceTiers && v.priceTiers.length > 0) {
+          await this.prisma.priceTier.createMany({
+            data: v.priceTiers.map((tier) => ({
+              variantId: variantId,
+              minQuantity: tier.minQuantity,
+              maxQuantity: tier.maxQuantity ?? null,
+              price: tier.price.toString(),
+              productId: null,
+            })),
+          });
+        }
       }
 
       await this.prisma.productVariantAttributeValue.deleteMany({
@@ -770,7 +812,6 @@ export class ProductService {
 
       const FEImages = v.images;
       const allUploadedFiles = files.variantImages || [];
-
       const uploadedResults = [];
 
       for (let i = 0; i < FEImages.length; i++) {
@@ -1060,7 +1101,12 @@ export class ProductService {
         category: true,
         itemCategory: true,
         itemName: true,
-        priceTiers: true,
+
+        // Price Tiers untuk Produk Utama
+        priceTiers: {
+          orderBy: { minQuantity: "asc" },
+        },
+
         images: true,
         videos: true,
         tags: true,
@@ -1079,6 +1125,11 @@ export class ProductService {
         productVariants: {
           orderBy: { createdAt: "asc" },
           include: {
+            // ✨ TAMBAHAN BARU: Mengambil Price Tiers khusus Varian
+            priceTiers: {
+              orderBy: { minQuantity: "asc" },
+            },
+
             images: {
               orderBy: { isFeatured: "desc" },
             },

@@ -250,13 +250,26 @@ export class ProductCategoryService {
           id: true,
           name_id: true,
           name_en: true,
+          // ✨ TAMBAHAN BARU: Tarik data anak (ItemCategory) sekalian
+          itemCategories: {
+            select: {
+              id: true,
+              name: true,
+            },
+            orderBy: {
+              name: "asc", // Agar anak kategori juga rapi sesuai abjad
+            },
+          },
         },
       });
 
+      // Format ulang data agar rapi saat dikirim ke Frontend
       const formattedCategories = categories.map((cat) => ({
         id: cat.id,
         name: cat.name_id,
         name_en: cat.name_en,
+        // ✨ TAMBAHAN BARU: Masukkan anak kategori ke hasil akhir
+        itemCategories: cat.itemCategories,
       }));
 
       return formattedCategories;
@@ -357,7 +370,6 @@ export class ProductCategoryService {
           slug: true,
           image: true,
 
-          // 🔄 2. Ambil kedua versi bahasa dari database
           name_id: true,
           name_en: true,
           description_id: true,

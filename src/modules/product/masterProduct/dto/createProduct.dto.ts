@@ -66,6 +66,12 @@ export class VariantImageMetadataDTO {
   @Type(() => Number)
   @Min(0, { message: "length cannot be negative" })
   length?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreatePriceTierDTO)
+  priceTiers?: CreatePriceTierDTO[] = [];
 }
 
 export class CreateProductAttributeDTO {

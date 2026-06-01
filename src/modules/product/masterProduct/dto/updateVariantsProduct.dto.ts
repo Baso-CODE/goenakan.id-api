@@ -13,6 +13,11 @@ export class UpdateProductVariantsDTO {
     length?: number;
     attributeValueIds: string[];
     _isDeleted?: boolean;
+    priceTiers?: {
+      minQuantity: number;
+      maxQuantity?: number | null;
+      price: string | number;
+    }[];
     images: {
       id?: string;
       url: string;

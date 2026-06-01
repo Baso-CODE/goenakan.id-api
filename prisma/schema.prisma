@@ -512,6 +512,7 @@ model ProductVariant {
   quotationItems  QuotationItem[]
   cartItems       CartItem[]
   webOrderItems   WebOrderItem[]
+  priceTiers      PriceTier[]
 
   @@map("product_variants")
 }
@@ -534,10 +535,13 @@ model PriceTier {
   minQuantity Int      @default(1)
   maxQuantity Int?
   price       Decimal
-  productId   String
-  product     Product  @relation(fields: [productId], references: [id])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now()) @updatedAt
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  variantId String?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @default(now()) @updatedAt
 
   @@map("price_tiers")
 }
@@ -1546,7 +1550,7 @@ model WebOrder {
   guestPhone      String?
   shippingAddress Json
   subtotal        Decimal
-  shippingCost    Decimal
+  shippingCost    Decimal?
   customerNote    String?          @db.Text
   taxAmount       Decimal?         @default(0)
   totalAmount     Decimal
