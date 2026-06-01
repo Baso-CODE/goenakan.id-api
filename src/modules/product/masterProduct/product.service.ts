@@ -1805,12 +1805,13 @@ export class ProductService {
     take?: number;
     search?: string;
     categoryId?: string;
-    category?: string;
+    category?: string; // Menyaring berdasarkan slug atau name dari ProductCategory
+    itemCategory?: string; // ✨ BARU: Menyaring berdasarkan slug atau nama ItemCategory
+    itemName?: string; // ✨ BARU: Menyaring berdasarkan slug atau nama ItemName
     isCustom?: boolean | string;
-    // ✨ color dan size dihapus dari sini
     minPrice?: string;
     maxPrice?: string;
-    attributes?: string; // ✨ PARAMETER BARU UNTUK SEMUA ATRIBUT
+    attributes?: string; // Tetap dipertahankan untuk jaga-jaga
     availability?: string;
     sort?: string;
   }) {
@@ -1833,16 +1834,42 @@ export class ProductService {
       }
     }
 
-    // 3. Filter Kategori
+    // 3. Filter Hirarki Kategori (Product Category, Item Category, Item Name)
+
+    // A. Product Category
     if (query.categoryId) {
       where.categoryId = query.categoryId;
     } else if (query.category && query.category !== "all") {
+      // Kita pakai OR agar mendukung pencarian via Slug atau Name
       where.category = {
-        name_id: { equals: query.category },
+        OR: [
+          { name_id: { equals: query.category } },
+          { slug: { equals: query.category } },
+        ],
       };
     }
 
-    // ✨ 4. LOGIKA BARU: Filter Semua Atribut Secara Dinamis (Mendukung Produk Base & Varian)
+    // B. Item Category (Anak Kategori)
+    if (query.itemCategory && query.itemCategory !== "all") {
+      where.itemCategory = {
+        OR: [
+          { name: { equals: query.itemCategory } },
+          { slug: { equals: query.itemCategory } },
+        ],
+      };
+    }
+
+    // C. Item Name (Cucu Kategori)
+    if (query.itemName && query.itemName !== "all") {
+      where.itemName = {
+        OR: [
+          { name: { equals: query.itemName } },
+          { slug: { equals: query.itemName } },
+        ],
+      };
+    }
+
+    // 4. LOGIKA LAMA: Filter Semua Atribut Secara Dinamis (Tetap Dipertahankan)
     if (query.attributes) {
       try {
         const parsedAttrs = JSON.parse(query.attributes);
@@ -1851,22 +1878,18 @@ export class ProductService {
           if (attrValue && attrValue !== "all") {
             if (!where.AND) where.AND = [];
 
-            // Kita gunakan OR agar Prisma mencari di level Product ATAU level Variant
             where.AND.push({
               OR: [
-                // Pengecekan 1: Cari di atribut produk utama
                 {
                   attributeValues: {
                     some: {
                       attributeValue: {
                         value: String(attrValue),
-                        // ✨ PERBAIKAN: Masukkan pengecekan nama atribut ke DALAM attributeValue
                         attribute: { name: attrName },
                       },
                     },
                   },
                 },
-                // Pengecekan 2: Cari di atribut varian produk
                 {
                   productVariants: {
                     some: {
@@ -1874,7 +1897,6 @@ export class ProductService {
                         some: {
                           attributeValue: {
                             value: String(attrValue),
-                            // ✨ PERBAIKAN: Masukkan pengecekan nama atribut ke DALAM attributeValue
                             attribute: { name: attrName },
                           },
                         },
@@ -1891,7 +1913,7 @@ export class ProductService {
       }
     }
 
-    // ✨ 5. LOGIKA BARU: Filter Rentang Harga Spesifik (Min & Max Price)
+    // 5. Filter Rentang Harga Spesifik (Min & Max Price)
     if (query.minPrice || query.maxPrice) {
       where.basePrice = {};
       if (query.minPrice) {
@@ -1926,7 +1948,6 @@ export class ProductService {
           orderBy = { basePrice: "desc" };
           break;
         case "best_selling":
-          // Prisma belum mendukung sort agregasi. Biarkan default.
           break;
       }
     }
@@ -1944,6 +1965,8 @@ export class ProductService {
         orderBy,
         include: {
           category: true,
+          itemCategory: true, // ✨ BARU: Pastikan kita menyertakan data ini di response
+          itemName: true, // ✨ BARU: Pastikan kita menyertakan data ini di response
           images: {
             take: 1,
             orderBy: { isFeatured: "desc" },
@@ -1994,6 +2017,9 @@ export class ProductService {
         isCustom: product.isCustom,
         categoryId: product.categoryId,
         categoryName: product.category?.name_id || "",
+        // ✨ BARU: Sisipkan nama kategori turunannya (Jika nanti dibutuhkan di frontend)
+        itemCategoryName: product.itemCategory?.name || null,
+        itemNameString: product.itemName?.name || null,
         slug: product.slug,
       };
     });
@@ -2377,8 +2403,25 @@ export class ProductService {
   }
 
   async getProductFilterOptions() {
+    // ✨ 1. Ambil Kategori secara bersarang (Nested)
     const categories = await this.prisma.productCategory.findMany({
-      select: { id: true, name_id: true },
+      select: {
+        id: true,
+        name_id: true,
+        slug: true,
+        itemCategories: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            itemNames: {
+              select: { id: true, name: true, slug: true },
+              orderBy: { name: "asc" },
+            },
+          },
+          orderBy: { name: "asc" },
+        },
+      },
       orderBy: { name_id: "asc" },
     });
 
@@ -2389,7 +2432,22 @@ export class ProductService {
     });
 
     return {
-      categories: categories.map((c) => ({ label: c.name_id, value: c.id })),
+      // ✨ 2. Format data agar rapi dan hierarkis
+      categories: categories.map((c) => ({
+        label: c.name_id,
+        value: c.slug, // Pakai slug agar URL cantik
+        id: c.id,
+        itemCategories: c.itemCategories.map((ic) => ({
+          label: ic.name,
+          value: ic.slug,
+          id: ic.id,
+          itemNames: ic.itemNames.map((inm) => ({
+            label: inm.name,
+            value: inm.slug,
+            id: inm.id,
+          })),
+        })),
+      })),
       attributes: attributes.map((attr) => ({
         name: attr.name,
         options: attr.values.map((v) => ({ label: v.value, value: v.value })),

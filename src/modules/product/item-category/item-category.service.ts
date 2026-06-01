@@ -70,34 +70,50 @@ export class ItemCategoryService {
   async createItemCategory(data: CreateItemCategoryDTO) {
     const slug = this.slug.create(data.name);
 
-    // Autogenerate 3 huruf kapital
-    const generatedCode = data.name.substring(0, 3).toUpperCase();
+    // 1. Ambil 3 huruf kapital pertama
+    const prefix = data.name.substring(0, 3).toUpperCase();
+    let generatedCode = prefix;
 
-    // Validasi apakah kategori induk ada
+    // 2. Cek apakah kategori induk ada
     const parentExists = await this.prisma.productCategory.findUnique({
       where: { id: data.productCategoryId },
     });
-    if (!parentExists)
+    if (!parentExists) {
       throw new ApiError("Product Category (Parent) not found", 404);
+    }
+
+    // ✨ 3. LOGIKA PINTAR: Cek apakah kode sudah terpakai, jika ya tambahkan angka berurut
+    let codeExists = await this.prisma.itemCategory.findUnique({
+      where: { code: generatedCode },
+    });
+
+    let counter = 1;
+    while (codeExists) {
+      generatedCode = `${prefix}${counter}`; // Contoh: IPH1, IPH2, IPH3
+      codeExists = await this.prisma.itemCategory.findUnique({
+        where: { code: generatedCode },
+      });
+      counter++;
+    }
 
     try {
       return await this.prisma.itemCategory.create({
         data: {
           name: data.name,
           slug,
-          code: generatedCode,
+          code: generatedCode, // ✨ Sekarang menggunakan kode yang pasti unik
           description: data.description,
           productCategoryId: data.productCategoryId,
         },
       });
     } catch (error: any) {
+      // Jika masih error P2002 di sini, berarti slug-nya yang duplikat
       if (error.code === "P2002") {
-        throw new ApiError("Item category code or slug already exists", 400);
+        throw new ApiError("Item category name or slug already exists", 400);
       }
       throw new ApiError("Failed to create item category", 500);
     }
   }
-
   // === 3. GET BY ID ===
   async getItemCategoryById(id: string) {
     const itemCategory = await this.prisma.itemCategory.findUnique({
