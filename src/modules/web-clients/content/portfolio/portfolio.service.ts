@@ -39,6 +39,16 @@ export class PortfolioService {
       skip: (Number(query.page || 1) - 1) * Number(query.take || 10),
       take: Number(query.take || 10),
       orderBy: { displayOrder: "asc" },
+
+      // ✨ TAMBAHAN BARU: Mengambil data kategori acara yang berelasi
+      include: {
+        eventCategory: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+      },
     });
 
     const meta = this.pagination.generateMeta({
@@ -49,7 +59,6 @@ export class PortfolioService {
 
     return { data, meta };
   }
-
   // ====================================================================
   // 2. GET BY ID
   // ====================================================================
@@ -91,6 +100,12 @@ export class PortfolioService {
           displayOrder: Number(data.displayOrder || 0),
           // Parsing string dari FormData ke boolean
           isActive: data.isActive ? String(data.isActive) === "true" : true,
+
+          // ✨ TAMBAHAN BARU UNTUK KEBUTUHAN DETAIL CHILDREN
+          orderQuantity:
+            data.orderQuantity !== undefined ? Number(data.orderQuantity) : 0,
+          projectDate: data.projectDate ? new Date(data.projectDate) : null,
+          eventCategoryId: data.eventCategoryId || null,
         },
       });
 
@@ -174,6 +189,19 @@ export class PortfolioService {
             data.isActive !== undefined
               ? String(data.isActive) === "true"
               : existing.isActive,
+
+          // ✨ TAMBAHAN BARU UNTUK KEBUTUHAN DETAIL CHILDREN
+          orderQuantity:
+            data.orderQuantity !== undefined
+              ? Number(data.orderQuantity)
+              : existing.orderQuantity,
+          projectDate: data.projectDate
+            ? new Date(data.projectDate)
+            : existing.projectDate,
+          eventCategoryId:
+            data.eventCategoryId !== undefined
+              ? data.eventCategoryId || null
+              : existing.eventCategoryId,
         },
       });
 

@@ -15,7 +15,7 @@ export class CreateEventCategoryDTO {
   @IsOptional()
   @Type(() => Number)
   @IsNumber({}, { message: "Order count harus berupa angka" })
-  @Min(0)
+  @Min(0, { message: "Order count tidak boleh kurang dari 0" })
   orderCount?: number;
 
   @IsOptional()
@@ -49,4 +49,13 @@ export class UpdateEventCategoryDTO {
   @IsOptional()
   @IsString()
   isActive?: string;
+
+  // ✨ TAMBAHAN: Konsisten dengan DTO Portfolio untuk update gambar
+  @IsOptional()
+  @IsString()
+  image?: string;
+
+  @IsOptional()
+  @IsString()
+  imageId?: string;
 }

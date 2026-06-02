@@ -1,5 +1,11 @@
 import { Type } from "class-transformer";
-import { IsNumber, IsOptional, IsString, Min } from "class-validator";
+import {
+  IsDateString,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+} from "class-validator";
 
 export class UpdatePortfolioDTO {
   @IsOptional()
@@ -13,6 +19,21 @@ export class UpdatePortfolioDTO {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  orderQuantity?: number;
+
+  @IsOptional()
+  @IsDateString()
+  projectDate?: string;
+
+  @IsOptional()
+  @IsString()
+  eventCategoryId?: string;
+  // ✨ AKHIR TAMBAHAN BARU
 
   @IsOptional()
   @Type(() => Number)

@@ -87,16 +87,24 @@ export class EventCategoryService {
         data: {
           title: data.title,
           slug,
-          orderCount: Number(data.orderCount || 0),
+          // ✨ PERBAIKAN: Gunakan pengecekan !== undefined agar angka 0 tetap terbaca dengan benar
+          orderCount:
+            data.orderCount !== undefined ? Number(data.orderCount) : 0,
+          displayOrder:
+            data.displayOrder !== undefined ? Number(data.displayOrder) : 0,
+          isActive:
+            data.isActive !== undefined
+              ? String(data.isActive) === "true"
+              : true,
+
           image: uploadResult.secure_url,
           imageId: uploadResult.public_id,
-          displayOrder: Number(data.displayOrder || 0),
-          isActive: data.isActive ? String(data.isActive) === "true" : true,
         },
       });
 
       return newCategory;
     } catch (error: any) {
+      // ⚠️ ROLLBACK: Jika DB gagal, hapus gambar yang baru saja diupload ke Cloudinary
       if (uploadResult?.public_id) {
         await this.cloudinary.delete(uploadResult.public_id).catch(() => null);
       }
@@ -232,6 +240,62 @@ export class EventCategoryService {
       });
     } catch (error) {
       throw new ApiError("Gagal mengambil data kategori event publik.", 500);
+    }
+  }
+
+  // ====================================================================
+  // 7. GET PUBLIC EVENT CATEGORY BY SLUG (Menampilkan Detail & Children)
+  // ====================================================================
+  async getPublicEventCategoryBySlug(slug: string) {
+    try {
+      const category = await this.prisma.eventCategory.findFirst({
+        where: {
+          slug: slug,
+          isActive: true,
+        },
+        include: {
+          portfolios: {
+            where: { isActive: true },
+            orderBy: { displayOrder: "asc" },
+            select: {
+              id: true,
+              title: true,
+              slug: true,
+              clientName: true,
+              image: true,
+              orderQuantity: true,
+              projectDate: true,
+            },
+          },
+        },
+      });
+
+      if (!category) {
+        throw new ApiError("Kategori event tidak ditemukan.", 404);
+      }
+
+      return category;
+    } catch (error: any) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError("Gagal mengambil detail kategori event.", 500);
+    }
+  }
+
+  // ====================================================================
+  // GET EVENT CATEGORY LIST (Untuk Dropdown di Form Portfolio)
+  // ====================================================================
+  async getEventCategoryList() {
+    try {
+      return await this.prisma.eventCategory.findMany({
+        where: { isActive: true }, // Hanya ambil kategori yang aktif
+        select: {
+          id: true,
+          title: true,
+        },
+        orderBy: { title: "asc" }, // Urutkan sesuai abjad
+      });
+    } catch (error) {
+      throw new ApiError("Gagal mengambil daftar kategori event.", 500);
     }
   }
 }

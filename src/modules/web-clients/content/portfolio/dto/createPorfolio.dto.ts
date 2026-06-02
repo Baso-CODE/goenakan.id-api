@@ -1,5 +1,6 @@
 import { Type } from "class-transformer";
 import {
+  IsDateString,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -19,6 +20,20 @@ export class CreatePortfolioDTO {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({}, { message: "Jumlah order harus berupa angka" })
+  @Min(0, { message: "Jumlah order tidak boleh minus" })
+  orderQuantity?: number;
+
+  @IsOptional()
+  @IsDateString({}, { message: "Format tanggal project tidak valid" })
+  projectDate?: string;
+
+  @IsOptional()
+  @IsString()
+  eventCategoryId?: string;
 
   @IsOptional()
   @Type(() => Number)

@@ -35,6 +35,11 @@ export class EventCategoryRouter {
       "/public",
       this.eventCategoryController.getPublicEventCategories,
     );
+    this.router.get("/list", this.eventCategoryController.getEventCategoryList);
+    this.router.get(
+      "/public/:slug",
+      this.eventCategoryController.getPublicEventCategoryBySlug,
+    );
 
     // ==========================================
     // 2. ADMIN ROUTES (Gunakan Auth & Role)

@@ -1718,23 +1718,9 @@ model BrandClient {
   @@map("brand_clients")
 }
 
-model Portfolio {
-  id              String         @id @default(cuid())
-  title           String
-  slug            String         @unique
-  clientName      String
-  description     String?        @db.Text
-  image           String
-  imageId         String
-  displayOrder    Int            @default(0)
-  isActive        Boolean        @default(true)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  eventCategory   EventCategory? @relation(fields: [eventCategoryId], references: [id])
-  eventCategoryId String?
-
-  @@map("portfolios")
-}
+// ===============================================
+// PORTFOLIO & EVENT CATEGORY SECTION
+// ===============================================
 
 model EventCategory {
   id           String      @id @default(cuid())
@@ -1750,6 +1736,26 @@ model EventCategory {
   portfolios   Portfolio[]
 
   @@map("event_categories")
+}
+
+model Portfolio {
+  id              String         @id @default(cuid())
+  title           String
+  slug            String         @unique
+  clientName      String
+  description     String?        @db.Text
+  image           String
+  imageId         String
+  orderQuantity   Int?           @default(0)
+  projectDate     DateTime?
+  displayOrder    Int            @default(0)
+  isActive        Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  eventCategoryId String?
+  eventCategory   EventCategory? @relation(fields: [eventCategoryId], references: [id], onDelete: SetNull)
+
+  @@map("portfolios")
 }
 
 model ContactMessage {

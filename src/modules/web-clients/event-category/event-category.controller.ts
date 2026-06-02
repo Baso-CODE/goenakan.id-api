@@ -31,6 +31,29 @@ export class EventCategoryController {
   };
 
   // ====================================================================
+  // 2. PUBLIC ENDPOINT DETAIL (Mendapatkan kategori + portfolios)
+  // ====================================================================
+  getPublicEventCategoryBySlug = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { slug } = req.params;
+
+      const result =
+        await this.eventCategoryService.getPublicEventCategoryBySlug(slug);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // ====================================================================
   // 2. ADMIN ENDPOINTS (Backoffice)
   // ====================================================================
 
@@ -134,6 +157,25 @@ export class EventCategoryController {
       res.status(200).json({
         success: true,
         message: "Kategori Event berhasil dihapus",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // ====================================================================
+  // GET EVENT CATEGORY LIST
+  // ====================================================================
+  getEventCategoryList = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const result = await this.eventCategoryService.getEventCategoryList();
+      res.status(200).json({
+        success: true,
         data: result,
       });
     } catch (error) {
