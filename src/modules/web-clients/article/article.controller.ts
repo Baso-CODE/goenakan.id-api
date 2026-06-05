@@ -17,7 +17,6 @@ export class ArticleController {
       const file = req.file as Express.Multer.File;
       const result = await this.articleService.uploadTiptapImage(file);
 
-      // Biasanya editor teks butuh kembalian spesifik berupa URL gambar
       res.status(201).json(result);
     } catch (error) {
       next(error);

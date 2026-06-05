@@ -789,4 +789,31 @@ export class QuotationService {
       items: normalizedItems,
     };
   }
+
+  // ====================================================================
+  // GET QUOTATION REFERENCES (Hanya ID dan Nomor untuk Dropdown Order)
+  // ====================================================================
+  async getQuotationReferences() {
+    try {
+      return await this.prisma.quotation.findMany({
+        where: {
+          status: "ACCEPTED",
+          orderId: null,
+          resultingOrders: {
+            none: {},
+          },
+        },
+        select: {
+          id: true,
+          quotationNumber: true,
+        },
+        orderBy: {
+          quotationNumber: "desc",
+        },
+      });
+    } catch (error) {
+      console.error("🔥 GET QUOTATION REFERENCES ERROR:", error);
+      throw new ApiError("Gagal mengambil daftar referensi quotation.", 500);
+    }
+  }
 }

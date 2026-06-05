@@ -15,23 +15,17 @@ import {
   ValidatorConstraint,
   ValidatorConstraintInterface,
 } from "class-validator";
+
 @ValidatorConstraint({ name: "isValidPrice", async: false })
 export class IsValidPriceConstraint implements ValidatorConstraintInterface {
   validate(value: any, args: ValidationArguments) {
-    // Price harus ada dan merupakan number >= 0
     if (value === null || value === undefined) {
       return false;
     }
-
     const price = Number(value);
-
-    // Validasi: price harus number dan >= 0
     if (isNaN(price) || price < 0) {
       return false;
     }
-
-    // ✅ Allow 0 untuk SAMPLE orders
-    // Number 0 adalah valid
     return true;
   }
 
@@ -39,6 +33,7 @@ export class IsValidPriceConstraint implements ValidatorConstraintInterface {
     return "price must be a number >= 0";
   }
 }
+
 class SampleFollowUpDTO {
   @IsOptional()
   @Type(() => Date)
@@ -65,6 +60,7 @@ class SampleFollowUpDTO {
   @IsBoolean()
   isDone?: boolean;
 }
+
 class OrderProductDTO {
   @IsString()
   productId!: string;
@@ -79,14 +75,12 @@ class OrderProductDTO {
   @IsOptional()
   @IsNumber(
     { allowInfinity: false, allowNaN: false },
-    {
-      message: "price must be a valid number",
-    },
+    { message: "price must be a valid number" },
   )
   @Validate(IsValidPriceConstraint, {
     message: "price must be a number >= 0",
   })
-  price?: number; // ✅ Changed from ! to ?
+  price?: number;
 
   @IsOptional()
   @IsString()
@@ -104,9 +98,39 @@ export class CreateOrderDTO {
   @IsEnum(["SALES", "SAMPLE"])
   salesCategory!: "SALES" | "SAMPLE";
 
+  // 🔄 Diubah menjadi opsional mengikuti perubahan schema Prisma terbaru
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  poNumber!: string;
+  poNumber?: string;
+
+  // ✨ TAMBAHAN BARU: PO Number langsung dari Client
+  @IsOptional()
+  @IsString()
+  clientPoNumber?: string;
+
+  // ✨ TAMBAHAN BARU: Catatan/Keterangan order
+  @IsOptional()
+  @IsString()
+  remark?: string;
+
+  // ✨ TAMBAHAN BARU: Kode mata uang (e.g., 'IDR', 'USD')
+  @IsOptional()
+  @IsString()
+  currencyCode?: string;
+
+  // ✨ TAMBAHAN BARU: ID dokumen Quotation & Sample terdahulu untuk referensi alur order
+  @IsOptional()
+  @IsString()
+  referenceQuotationId?: string;
+
+  @IsOptional()
+  @IsString()
+  referenceSampleId?: string;
+
+  // ✨ TAMBAHAN BARU: Track ID user/staff yang men-create order ini
+  @IsOptional()
+  @IsString()
+  createdById?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -137,6 +161,7 @@ export class CreateOrderDTO {
   @ValidateNested({ each: true })
   @Type(() => SampleFollowUpDTO)
   sampleFollowUps?: SampleFollowUpDTO[];
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => OrderProductDTO)

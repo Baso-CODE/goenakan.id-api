@@ -30,6 +30,25 @@ export class QuotationController {
     }
   };
 
+  // === GET QUOTATION REFERENCES (Hanya ID & Nomor untuk Dropdown Order) ===
+  getQuotationReferences = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      // Panggil fungsi service yang mengembalikan data super ringan
+      const result = await this.quotationService.getQuotationReferences();
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   // === GET BY ID ===
   getById = async (req: Request, res: Response, next: NextFunction) => {
     try {
