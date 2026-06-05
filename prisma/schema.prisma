@@ -163,6 +163,8 @@ model User {
   accounts            Account[]
   client              Client?
   createdOrders       Order[]              @relation("OrderCreatedBy")
+  updatedOrders       Order[]              @relation("OrderUpdatedBy")
+  orders              Order[]
 
   @@map("users")
 }
@@ -868,6 +870,8 @@ model Order {
   sales                Sales?                @relation(fields: [salesId], references: [id])
   createdById          String?
   createdBy            User?                 @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  updatedById          String?
+  updatedBy            User?                 @relation("OrderUpdatedBy", fields: [updatedById], references: [id])
   products             OrderProduct[]
   vendors              OrderVendor[]
   cashflows            Cashflow[]
@@ -878,6 +882,8 @@ model Order {
   quotations           Quotation[]           @relation("OrderQuotations")
   cashflowSummary      CashflowSummary[]
   sampleFollowUps      OrderSampleFollowUp[]
+  user                 User?                 @relation(fields: [userId], references: [id])
+  userId               String?
 
   @@map("orders")
 }

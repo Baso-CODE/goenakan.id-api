@@ -21,20 +21,24 @@ export class OrderService {
   ) {}
 
   // ====================================================================
-  // HELPER: GENERATE ORDER NUMBER (Otomatis & Urut Berdasarkan Tanggal)
+  // HELPER: GENERATE ORDER NUMBER (Otomatis & Urut Berdasarkan Kategori)
   // ====================================================================
-  private async generateOrderNumber(tx: any): Promise<string> {
+  private async generateOrderNumber(
+    tx: any,
+    category: "SALES" | "SAMPLE",
+  ): Promise<string> {
     const today = new Date();
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, "0");
     const day = String(today.getDate()).padStart(2, "0");
-    const dateStr = `${year}${month}${day}`; // Format: YYYYMMDD (e.g., 20260603)
+    const dateStr = `${year}${month}${day}`;
 
-    // 1. Cari order terakhir yang dibuat hari ini dengan prefix ORD-YYYYMMDD-
+    const prefix = category === "SALES" ? `SO-${dateStr}-` : `SMP-${dateStr}-`;
+
     const lastOrder = await tx.order.findFirst({
       where: {
         orderNumber: {
-          startsWith: `ORD-${dateStr}-`,
+          startsWith: prefix,
         },
       },
       orderBy: {
@@ -47,7 +51,6 @@ export class OrderService {
 
     let nextIncrement = 1;
 
-    // 2. Jika sudah ada order hari ini, ambil nomor terakhir lalu naikkan 1 angka
     if (lastOrder && lastOrder.orderNumber) {
       const parts = lastOrder.orderNumber.split("-");
       const lastIncrementStr = parts[parts.length - 1];
@@ -57,10 +60,10 @@ export class OrderService {
       }
     }
 
-    // 3. Pad angka urut menjadi 4 digit (e.g., 0001)
+    // Pad angka urut menjadi 4 digit (e.g., 0001)
     const incrementStr = String(nextIncrement).padStart(4, "0");
 
-    return `ORD-${dateStr}-${incrementStr}`;
+    return `${prefix}${incrementStr}`;
   }
 
   // ====================================================================
@@ -183,9 +186,10 @@ export class OrderService {
     const newOrder = await this.prisma.$transaction(async (tx) => {
       const connectRelations: any = {};
 
-      // ✨ TAMBAHAN BARU: Generate orderNumber otomatis dan aman dari duplicate race-condition
-      const generatedOrderNumber = await this.generateOrderNumber(tx);
-
+      const generatedOrderNumber = await this.generateOrderNumber(
+        tx,
+        orderCore.salesCategory,
+      );
       if (clientB2BPICId) {
         connectRelations.pic = { connect: { id: clientB2BPICId } };
       }
@@ -289,10 +293,12 @@ export class OrderService {
       products,
       clientB2BPICId,
       purchaseChannelId,
+      referenceQuotationId,
+      referenceSampleId,
+      sampleFollowUps,
       ...orderCore
     } = data;
 
-    // 1. Cek apakah Order Exist
     const existingOrder = await this.prisma.order.findUnique({
       where: { id },
     });
@@ -307,9 +313,7 @@ export class OrderService {
     for (const item of products) {
       const product = await this.prisma.product.findUnique({
         where: { id: item.productId },
-        include: {
-          productVariants: true,
-        },
+        include: { productVariants: true },
       });
 
       if (!product) {
@@ -336,8 +340,7 @@ export class OrderService {
       }
 
       const finalPrice = Number(item.price);
-      const subtotal = finalPrice * item.quantity;
-      totalAmount += subtotal;
+      totalAmount += finalPrice * item.quantity;
 
       const productData: any = {
         product: { connect: { id: item.productId } },
@@ -353,7 +356,6 @@ export class OrderService {
           detail: item.customization,
         });
       }
-
       if (item.remarks) {
         productData.remarks = item.remarks;
       }
@@ -381,25 +383,45 @@ export class OrderService {
       }
     }
 
+    // Build sampleFollowUps create data
+    const followUpsData =
+      orderCore.salesCategory === "SAMPLE" && sampleFollowUps?.length
+        ? sampleFollowUps.map((fu) => ({
+            name: fu.name,
+            date: fu.date ? new Date(fu.date) : new Date(),
+            method: fu.method || null,
+            notes: fu.notes || null,
+            nextAction: fu.nextAction || null,
+            isDone: false,
+          }))
+        : [];
+
     const updatedOrder = await this.prisma.$transaction(async (tx) => {
       await tx.orderProduct.deleteMany({ where: { orderId: id } });
       await tx.orderVendor.deleteMany({ where: { orderId: id } });
+      await tx.orderSampleFollowUp.deleteMany({ where: { orderId: id } });
 
       const updateRelations: any = {};
 
-      if (clientB2BPICId) {
-        updateRelations.pic = { connect: { id: clientB2BPICId } };
-      } else {
-        updateRelations.pic = { disconnect: true };
-      }
+      // PIC B2B
+      updateRelations.pic = clientB2BPICId
+        ? { connect: { id: clientB2BPICId } }
+        : { disconnect: true };
 
-      if (purchaseChannelId) {
-        updateRelations.purchaseChannel = {
-          connect: { id: purchaseChannelId },
-        };
-      } else {
-        updateRelations.purchaseChannel = { disconnect: true };
-      }
+      // Purchase Channel
+      updateRelations.purchaseChannel = purchaseChannelId
+        ? { connect: { id: purchaseChannelId } }
+        : { disconnect: true };
+
+      // Reference Quotation
+      updateRelations.referenceQuotation = referenceQuotationId
+        ? { connect: { id: referenceQuotationId } }
+        : { disconnect: true };
+
+      // Reference Sample
+      updateRelations.referenceSample = referenceSampleId
+        ? { connect: { id: referenceSampleId } }
+        : { disconnect: true };
 
       const order = await tx.order.update({
         where: { id },
@@ -407,26 +429,31 @@ export class OrderService {
           dateOrder: new Date(orderCore.dateOrder),
           salesCategory: orderCore.salesCategory,
           poNumber: orderCore.poNumber,
+          clientPoNumber: orderCore.clientPoNumber || null,
+          remark: orderCore.remark || null,
+          currencyCode: orderCore.currencyCode || "IDR",
           shippingAddress: orderCore.shippingAddress,
-          totalAmount: totalAmount,
+          totalAmount,
 
           client: { connect: { id: orderCore.clientId } },
           sales: { connect: { id: orderCore.salesId } },
 
           ...updateRelations,
 
-          products: {
-            create: orderProductsData,
-          },
-          vendors: {
-            create: vendorsToConnect,
-          },
+          products: { create: orderProductsData },
+          vendors: { create: vendorsToConnect },
+
+          // SampleFollowUps — hanya dibuat jika salesCategory SAMPLE
+          sampleFollowUps: followUpsData.length
+            ? { create: followUpsData }
+            : undefined,
         },
         include: {
           products: true,
           vendors: true,
           pic: true,
           purchaseChannel: true,
+          sampleFollowUps: true,
         },
       });
 
@@ -441,8 +468,20 @@ export class OrderService {
       where: { id },
       include: {
         products: true,
-        vendors: true,
-        sampleFollowUps: true,
+        vendors: {
+          include: {
+            vendor: {
+              select: {
+                id: true,
+                companyName: true,
+                picName: true,
+              },
+            },
+          },
+        },
+        sampleFollowUps: {
+          orderBy: { createdAt: "asc" },
+        },
       },
     });
 
@@ -450,20 +489,41 @@ export class OrderService {
       throw new ApiError(`Order with ID ${id} not found`, 404);
     }
 
-    const formValues = {
+    return {
+      // === ORDER CORE ===
+      orderNumber: order.orderNumber || "",
       dateOrder: order.dateOrder.toISOString().split("T")[0],
       salesCategory: order.salesCategory,
-      poNumber: order.poNumber,
+      poNumber: order.poNumber || "",
+      clientPoNumber: order.clientPoNumber || "",
+      remark: order.remark || "",
+      currencyCode: order.currencyCode || "IDR",
+      status: order.status,
 
+      // === DOCUMENT REFERENCES ===
+      referenceQuotationId: order.referenceQuotationId || "",
+      referenceSampleId: order.referenceSampleId || "",
+
+      // === CUSTOMER & LOGISTICS ===
       clientId: order.clientId,
-      salesId: order.salesId,
-      shippingAddress: order.shippingAddress,
-
       clientB2BPICId: order.clientB2BPICId || "",
       purchaseChannelId: order.purchaseChannelId || "",
+      salesId: order.salesId || "",
+      shippingAddress: order.shippingAddress,
 
+      // === VENDORS ===
+      // vendorIds untuk form field (array of vendorId string)
       vendorIds: order.vendors.map((v) => v.vendorId),
+      // vendorDetails untuk display badge nama vendor
+      vendorDetails: order.vendors.map((v) => ({
+        vendorId: v.vendorId,
+        companyName: v.vendor.companyName,
+        vendorPicName: v.vendorPicName,
+        vendorPicPhone: v.vendorPicPhone,
+        roleInOrder: v.roleInOrder,
+      })),
 
+      // === PRODUCTS ===
       products: order.products.map((p) => {
         let customVal = "";
         if (
@@ -488,18 +548,18 @@ export class OrderService {
           remarks: p.remarks || "",
         };
       }),
-      sampleFollowUps:
-        order.sampleFollowUps?.map((fu) => ({
-          name: fu.name || "",
-          date: fu.date ? fu.date.toISOString() : null,
-          method: fu.method || "",
-          notes: fu.notes || "",
-          nextAction: fu.nextAction || "",
-          isDone: fu.isDone || false,
-        })) || [],
-    };
 
-    return formValues;
+      // === SAMPLE FOLLOW UPS ===
+      sampleFollowUps: order.sampleFollowUps.map((fu) => ({
+        id: fu.id,
+        name: fu.name || "",
+        date: fu.date ? fu.date.toISOString() : null,
+        method: fu.method || "",
+        notes: fu.notes || "",
+        nextAction: fu.nextAction || "",
+        isDone: fu.isDone,
+      })),
+    };
   }
 
   async getOrderForDetail(id: string) {
@@ -731,8 +791,8 @@ export class OrderService {
       const searchTerm = query.search.trim();
       where.OR = [
         { poNumber: { contains: searchTerm } },
-        { orderNumber: { contains: searchTerm } }, // ✨ Tambah pencarian nomor SO/SN
-        { clientPoNumber: { contains: searchTerm } }, // ✨ Tambah pencarian PO Client
+        { orderNumber: { contains: searchTerm } },
+        { clientPoNumber: { contains: searchTerm } },
         {
           client: {
             b2b: { is: { companyName: { contains: searchTerm } } },
@@ -777,29 +837,43 @@ export class OrderService {
       where,
       skip: (Number(query.page || 1) - 1) * Number(query.take || 10),
       take: Number(query.take || 10),
-      orderBy: { createdAt: "desc" }, // Urutkan berdasarkan yang paling baru dibuat
+      orderBy: { createdAt: "desc" },
       include: {
-        // Data Klien Utama
         client: {
           include: { b2b: true, b2c: true },
         },
-        // Data PIC
         pic: { select: { name: true } },
-        // Data Sales
         sales: { select: { name: true } },
-        // Data Pembuat Dokumen
+
+        // ✨ POINT 3: Audit Trails
         createdBy: { select: { name: true } },
-        // Dokumen Referensi
+        updatedBy: { select: { name: true } }, // Memanggil relasi admin yang update
+
         referenceQuotation: { select: { quotationNumber: true } },
         referenceSample: { select: { orderNumber: true } },
-        // Tarik data Shipment Outbound terakhir untuk melihat jadwal pengiriman ke klien
+
+        // ✨ POINT 2: Data Pengiriman (Logistics / Packaging)
         shipments: {
           where: { type: "OUTBOUND" },
           orderBy: { updatedAt: "desc" },
-          take: 1, // Ambil 1 yang paling relevan
-          select: { departureDate: true, arrivalDate: true },
+          take: 1,
+          select: { createdAt: true, departureDate: true, arrivalDate: true },
         },
-        // Hitung jumlah barang
+
+        // ✨ POINT 1: Data Produksi
+        productionTrackers: {
+          orderBy: { updatedAt: "desc" },
+          take: 1,
+          select: { status: true },
+        },
+
+        // ✨ DATA FOLLOW UP (Khusus untuk tabel Sample)
+        sampleFollowUps: {
+          orderBy: { date: "desc" },
+          take: 1,
+          select: { date: true, notes: true },
+        },
+
         _count: {
           select: { products: true },
         },
@@ -816,14 +890,23 @@ export class OrderService {
         clientName = order.client.b2c.name;
       }
 
-      // 2. Resolve Shipment Dates (Safe Check)
+      // 2. Ambil data record terbaru secara aman (Safe Check)
       const lastShipment =
         order.shipments.length > 0 ? order.shipments[0] : null;
+      const lastProduction =
+        order.productionTrackers.length > 0
+          ? order.productionTrackers[0]
+          : null;
+      const lastFollowUp =
+        order.sampleFollowUps.length > 0 ? order.sampleFollowUps[0] : null;
 
       return {
         id: order.id,
         orderDate: order.dateOrder, // Date Order
-        soNumber: order.orderNumber || "-", // SO Number / Sample Number
+
+        soNumber: order.orderNumber || "-", // SO Number (Tabel Sales)
+        sampleNumber: order.orderNumber || "-", // Sample Number (Tabel Sample)
+
         poNumber: order.poNumber || "-",
         customerName: clientName, // Customer Name
         shippingAddress: order.shippingAddress, // Shipping Address
@@ -837,13 +920,23 @@ export class OrderService {
         remark: order.remark || "-", // Remarks
         status: order.status, // Status Order (PENDING, PROCESSING, dll)
 
-        // Logistik (Ekspedisi/Shipment)
+        // ✨ POINT 1: Produksi & Packaging
+        productionData: lastProduction?.status || "-",
+        packagingDate: lastShipment?.createdAt || null,
+
+        // ✨ POINT 2: Logistik (Ekspedisi/Shipment)
+        shippingDate: lastShipment?.createdAt || null,
         sendToCustDate: lastShipment?.departureDate || null,
         arrivalInCustDate: lastShipment?.arrivalDate || null,
 
-        // Audit Trail (Pembuatan & Update)
+        // ✨ Data Follow Up (Untuk Tabel Sample)
+        lastFollowUpDate: lastFollowUp?.date || null,
+        lastFollowUpRemark: lastFollowUp?.notes || "-",
+
+        // ✨ POINT 3: Audit Trail (Pembuatan & Update)
         createdBy: order.createdBy?.name || "System",
         createdTime: order.createdAt,
+        updatedBy: order.updatedBy?.name || "-",
         updatedTime: order.updatedAt,
 
         // Data Ekstra (Berguna untuk keperluan UI)
@@ -863,6 +956,7 @@ export class OrderService {
 
     return { data: formattedData, meta };
   }
+
   async exportOrdersToExcel(query: OrderExportQuery): Promise<Buffer> {
     const { startDate, endDate, search, salesCategory } = query;
 
