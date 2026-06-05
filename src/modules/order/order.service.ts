@@ -20,12 +20,59 @@ export class OrderService {
     private readonly pagination: PaginationService,
   ) {}
 
+  // ====================================================================
+  // HELPER: GENERATE ORDER NUMBER (Otomatis & Urut Berdasarkan Tanggal)
+  // ====================================================================
+  private async generateOrderNumber(tx: any): Promise<string> {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+    const dateStr = `${year}${month}${day}`; // Format: YYYYMMDD (e.g., 20260603)
+
+    // 1. Cari order terakhir yang dibuat hari ini dengan prefix ORD-YYYYMMDD-
+    const lastOrder = await tx.order.findFirst({
+      where: {
+        orderNumber: {
+          startsWith: `ORD-${dateStr}-`,
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      select: {
+        orderNumber: true,
+      },
+    });
+
+    let nextIncrement = 1;
+
+    // 2. Jika sudah ada order hari ini, ambil nomor terakhir lalu naikkan 1 angka
+    if (lastOrder && lastOrder.orderNumber) {
+      const parts = lastOrder.orderNumber.split("-");
+      const lastIncrementStr = parts[parts.length - 1];
+      const lastIncrement = parseInt(lastIncrementStr, 10);
+      if (!isNaN(lastIncrement)) {
+        nextIncrement = lastIncrement + 1;
+      }
+    }
+
+    // 3. Pad angka urut menjadi 4 digit (e.g., 0001)
+    const incrementStr = String(nextIncrement).padStart(4, "0");
+
+    return `ORD-${dateStr}-${incrementStr}`;
+  }
+
+  // ====================================================================
+  // MAIN METHOD: CREATE ORDER
+  // ====================================================================
   async createOrder(data: CreateOrderDTO) {
     const {
       vendorIds,
       products,
       clientB2BPICId,
       purchaseChannelId,
+      sampleFollowUps,
       ...orderCore
     } = data;
 
@@ -136,6 +183,9 @@ export class OrderService {
     const newOrder = await this.prisma.$transaction(async (tx) => {
       const connectRelations: any = {};
 
+      // ✨ TAMBAHAN BARU: Generate orderNumber otomatis dan aman dari duplicate race-condition
+      const generatedOrderNumber = await this.generateOrderNumber(tx);
+
       if (clientB2BPICId) {
         connectRelations.pic = { connect: { id: clientB2BPICId } };
       }
@@ -146,11 +196,40 @@ export class OrderService {
         };
       }
 
+      if (orderCore.currencyCode) {
+        connectRelations.currency = {
+          connect: { code: orderCore.currencyCode },
+        };
+      } else {
+        connectRelations.currency = { connect: { code: "IDR" } };
+      }
+
+      if (orderCore.referenceQuotationId) {
+        connectRelations.referenceQuotation = {
+          connect: { id: orderCore.referenceQuotationId },
+        };
+      }
+
+      if (orderCore.referenceSampleId) {
+        connectRelations.referenceSample = {
+          connect: { id: orderCore.referenceSampleId },
+        };
+      }
+
+      if (orderCore.createdById) {
+        connectRelations.createdBy = { connect: { id: orderCore.createdById } };
+      }
+
       const order = await tx.order.create({
         data: {
+          // ✨ TAMBAHAN BARU: Pasangkan nomor order otomatis ke database
+          orderNumber: generatedOrderNumber,
+
           dateOrder: new Date(orderCore.dateOrder),
           salesCategory: orderCore.salesCategory,
-          poNumber: orderCore.poNumber,
+          poNumber: orderCore.poNumber || null,
+          clientPoNumber: orderCore.clientPoNumber || null,
+          remark: orderCore.remark || null,
           shippingAddress: orderCore.shippingAddress,
           totalAmount: totalAmount,
 
@@ -175,16 +254,18 @@ export class OrderService {
             },
           },
           purchaseChannel: true,
+          currency: true,
+          referenceQuotation: true,
+          referenceSample: true,
+          createdBy: {
+            select: { id: true, name: true, email: true },
+          },
         },
       });
 
-      if (
-        isSampleOrder &&
-        data.sampleFollowUps &&
-        data.sampleFollowUps.length > 0
-      ) {
+      if (isSampleOrder && sampleFollowUps && sampleFollowUps.length > 0) {
         await tx.orderSampleFollowUp.createMany({
-          data: data.sampleFollowUps.map((fu) => ({
+          data: sampleFollowUps.map((fu) => ({
             orderId: order.id,
             date: fu.date ? new Date(fu.date) : new Date(),
             name: fu.name || null,
@@ -645,23 +726,21 @@ export class OrderService {
   }) {
     const where: any = {};
 
-    // 1. Filter Pencarian (PO, B2B Company, B2C Name)
+    // 1. Filter Pencarian Cerdas
     if (query.search) {
       const searchTerm = query.search.trim();
       where.OR = [
         { poNumber: { contains: searchTerm } },
+        { orderNumber: { contains: searchTerm } }, // ✨ Tambah pencarian nomor SO/SN
+        { clientPoNumber: { contains: searchTerm } }, // ✨ Tambah pencarian PO Client
         {
           client: {
-            b2b: {
-              is: { companyName: { contains: searchTerm } },
-            },
+            b2b: { is: { companyName: { contains: searchTerm } } },
           },
         },
         {
           client: {
-            b2c: {
-              is: { name: { contains: searchTerm } },
-            },
+            b2c: { is: { name: { contains: searchTerm } } },
           },
         },
       ];
@@ -675,65 +754,103 @@ export class OrderService {
     // 3. Filter Tanggal
     if (query.startDate || query.endDate) {
       const dateFilter: any = {};
-
       if (query.startDate) {
         const start = new Date(query.startDate);
-        if (!isNaN(start.getTime())) {
-          dateFilter.gte = start;
-        }
+        if (!isNaN(start.getTime())) dateFilter.gte = start;
       }
-
       if (query.endDate) {
         const end = new Date(query.endDate);
         if (!isNaN(end.getTime())) {
-          end.setDate(end.getDate() + 1); // +1 hari agar inklusif
+          end.setDate(end.getDate() + 1);
           dateFilter.lt = end;
         }
       }
-
-      // Hanya pasang filter jika ada isinya
       if (Object.keys(dateFilter).length > 0) {
         where.dateOrder = dateFilter;
       }
     }
 
-    // === Pagination & Query Data ===
+    // === Query Database ===
     const count = await this.prisma.order.count({ where });
 
     const orders = await this.prisma.order.findMany({
       where,
       skip: (Number(query.page || 1) - 1) * Number(query.take || 10),
       take: Number(query.take || 10),
-      orderBy: { dateOrder: "desc" },
+      orderBy: { createdAt: "desc" }, // Urutkan berdasarkan yang paling baru dibuat
       include: {
+        // Data Klien Utama
         client: {
           include: { b2b: true, b2c: true },
         },
+        // Data PIC
+        pic: { select: { name: true } },
+        // Data Sales
         sales: { select: { name: true } },
+        // Data Pembuat Dokumen
+        createdBy: { select: { name: true } },
+        // Dokumen Referensi
+        referenceQuotation: { select: { quotationNumber: true } },
+        referenceSample: { select: { orderNumber: true } },
+        // Tarik data Shipment Outbound terakhir untuk melihat jadwal pengiriman ke klien
+        shipments: {
+          where: { type: "OUTBOUND" },
+          orderBy: { updatedAt: "desc" },
+          take: 1, // Ambil 1 yang paling relevan
+          select: { departureDate: true, arrivalDate: true },
+        },
+        // Hitung jumlah barang
         _count: {
           select: { products: true },
         },
       },
     });
 
-    // Format data agar siap ditampilkan di tabel frontend
+    // === Format Ulang Data (Data Mapping) ===
     const formattedData = orders.map((order) => {
+      // 1. Resolve Customer Name
       let clientName = "-";
-      // Safe check dengan optional chaining
       if (order.client?.b2b) {
         clientName = order.client.b2b.companyName;
       } else if (order.client?.b2c) {
         clientName = order.client.b2c.name;
       }
 
+      // 2. Resolve Shipment Dates (Safe Check)
+      const lastShipment =
+        order.shipments.length > 0 ? order.shipments[0] : null;
+
       return {
         id: order.id,
-        poNumber: order.poNumber,
-        dateOrder: order.dateOrder,
-        salesCategory: order.salesCategory,
+        orderDate: order.dateOrder, // Date Order
+        soNumber: order.orderNumber || "-", // SO Number / Sample Number
+        poNumber: order.poNumber || "-",
+        customerName: clientName, // Customer Name
+        shippingAddress: order.shippingAddress, // Shipping Address
+        picCustomer: order.pic?.name || "-", // PIC Customer
+        clientPoNumber: order.clientPoNumber || "-", // PO Customer (Opsional)
+
+        // Dokumen Referensi
+        sampleReference: order.referenceSample?.orderNumber || "-",
+        quotationReference: order.referenceQuotation?.quotationNumber || "-",
+
+        remark: order.remark || "-", // Remarks
+        status: order.status, // Status Order (PENDING, PROCESSING, dll)
+
+        // Logistik (Ekspedisi/Shipment)
+        sendToCustDate: lastShipment?.departureDate || null,
+        arrivalInCustDate: lastShipment?.arrivalDate || null,
+
+        // Audit Trail (Pembuatan & Update)
+        createdBy: order.createdBy?.name || "System",
+        createdTime: order.createdAt,
+        updatedTime: order.updatedAt,
+
+        // Data Ekstra (Berguna untuk keperluan UI)
         totalAmount: Number(order.totalAmount),
-        clientName: clientName,
-        salesName: order.sales?.name || "Unknown Sales",
+        currencyCode: order.currencyCode,
+        salesCategory: order.salesCategory,
+        salesName: order.sales?.name || "-",
         totalItems: order._count.products,
       };
     });
@@ -746,7 +863,6 @@ export class OrderService {
 
     return { data: formattedData, meta };
   }
-
   async exportOrdersToExcel(query: OrderExportQuery): Promise<Buffer> {
     const { startDate, endDate, search, salesCategory } = query;
 
@@ -1162,14 +1278,26 @@ export class OrderService {
     };
   }
 
-  async generatePoNumberAPI(): Promise<string> {
-    const totalOrders = await this.prisma.order.count();
+  async generatePoNumberAPI(
+    salesCategory: "SALES" | "SAMPLE",
+  ): Promise<string> {
+    try {
+      const totalOrdersByCategory = await this.prisma.order.count({
+        where: {
+          salesCategory: salesCategory,
+        },
+      });
 
-    const sequence = String(totalOrders + 1).padStart(4, "0");
+      const sequence = String(totalOrdersByCategory + 1).padStart(4, "0");
 
-    return `GI-PO${sequence}`;
+      const prefix = salesCategory === "SALES" ? "GI-SO" : "GI-SN";
+
+      return `${prefix}${sequence}`;
+    } catch (error) {
+      console.error("🔥 Gagal men-generate PO/SO Number:", error);
+      throw new ApiError("Gagal membuat nomor referensi otomatis.", 500);
+    }
   }
-
   async getGeneralOrderStats() {
     try {
       // 1. Hitung Semua Order
@@ -1210,6 +1338,32 @@ export class OrderService {
       throw new Error(
         "Gagal mengambil statistik order: " + getErrorMessage(error),
       );
+    }
+  }
+
+  // ====================================================================
+  // GET SAMPLE REFERENCES (Hanya ID dan Nomor untuk Dropdown Order)
+  // ====================================================================
+  async getSampleOrderReferences() {
+    try {
+      return await this.prisma.order.findMany({
+        where: {
+          salesCategory: "SAMPLE",
+          resultingOrders: {
+            none: {},
+          },
+        },
+        select: {
+          id: true,
+          orderNumber: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
+    } catch (error) {
+      console.error("🔥 GET SAMPLE REFERENCES ERROR:", error);
+      throw new ApiError("Gagal mengambil daftar referensi order sample.", 500);
     }
   }
 

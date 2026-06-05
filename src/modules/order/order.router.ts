@@ -34,6 +34,12 @@ export class OrderRouter {
     );
 
     this.router.get(
+      "/list-samples",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      this.orderController.getSampleOrderReferences,
+    );
+
+    this.router.get(
       "/stats/sample",
       this.nextAuthMiddleware.verifyNextAuthToken,
       verifyRole(["SUPER_ADMIN"]),

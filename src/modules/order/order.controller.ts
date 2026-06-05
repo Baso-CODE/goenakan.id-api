@@ -6,10 +6,14 @@ import { OrderExportQuery, OrderService } from "./order.service";
 @injectable()
 export class OrderController {
   constructor(private readonly orderService: OrderService) {}
-
   createOrder = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const body = req.body as CreateOrderDTO;
+      const authorId = (req as any).user?.id;
+      if (authorId) {
+        body.createdById = authorId;
+      }
+
       const result = await this.orderService.createOrder(body);
       res.status(201).send(result);
     } catch (error) {
@@ -65,14 +69,12 @@ export class OrderController {
         req.query;
 
       const result = await this.orderService.getAllOrders({
-        // PERBAIKAN: Validasi Number agar tidak NaN
         page: page && !isNaN(Number(page)) ? Number(page) : 1,
         take: take && !isNaN(Number(take)) ? Number(take) : 10,
 
         // Handle string filtering
         search: search ? String(search) : undefined,
 
-        // Handle filter "ALL" dari frontend agar tidak terkirim ke Prisma
         salesCategory:
           salesCategory && String(salesCategory) !== "ALL"
             ? String(salesCategory)
@@ -159,17 +161,38 @@ export class OrderController {
     }
   };
 
+  // === GET SAMPLE REFERENCES (Hanya ID & Nomor untuk Dropdown Order) ===
+  getSampleOrderReferences = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const result = await this.orderService.getSampleOrderReferences();
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   generatePoNumber = async (
     req: Request,
     res: Response,
     next: NextFunction,
   ) => {
     try {
-      const poNumber = await this.orderService.generatePoNumberAPI();
+      const salesCategory =
+        (req.query.category as "SALES" | "SAMPLE") || "SALES";
+
+      const result = await this.orderService.generatePoNumberAPI(salesCategory);
 
       res.status(200).json({
-        message: "PO Number generated successfully",
-        poNumber: poNumber,
+        success: true,
+        data: result,
       });
     } catch (error) {
       next(error);
