@@ -307,60 +307,80 @@ export class OrderService {
       throw new ApiError(`Order with ID ${id} not found`, 404);
     }
 
-    let totalAmount = 0;
+    // Guard: clientId dan salesCategory tidak boleh diubah
+    if (orderCore.clientId !== existingOrder.clientId) {
+      throw new ApiError("Client tidak dapat diubah setelah order dibuat", 400);
+    }
+    if (orderCore.salesCategory !== existingOrder.salesCategory) {
+      throw new ApiError(
+        "Sales category tidak dapat diubah setelah order dibuat",
+        400,
+      );
+    }
+
+    const isPending = existingOrder.status === "PENDING";
+
+    let totalAmount = Number(existingOrder.totalAmount);
     const orderProductsData: any[] = [];
 
-    for (const item of products) {
-      const product = await this.prisma.product.findUnique({
-        where: { id: item.productId },
-        include: { productVariants: true },
-      });
+    if (isPending) {
+      totalAmount = 0;
 
-      if (!product) {
-        throw new ApiError(`Product with ID ${item.productId} not found`, 404);
-      }
+      for (const item of products) {
+        const product = await this.prisma.product.findUnique({
+          where: { id: item.productId },
+          include: { productVariants: true },
+        });
 
-      if (product.isCustom && !item.variantId) {
-        throw new ApiError(
-          `Variant is required for custom product: ${product.name}`,
-          400,
-        );
-      }
-
-      if (product.isCustom && item.variantId) {
-        const variantExists = product.productVariants.find(
-          (v) => v.id === item.variantId,
-        );
-        if (!variantExists) {
+        if (!product) {
           throw new ApiError(
-            `Invalid variant for product: ${product.name}`,
+            `Product with ID ${item.productId} not found`,
+            404,
+          );
+        }
+
+        if (product.isCustom && !item.variantId) {
+          throw new ApiError(
+            `Variant is required for custom product: ${product.name}`,
             400,
           );
         }
+
+        if (product.isCustom && item.variantId) {
+          const variantExists = product.productVariants.find(
+            (v) => v.id === item.variantId,
+          );
+          if (!variantExists) {
+            throw new ApiError(
+              `Invalid variant for product: ${product.name}`,
+              400,
+            );
+          }
+        }
+
+        const finalPrice = Number(item.price);
+        totalAmount += finalPrice * item.quantity;
+
+        const productData: any = {
+          product: { connect: { id: item.productId } },
+          quantity: item.quantity,
+          unitPrice: finalPrice,
+          variant: item.variantId
+            ? { connect: { id: item.variantId } }
+            : undefined,
+        };
+
+        if (item.customization) {
+          productData.customization = JSON.stringify({
+            detail: item.customization,
+          });
+        }
+        if (item.remarks) {
+          productData.remarks = item.remarks;
+        }
+
+        orderProductsData.push(productData);
       }
-
-      const finalPrice = Number(item.price);
-      totalAmount += finalPrice * item.quantity;
-
-      const productData: any = {
-        product: { connect: { id: item.productId } },
-        quantity: item.quantity,
-        unitPrice: finalPrice,
-        variant: item.variantId
-          ? { connect: { id: item.variantId } }
-          : undefined,
-      };
-
-      if (item.customization) {
-        productData.customization = JSON.stringify({
-          detail: item.customization,
-        });
-      }
-      if (item.remarks) {
-        productData.remarks = item.remarks;
-      }
-
-      orderProductsData.push(productData);
     }
 
     const vendorsToConnect: any[] = [];
@@ -383,9 +403,8 @@ export class OrderService {
       }
     }
 
-    // Build sampleFollowUps create data
     const followUpsData =
-      orderCore.salesCategory === "SAMPLE" && sampleFollowUps?.length
+      existingOrder.salesCategory === "SAMPLE" && sampleFollowUps?.length
         ? sampleFollowUps.map((fu) => ({
             name: fu.name,
             date: fu.date ? new Date(fu.date) : new Date(),
@@ -397,28 +416,29 @@ export class OrderService {
         : [];
 
     const updatedOrder = await this.prisma.$transaction(async (tx) => {
-      await tx.orderProduct.deleteMany({ where: { orderId: id } });
+      // Rebuild products hanya jika PENDING
+      if (isPending) {
+        await tx.orderProduct.deleteMany({ where: { orderId: id } });
+      }
+
+      // Vendor dan followUps selalu bisa diupdate
       await tx.orderVendor.deleteMany({ where: { orderId: id } });
       await tx.orderSampleFollowUp.deleteMany({ where: { orderId: id } });
 
       const updateRelations: any = {};
 
-      // PIC B2B
       updateRelations.pic = clientB2BPICId
         ? { connect: { id: clientB2BPICId } }
         : { disconnect: true };
 
-      // Purchase Channel
       updateRelations.purchaseChannel = purchaseChannelId
         ? { connect: { id: purchaseChannelId } }
         : { disconnect: true };
 
-      // Reference Quotation
       updateRelations.referenceQuotation = referenceQuotationId
         ? { connect: { id: referenceQuotationId } }
         : { disconnect: true };
 
-      // Reference Sample
       updateRelations.referenceSample = referenceSampleId
         ? { connect: { id: referenceSampleId } }
         : { disconnect: true };
@@ -427,7 +447,6 @@ export class OrderService {
         where: { id },
         data: {
           dateOrder: new Date(orderCore.dateOrder),
-          salesCategory: orderCore.salesCategory,
           poNumber: orderCore.poNumber,
           clientPoNumber: orderCore.clientPoNumber || null,
           remark: orderCore.remark || null,
@@ -435,18 +454,20 @@ export class OrderService {
           shippingAddress: orderCore.shippingAddress,
           totalAmount,
 
-          client: { connect: { id: orderCore.clientId } },
           sales: { connect: { id: orderCore.salesId } },
 
           ...updateRelations,
 
-          products: { create: orderProductsData },
           vendors: { create: vendorsToConnect },
 
-          // SampleFollowUps — hanya dibuat jika salesCategory SAMPLE
           sampleFollowUps: followUpsData.length
             ? { create: followUpsData }
             : undefined,
+
+          // Products hanya di-recreate jika PENDING
+          ...(isPending && orderProductsData.length
+            ? { products: { create: orderProductsData } }
+            : {}),
         },
         include: {
           products: true,
@@ -462,7 +483,6 @@ export class OrderService {
 
     return updatedOrder;
   }
-
   async getOrderForUpdate(id: string) {
     const order = await this.prisma.order.findUnique({
       where: { id },

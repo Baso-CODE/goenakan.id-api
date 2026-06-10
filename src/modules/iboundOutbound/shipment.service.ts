@@ -122,7 +122,7 @@ export class ShipmentService {
             const allowedQty = arrivedPrevStep - currentThisStep;
             if (item.quantity > allowedQty) {
               throw new ApiError(
-                `Gagal: Belum bisa lanjut Inbound Step ${data.step}. Hanya ${allowedQty} pcs yang sudah sampai di titik sebelumnya (Step ${data.step - 1}).`,
+                `Gagal: Belum bisa lanjut Inbound Step ${data.step}. Hanya ${allowedQty} pcs yang sudah sampai di titik sebelumnya.`,
                 400,
               );
             }
@@ -180,7 +180,7 @@ export class ShipmentService {
             const allowedQty = arrivedPrevStep - currentThisStep;
             if (item.quantity > allowedQty) {
               throw new ApiError(
-                `Gagal: Belum bisa lanjut Outbound Step ${data.step}. Hanya ${allowedQty} pcs yang sudah sampai di transit sebelumnya (Step ${data.step - 1}).`,
+                `Gagal: Belum bisa lanjut Outbound Step ${data.step}. Hanya ${allowedQty} pcs yang sudah sampai di transit sebelumnya.`,
                 400,
               );
             }
@@ -195,14 +195,14 @@ export class ShipmentService {
         data: {
           orderId: data.orderId,
           type: data.type,
-          step: data.step, // 🔄 MENYIMPAN STEP
+          step: data.step,
           vendorId: data.vendorId || null,
           deliveryNoteNumber: generatedDN,
           trackingNumber: data.trackingNumber || null,
           courierLink: vendorTrackingUrl || data.courierLink || null,
           method: data.method,
 
-          status: "DISPATCHED", // Pastikan enum-nya menerima string ini
+          status: "DISPATCHED",
           departureDate: new Date(data.departureDate),
 
           origin: data.origin,
@@ -239,9 +239,16 @@ export class ShipmentService {
           status: "DISPATCHED",
           date: new Date(data.departureDate),
           city: data.origin,
-          note: `Shipment Step ${data.step} created and dispatched`, // ✨ Info step di catatan
+          note: `Shipment Step ${data.step} created and dispatched`,
         },
       });
+
+      if (data.type === "OUTBOUND") {
+        await tx.order.update({
+          where: { id: data.orderId },
+          data: { status: "SHIPPED" },
+        });
+      }
 
       return shipment;
     });
@@ -253,7 +260,9 @@ export class ShipmentService {
   async addShipmentHistory(shipmentId: string, data: AddShipmentHistoryDTO) {
     const shipment = await this.prisma.shipment.findUnique({
       where: { id: shipmentId },
+      select: { id: true, type: true, orderId: true },
     });
+
     if (!shipment) throw new ApiError("Shipment not found", 404);
 
     return await this.prisma.$transaction(async (tx) => {
@@ -279,8 +288,6 @@ export class ShipmentService {
         });
       }
 
-      // const isFinal = data.status === "ARRIVED" || data.status === "CANCELLED";
-
       await tx.shipment.update({
         where: { id: shipmentId },
         data: {
@@ -292,6 +299,13 @@ export class ShipmentService {
             : {}),
         },
       });
+
+      if (shipment.type === "OUTBOUND" && data.status === "ARRIVED") {
+        await tx.order.update({
+          where: { id: shipment.orderId },
+          data: { status: "COMPLETED" },
+        });
+      }
 
       return history;
     });

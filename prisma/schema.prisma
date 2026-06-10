@@ -989,7 +989,7 @@ model ProductionTracker {
 
   // Relations
   order        Order        @relation(fields: [orderId], references: [id])
-  orderProduct OrderProduct @relation(fields: [orderProductId], references: [id])
+  orderProduct OrderProduct @relation(fields: [orderProductId], references: [id], onDelete: Cascade)
   vendor       Vendor       @relation(fields: [vendorId], references: [id])
 
   @@map("production_trackers")
@@ -1051,7 +1051,7 @@ model ShipmentItem {
 
   // Relations
   shipment     Shipment     @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-  orderProduct OrderProduct @relation(fields: [orderProductId], references: [id])
+  orderProduct OrderProduct @relation(fields: [orderProductId], references: [id], onDelete: Cascade)
 
   @@map("shipment_items")
 }

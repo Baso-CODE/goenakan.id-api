@@ -58,18 +58,29 @@ export class ProductionService {
       }
     }
 
-    // Jika lolos validasi, buat riwayat produksinya
-    return await this.prisma.productionTracker.create({
-      data: {
-        orderId: data.orderId,
-        orderProductId: data.orderProductId,
-        vendorId: data.vendorId,
-        step: data.step,
-        quantity: data.quantity,
-        startDate: new Date(data.startDate),
-        status: "IN_PRODUCTION",
-        remarks: data.remarks,
-      },
+    // ✨ PERBAIKAN: Gunakan Prisma Transaction
+    return await this.prisma.$transaction(async (tx) => {
+      // 1. Buat riwayat produksinya
+      const newProduction = await tx.productionTracker.create({
+        data: {
+          orderId: data.orderId,
+          orderProductId: data.orderProductId,
+          vendorId: data.vendorId,
+          step: data.step,
+          quantity: data.quantity,
+          startDate: new Date(data.startDate),
+          status: "IN_PRODUCTION",
+          remarks: data.remarks,
+        },
+      });
+
+      // 2. OTOMATIS ubah status Order menjadi PROCESSING
+      await tx.order.update({
+        where: { id: data.orderId },
+        data: { status: "PROCESSING" },
+      });
+
+      return newProduction;
     });
   }
   // 2. SELESAI PRODUKSI
