@@ -24,7 +24,6 @@ export class NextAuthMiddleware {
   ) => {
     try {
       const authHeader = req.headers.authorization;
-
       if (!authHeader?.startsWith("Bearer ")) {
         throw new ApiError("Unauthorized: Missing Bearer token", 401);
       }
@@ -35,14 +34,19 @@ export class NextAuthMiddleware {
       let payload: any;
 
       try {
-        // Taktik 1: Coba Verifikasi secara ketat (Sesuai yang kita buat di callback Client)
         payload = jwt.verify(token, secret);
       } catch (verifyErr) {
-        // Taktik 2: Jika verify gagal, coba decode (Fallback untuk Admin)
-        // Ini memastikan jika token valid secara struktur namun secret bermasalah saat verify
-        console.warn("⚠️ JWT Verify failed, attempting decode fallback...");
-        payload = jwt.decode(token);
+        console.warn("⚠️ JWT Verify failed!");
+        // JANGAN gunakan decode fallback di production karena tidak aman.
+        // Lempar error saja agar kita tahu ada yang salah dengan konfigurasi.
+        throw new ApiError(
+          "Token verification failed: Invalid secret or token expired",
+          401,
+        );
       }
+
+      // 🕵️ DEBUG: Lihat apa isi payload yang valid
+      console.log("✅ Token Verified, Payload:", payload);
 
       if (!payload || typeof payload === "string") {
         throw new ApiError("Invalid token payload", 401);
@@ -50,7 +54,8 @@ export class NextAuthMiddleware {
 
       const authReq = req as AuthenticatedRequest;
 
-      // NextAuth payload terkadang menggunakan 'sub' sebagai 'id'
+      // Pastikan properti ini ada di payload.
+      // Kadang NextAuth menggunakan 'sub' (ID user), 'email', dan 'role'.
       authReq.user = {
         id: payload.id || payload.sub,
         email: payload.email,
@@ -59,8 +64,7 @@ export class NextAuthMiddleware {
 
       next();
     } catch (err: any) {
-      console.error("❌ Auth Middleware Error:", err.message);
-      next(new ApiError(err.message || "Invalid or expired token", 401));
+      next(err);
     }
   };
 }

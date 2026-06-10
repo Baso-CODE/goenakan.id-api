@@ -30,6 +30,7 @@ import { ProductRouter } from "./modules/product/masterProduct/product.router";
 import { MaterialTypeRouter } from "./modules/product/material-type/material-type.router";
 import { ProductTagRouter } from "./modules/product/tags/tags.router";
 import { PurchaseChannelRouter } from "./modules/purchaseChannel/purchaseChannel.router";
+import { PurchaseOrderRouter } from "./modules/purchaseOrder/purchaseOrder.router";
 import { QuotationRouter } from "./modules/quotation/quotation.router";
 import { QuotationNoteCategoryRouter } from "./modules/quotation/quotationNoteCategory/quotationNoteCategory.router";
 import { SalesRouter } from "./modules/sales/sales.router";
@@ -150,6 +151,7 @@ export default class App {
     const tagArticleRouter = container.resolve(ArticleTagRouter);
     const bannerProductRouter = container.resolve(BannerProductRouter);
     const analyticsRouter = container.resolve(AnalyticsRouter);
+    const purchaseOrderRouter = container.resolve(PurchaseOrderRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -209,6 +211,7 @@ export default class App {
     this.app.use("/article-tags", tagArticleRouter.getRouter());
     this.app.use("/banner-products", bannerProductRouter.getRouter());
     this.app.use("/analytics", analyticsRouter.getRouter());
+    this.app.use("/purchase-orders", purchaseOrderRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

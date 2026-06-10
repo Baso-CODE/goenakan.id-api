@@ -140,6 +140,35 @@ enum TransactionType {
   EXPENSE
 }
 
+enum PurchaseType {
+  DIRECT_MATERIAL // Pembelian produk berdasarkan SO
+  DIRECT_EXPENSES // Pembelian selain produk (ex: logistik) berdasarkan SO
+  INDIRECT_EXPENSES // Pembelian diluar SO (listrik, air, dll)
+  STOCK // Pembelian produk bukan berdasarkan SO
+}
+
+enum ExpenseCategory {
+  PRODUCT
+  PACKAGING
+  LOGISTIC
+  UTILITY
+}
+
+enum PaymentTerm {
+  IMMEDIATELY
+  NET_14 // 14 Days
+  NET_30 // 30 Days
+  NET_60 // 60 Days
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  APPROVED
+  SENT
+  COMPLETED
+  CANCELLED
+}
+
 // ===============================================
 // USER TABLE
 // ===============================================
@@ -164,6 +193,9 @@ model User {
   client              Client?
   createdOrders       Order[]              @relation("OrderCreatedBy")
   updatedOrders       Order[]              @relation("OrderUpdatedBy")
+  createdPOs          PurchaseOrder[]      @relation("POCreatedBy")
+  updatedPOs          PurchaseOrder[]      @relation("POUpdatedBy")
+  approvedPOs         PurchaseOrder[]      @relation("POApprovedBy")
   orders              Order[]
 
   @@map("users")
@@ -412,6 +444,7 @@ model Product {
   articleProducts ArticleProduct[]
   cartItems       CartItem[]
   webOrderItems   WebOrderItem[]
+  purchaseItems   PurchaseOrderItem[]
 
   @@map("products")
 }
@@ -725,6 +758,7 @@ model Vendor {
   contacts       VendorContact[]
   productionJobs ProductionTracker[]
   shipments      Shipment[]
+  purchaseOrders PurchaseOrder[]
 
   @@map("vendors")
 }
@@ -882,6 +916,7 @@ model Order {
   quotations           Quotation[]           @relation("OrderQuotations")
   cashflowSummary      CashflowSummary[]
   sampleFollowUps      OrderSampleFollowUp[]
+  purchaseOrderItems   PurchaseOrderItem[]
   user                 User?                 @relation(fields: [userId], references: [id])
   userId               String?
 
@@ -920,23 +955,81 @@ model OrderVendor {
 }
 
 model OrderSampleFollowUp {
-  id      String   @id @default(uuid())
-  orderId String
-  date    DateTime @default(now())
-
+  id         String   @id @default(uuid())
+  orderId    String
+  date       DateTime @default(now())
   name       String?
   method     String?
-  notes      String? @db.Text
+  notes      String?  @db.Text
   nextAction String?
-
-  isDone Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isDone     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@map("order_sample_follow_ups")
+}
+
+// ===============================================
+// PURCHASE ORDER SECTION
+// ===============================================
+model PurchaseOrder {
+  id              String              @id @default(uuid())
+  poNumber        String              @unique
+  poDate          DateTime            @default(now())
+  purchaseType    PurchaseType
+  expenseCategory ExpenseCategory
+  paymentTerms    PaymentTerm
+  // Relasi Vendor
+  vendorId        String
+  vendor          Vendor              @relation(fields: [vendorId], references: [id])
+  vendorAddress   String              @db.Text
+  // Relasi Mata Uang
+  currencyCode    String              @default("IDR")
+  currency        Currency            @relation(fields: [currencyCode], references: [code])
+  // Total Keseluruhan
+  totalAmount     Decimal             @default(0)
+  status          PurchaseOrderStatus @default(DRAFT)
+  notes           String?             @db.Text
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  items           PurchaseOrderItem[]
+  createdById     String?
+  createdBy       User?               @relation("POCreatedBy", fields: [createdById], references: [id])
+  updatedById     String?
+  updatedBy       User?               @relation("POUpdatedBy", fields: [updatedById], references: [id])
+  approvedById    String?
+  approvedBy      User?               @relation("POApprovedBy", fields: [approvedById], references: [id])
+  approvalDate    DateTime?
+
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id               String        @id @default(uuid())
+  purchaseOrderId  String
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  itemName         String
+  productId        String?
+  product          Product?      @relation(fields: [productId], references: [id])
+  // === REFERENSI SO / SN ===
+  // Relasi ke tabel Order (Opsional: karena tipe INDIRECT_EXPENSES / STOCK tidak pakai SO)
+  orderId          String?
+  order            Order?        @relation(fields: [orderId], references: [id])
+  // === KALKULASI KUANTITAS ===
+  quantityOrder    Int
+  quantityStock    Int           @default(0)
+  quantityPurchase Int
+  uom              String
+  // === KALKULASI HARGA ===
+  unitPrice        Decimal
+  totalAmount      Decimal
+  remarks          String?       @db.Text
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@map("purchase_order_items")
 }
 
 // ===============================================
@@ -1321,6 +1414,7 @@ model Currency {
   cashflowRevenues  CashflowRevenue[]
   cashflowCosts     CashflowCost[]
   orders            Order[]
+  purchaseOrders    PurchaseOrder[]
 
   @@map("currencies")
 }
