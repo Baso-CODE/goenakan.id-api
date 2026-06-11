@@ -21,9 +21,8 @@ export class CashflowService {
     // 1. Build Query Condition
     const where: Prisma.OrderWhereInput = {};
 
-    // Filter Search by PO Number
     if (search) {
-      where.poNumber = { contains: search };
+      where.orderNumber = { contains: search };
     }
 
     // Filter Date Range
@@ -66,12 +65,7 @@ export class CashflowService {
         ? Number(summary.totalRevenue)
         : Number(order.totalAmount);
 
-      // LOGIC COST:
-      // Jika sudah ada summary, pakai nilai cost dari summary.
-      // Jika belum, anggap 0 (belum ada pengeluaran diinput).
       const cost = summary ? Number(summary.totalCost) : 0;
-
-      // LOGIC PROFIT:
       const profit = revenue - cost;
 
       // Nama Client Flattening
@@ -82,7 +76,7 @@ export class CashflowService {
       return {
         orderId: order.id,
         dateOrder: order.dateOrder,
-        poNumber: order.poNumber,
+        orderNumber: order.orderNumber,
         clientName: clientName,
 
         // Data Financial
@@ -107,28 +101,14 @@ export class CashflowService {
   }
 
   async getCashflowDetail(orderId: string) {
-    // 1. Ambil data Order beserta Relasi Vendor yang Relevan
+    // 1. Ambil data Order (HAPUS INCLUDE VENDORS)
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: {
         products: {
           include: { product: true, variant: true },
         },
-        // Ambil vendor yang dipilih saat Create Order
-        vendors: {
-          include: {
-            vendor: {
-              // Ambil juga items yang dimiliki vendor ini untuk dropdown description
-              include: {
-                vendorItems: {
-                  include: {
-                    item: true, // Ambil detail item (nama, dll)
-                  },
-                },
-              },
-            },
-          },
-        },
+        // Blok vendors DIHAPUS dari sini karena sudah tidak ada di schema
       },
     });
 
@@ -137,19 +117,9 @@ export class CashflowService {
     }
 
     // 2. Format Vendor List untuk Frontend
-    // Struktur: [{ id, name, items: [{id, name}] }]
-    const relevantVendors = order.vendors.map((ov) => {
-      const v = ov.vendor;
-      return {
-        id: v.id,
-        companyName: v.companyName,
-        // Map items milik vendor ini
-        items: v.vendorItems.map((vi) => ({
-          id: vi.item.id,
-          name: vi.item.name, // Contoh: "Freight China-JKT", "Tax", dll
-        })),
-      };
-    });
+    // Karena Vendor sekarang didapat melalui Purchase Order,
+    // jika Frontend butuh list vendor, kita harus query ke PurchaseOrder.
+    // (Bisa kamu aktifkan lagi dengan query yang baru jika dibutuhkan Frontend)
 
     // 3. Cek CashflowSummary (Logic Lama - Tetap Dipakai)
     const existingSummary = await this.prisma.cashflowSummary.findFirst({
@@ -164,7 +134,6 @@ export class CashflowService {
     if (existingSummary) {
       return {
         mode: "EDIT",
-        availableVendors: relevantVendors, // <-- Kirim data vendor spesifik ini
         summary: existingSummary,
         revenues: existingSummary.revenues.map((r) => ({
           ...r,
@@ -182,7 +151,6 @@ export class CashflowService {
     }
 
     // B. Jika BELUM ADA (Create Mode / Auto-Populate)
-    // Map OrderProducts menjadi format Revenue Item
     const initialRevenues = order.products.map((p) => {
       const productName = p.product.name;
       const variantName = p.variant ? ` - ${p.variant.variantName}` : "";
@@ -200,10 +168,9 @@ export class CashflowService {
 
     return {
       mode: "CREATE",
-      availableVendors: relevantVendors, // <-- Kirim data vendor spesifik ini
       summary: {
         orderId: order.id,
-        poNumber: order.poNumber,
+        orderNumber: order.orderNumber,
         totalRevenue: Number(order.totalAmount),
         totalCost: 0,
         profitLoss: Number(order.totalAmount),
@@ -214,20 +181,23 @@ export class CashflowService {
   }
 
   async saveCashflow(orderId: string, data: SaveCashflowDTO) {
-    const { revenueItems, costItems, poNumber } = data;
+    const { revenueItems, costItems, orderNumber } = data;
 
-    const totalRevenue = revenueItems.reduce((acc, item) => {
-      return acc + item.total;
-    }, 0);
-
-    // Cost Total (dalam Base Currency/IDR)
-    const totalCost = costItems.reduce((acc, item) => {
-      return acc + item.total;
-    }, 0);
-
+    const totalRevenue = revenueItems.reduce(
+      (acc, item) => acc + item.total,
+      0,
+    );
+    const totalCost = costItems.reduce((acc, item) => acc + item.total, 0);
     const profitLoss = totalRevenue - totalCost;
 
-    // 2. Jalankan Transaksi Database
+    // 1. Ambil order untuk memastikan orderNumber terbaru
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { orderNumber: true },
+    });
+
+    if (!order) throw new ApiError("Order tidak ditemukan", 404);
+
     const result = await this.prisma.$transaction(async (tx) => {
       // A. Cek Summary Lama
       const existingSummary = await tx.cashflowSummary.findFirst({
@@ -236,16 +206,15 @@ export class CashflowService {
 
       let summaryId = existingSummary?.id;
 
-      // B. Create or Update Summary Header
       if (existingSummary) {
-        // Update
+        // Update Header
         await tx.cashflowSummary.update({
           where: { id: summaryId },
           data: {
             totalRevenue,
             totalCost,
             profitLoss,
-            // updatedAt otomatis
+            orderNumber: order.orderNumber!, // ✨ UPDATE: Sync orderNumber
           },
         });
 
@@ -258,24 +227,23 @@ export class CashflowService {
         const newSummary = await tx.cashflowSummary.create({
           data: {
             orderId,
-            poNumber,
+            orderNumber: order.orderNumber!, // ✨ UPDATE: Gunakan orderNumber
             totalRevenue,
             totalCost,
             profitLoss,
-            baseCurrencyId: "IDR", // Default Base Currency
+            baseCurrencyId: "IDR",
           },
         });
         summaryId = newSummary.id;
       }
 
-      // C. Insert Revenue Items Baru
+      // C. Insert Revenue Items
       if (revenueItems.length > 0) {
         await tx.cashflowRevenue.createMany({
           data: revenueItems.map((item) => ({
             cashflowId: summaryId!,
             description: item.description,
-            productId:
-              item.productId && item.productId !== "" ? item.productId : null,
+            productId: item.productId || null,
             unitPrice: item.unitPrice,
             quantity: item.quantity,
             total: item.total,
@@ -286,14 +254,12 @@ export class CashflowService {
         });
       }
 
-      // D. Insert Cost Items Baru
+      // D. Insert Cost Items
       if (costItems.length > 0) {
         await tx.cashflowCost.createMany({
           data: costItems.map((item) => ({
             cashflowId: summaryId!,
             description: item.description,
-            vendorId:
-              item.vendorId && item.vendorId !== "" ? item.vendorId : null,
             costPerUnit: item.costPerUnit,
             quantity: item.quantity,
             total: item.total,

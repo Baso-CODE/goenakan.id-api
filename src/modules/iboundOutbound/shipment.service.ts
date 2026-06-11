@@ -19,7 +19,7 @@ export class ShipmentService {
       where: { id: data.orderId },
       select: {
         id: true,
-        poNumber: true,
+        orderNumber: true,
         client: { select: { custCode: true } },
       },
     });
@@ -255,12 +255,17 @@ export class ShipmentService {
   }
 
   // =================================================================
-  // 2. ADD HISTORY / UPDATE STATUS (Multi-Step Logic)
+  // 2. ADD HISTORY / UPDATE STATUS (Multi-Step Logic & Warranty)
   // =================================================================
   async addShipmentHistory(shipmentId: string, data: AddShipmentHistoryDTO) {
     const shipment = await this.prisma.shipment.findUnique({
       where: { id: shipmentId },
-      select: { id: true, type: true, orderId: true },
+      select: {
+        id: true,
+        type: true,
+        orderId: true,
+        order: { select: { warrantyDays: true } },
+      },
     });
 
     if (!shipment) throw new ApiError("Shipment not found", 404);
@@ -300,11 +305,71 @@ export class ShipmentService {
         },
       });
 
+      // 2. LOGIC JIKA BARANG OUTBOUND SAMPAI KE PELANGGAN
       if (shipment.type === "OUTBOUND" && data.status === "ARRIVED") {
-        await tx.order.update({
+        const orderData = await tx.order.findUnique({
           where: { id: shipment.orderId },
-          data: { status: "COMPLETED" },
+          include: {
+            products: { select: { quantity: true } },
+            shipments: {
+              where: { type: "OUTBOUND", status: "ARRIVED" },
+              include: { items: { select: { quantity: true } } },
+            },
+          },
         });
+
+        if (orderData) {
+          const totalOrderQty = orderData.products.reduce(
+            (sum, p) => sum + p.quantity,
+            0,
+          );
+
+          // Hitung total barang dari SEMUA shipment yang statusnya ARRIVED
+          const totalArrivedQty = orderData.shipments.reduce(
+            (sumShip, ship) => {
+              return (
+                sumShip +
+                ship.items.reduce((sumItem, item) => sumItem + item.quantity, 0)
+              );
+            },
+            0,
+          );
+
+          // Jika jumlah yang sudah sampai sama dengan (atau lebih) dari jumlah order, baru COMPLETED
+          if (totalArrivedQty >= totalOrderQty) {
+            await tx.order.update({
+              where: { id: shipment.orderId },
+              data: { status: "COMPLETED" },
+            });
+          }
+        }
+
+        // B. AUTO-ACTIVATE WARRANTY (Tetap berjalan per shipment)
+        if (shipment.order.warrantyDays && shipment.order.warrantyDays > 0) {
+          const startDate = new Date(data.date);
+          const expiryDate = new Date(startDate);
+          expiryDate.setDate(
+            expiryDate.getDate() + shipment.order.warrantyDays,
+          );
+
+          const existingWarranty = await tx.orderWarranty.findFirst({
+            where: { shipmentId: shipment.id },
+          });
+
+          if (!existingWarranty) {
+            await tx.orderWarranty.create({
+              data: {
+                orderId: shipment.orderId,
+                shipmentId: shipment.id,
+                warrantyDays: shipment.order.warrantyDays,
+                startDate: startDate,
+                expiryDate: expiryDate,
+                status: "ACTIVE",
+                notes: `Garansi otomatis diaktifkan selama ${shipment.order.warrantyDays} hari sejak tanggal penerimaan.`,
+              },
+            });
+          }
+        }
       }
 
       return history;

@@ -219,7 +219,7 @@ export class InvoiceService {
             },
           },
           client: { select: { id: true, custCode: true, type: true } },
-          order: { select: { poNumber: true } },
+          order: { select: { orderNumber: true } },
         },
       });
 
@@ -266,7 +266,6 @@ export class InvoiceService {
   }) {
     const where: any = {};
 
-    // 1. Filter Pencarian (Client Name B2B/B2C atau PO Number)
     if (query.search && query.search.trim() !== "") {
       const searchTerm = query.search.trim();
       where.OR = [
@@ -282,10 +281,7 @@ export class InvoiceService {
             b2c: { is: { name: { contains: searchTerm } } },
           },
         },
-        // Cari berdasarkan PO Number dari Order terkait
-        {
-          order: { is: { poNumber: { contains: searchTerm } } },
-        },
+        { order: { is: { orderNumber: { contains: searchTerm } } } },
       ];
     }
 
@@ -336,7 +332,7 @@ export class InvoiceService {
           include: { b2b: true, b2c: true },
         },
         order: {
-          select: { poNumber: true },
+          select: { orderNumber: true },
         },
         _count: {
           select: { items: true }, // Hitung jumlah item di invoice
@@ -359,7 +355,7 @@ export class InvoiceService {
         invoiceNumber: inv.invoiceNumber,
         invoiceDate: inv.createdAt,
         dueDate: inv.dueDate,
-        poNumber: inv.order?.poNumber || "-",
+        orderNumber: inv.order?.orderNumber || "-",
         clientName: clientName,
         totalAmount: Number(inv.totalAmount),
         status: inv.status,
@@ -391,7 +387,7 @@ export class InvoiceService {
         order: {
           select: {
             id: true,
-            poNumber: true,
+            orderNumber: true,
             dateOrder: true,
             totalAmount: true,
             invoices: {

@@ -35,10 +35,11 @@ export class OrderAnalyticsService {
     const { page, take, search, startDate, endDate } = query;
     const where: any = {};
 
+    // 1. Filter Pencarian Cerdas (PO Number -> Order Number)
     if (search && search.trim() !== "") {
       const searchTerm = search.trim();
       where.OR = [
-        { poNumber: { contains: searchTerm } },
+        { orderNumber: { contains: searchTerm } },
         { client: { b2b: { companyName: { contains: searchTerm } } } },
         { client: { b2c: { name: { contains: searchTerm } } } },
       ];
@@ -84,7 +85,7 @@ export class OrderAnalyticsService {
     });
 
     const formattedData = orders.map((order) => {
-      // --- KALKULASI WAKTU PRODUKSI ---
+      // --- KALKULASI WAKTU (Logika tetap sama) ---
       const prodStarts = order.productionTrackers
         .map((t) => t.startDate)
         .filter(Boolean) as Date[];
@@ -104,7 +105,6 @@ export class OrderAnalyticsService {
           : null;
       const productionDays = this.diffDays(prodStart, prodEnd);
 
-      // --- KALKULASI INBOUND ---
       const inboundShipments = order.shipments.filter(
         (s) => s.type === "INBOUND",
       );
@@ -127,7 +127,6 @@ export class OrderAnalyticsService {
           : null;
       const inboundDays = this.diffDays(inboundStart, inboundEnd);
 
-      // --- KALKULASI OUTBOUND ---
       const outboundShipments = order.shipments.filter(
         (s) => s.type === "OUTBOUND",
       );
@@ -150,7 +149,6 @@ export class OrderAnalyticsService {
           : null;
       const outboundDays = this.diffDays(outboundStart, outboundEnd);
 
-      // --- KALKULASI TOTAL WAKTU ---
       const totalStart = prodStart || inboundStart || outboundStart;
       const totalEnd =
         outboundEnd ||
@@ -163,7 +161,6 @@ export class OrderAnalyticsService {
         order.productionTrackers,
         order.shipments,
       );
-
       const clientName =
         order.client.type === "B2B"
           ? order.client.b2b?.companyName
@@ -171,7 +168,7 @@ export class OrderAnalyticsService {
 
       return {
         orderId: order.id,
-        poNumber: order.poNumber,
+        orderNumber: order.orderNumber || "-",
         clientName: clientName || "-",
         waktuPenyelesaian: `${totalDays} Hari`,
         waktuProduksi: `${productionDays} Hari`,
@@ -189,7 +186,6 @@ export class OrderAnalyticsService {
 
     return { data: formattedData, meta };
   }
-
   private determineCurrentStatus(productions: any[], shipments: any[]): string {
     const allEvents = [
       ...productions.map((p) => ({

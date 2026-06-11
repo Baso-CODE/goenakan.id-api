@@ -57,6 +57,7 @@ import { CustomerProfileRouter } from "./modules/web-clients/customer-profile/cu
 import { EventCategoryRouter } from "./modules/web-clients/event-category/event-category.router";
 import { AuthWebClientRouter } from "./modules/web-clients/register-user/register-user.router";
 import { WebOrderRouter } from "./modules/web-clients/web-order/web-order.router";
+import { initializeCronJobs } from "./utils/cron";
 export default class App {
   public app;
 
@@ -217,9 +218,15 @@ export default class App {
     this.app.use(errorMiddleware);
   }
 
+  // 2. ✨ UPDATE METHOD START()
   public start(): void {
     this.app.listen(env().PORT, () => {
       console.log(`  ➜  [API] Local:   http://localhost:${env().PORT}`);
+      try {
+        initializeCronJobs();
+      } catch (error) {
+        console.error("❌ Gagal menginisialisasi Cron Jobs:", error);
+      }
     });
   }
 }

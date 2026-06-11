@@ -569,40 +569,37 @@ export class VendorService {
 
   async getVendorsByOrder(orderId: string, type?: "PRODUCT" | "SERVICE") {
     try {
-      const whereCondition: any = {
-        isActive: true,
-        orderVendors: {
-          some: {
-            orderId: orderId,
-          },
+      const poWhereCondition: any = {
+        items: {
+          some: { orderId: orderId },
         },
       };
 
-      if (type) {
-        whereCondition.vendorItems = {
-          some: {
-            item: {
-              category: {
-                type: type,
-              },
-            },
-          },
+      // 2. Filter CUKUP berdasarkan Kategori Transaksi (Expense Category) di PO
+      if (type === "PRODUCT") {
+        poWhereCondition.expenseCategory = {
+          in: ["PRODUCT", "PACKAGING"],
         };
+      } else if (type === "SERVICE") {
+        poWhereCondition.expenseCategory = "LOGISTIC";
       }
 
+      // 3. Eksekusi Query
       const vendors = await this.prisma.vendor.findMany({
-        where: whereCondition,
+        where: {
+          isActive: true,
+          purchaseOrders: {
+            some: poWhereCondition,
+          },
+        },
         orderBy: { companyName: "asc" },
         select: {
           id: true,
           companyName: true,
+          trackingUrl: true, // Diperlukan untuk tracking ekspedisi
           vendorItems: {
             include: {
-              item: {
-                include: {
-                  category: true,
-                },
-              },
+              item: { include: { category: true } },
             },
           },
         },
@@ -610,8 +607,8 @@ export class VendorService {
 
       return vendors;
     } catch (error) {
-      console.error("❌ Error in getVendorsByOrder:", error);
-      throw new Error("Failed to fetch vendors for order.");
+      console.error("❌ Error in getVendorsByOrder via PO:", error);
+      throw new Error("Failed to fetch vendors for order via purchase orders.");
     }
   }
 }

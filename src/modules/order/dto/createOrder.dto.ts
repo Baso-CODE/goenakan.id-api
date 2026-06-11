@@ -98,27 +98,18 @@ export class CreateOrderDTO {
   @IsEnum(["SALES", "SAMPLE"])
   salesCategory!: "SALES" | "SAMPLE";
 
-  // 🔄 Diubah menjadi opsional mengikuti perubahan schema Prisma terbaru
-  @IsOptional()
-  @IsString()
-  poNumber?: string;
-
-  // ✨ TAMBAHAN BARU: PO Number langsung dari Client
   @IsOptional()
   @IsString()
   clientPoNumber?: string;
 
-  // ✨ TAMBAHAN BARU: Catatan/Keterangan order
   @IsOptional()
   @IsString()
   remark?: string;
 
-  // ✨ TAMBAHAN BARU: Kode mata uang (e.g., 'IDR', 'USD')
   @IsOptional()
   @IsString()
   currencyCode?: string;
 
-  // ✨ TAMBAHAN BARU: ID dokumen Quotation & Sample terdahulu untuk referensi alur order
   @IsOptional()
   @IsString()
   referenceQuotationId?: string;
@@ -127,7 +118,6 @@ export class CreateOrderDTO {
   @IsString()
   referenceSampleId?: string;
 
-  // ✨ TAMBAHAN BARU: Track ID user/staff yang men-create order ini
   @IsOptional()
   @IsString()
   createdById?: string;
@@ -144,6 +134,11 @@ export class CreateOrderDTO {
   @IsString()
   purchaseChannelId?: string;
 
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  warrantyDays?: number | null;
+
   @IsString()
   @IsNotEmpty()
   salesId!: string;
@@ -152,9 +147,9 @@ export class CreateOrderDTO {
   @IsNotEmpty()
   shippingAddress!: string;
 
-  @IsArray()
-  @IsString({ each: true })
-  vendorIds!: string[];
+  // @IsArray()
+  // @IsString({ each: true })
+  // vendorIds!: string[];
 
   @IsOptional()
   @IsArray()

@@ -21,20 +21,15 @@ export class OrderService {
   ) {}
 
   // ====================================================================
-  // HELPER: GENERATE ORDER NUMBER (Otomatis & Urut Berdasarkan Kategori)
+  // HELPER: GENERATE ORDER NUMBER (Format: GI-SOxxxx atau GI-SNxxxx)
   // ====================================================================
   private async generateOrderNumber(
     tx: any,
     category: "SALES" | "SAMPLE",
   ): Promise<string> {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, "0");
-    const day = String(today.getDate()).padStart(2, "0");
-    const dateStr = `${year}${month}${day}`;
+    const prefix = category === "SALES" ? "GI-SO" : "GI-SN";
 
-    const prefix = category === "SALES" ? `SO-${dateStr}-` : `SMP-${dateStr}-`;
-
+    // Cari order terakhir berdasarkan prefix tersebut
     const lastOrder = await tx.order.findFirst({
       where: {
         orderNumber: {
@@ -42,7 +37,7 @@ export class OrderService {
         },
       },
       orderBy: {
-        createdAt: "desc",
+        createdAt: "desc", // Mengambil yang terbaru
       },
       select: {
         orderNumber: true,
@@ -52,15 +47,14 @@ export class OrderService {
     let nextIncrement = 1;
 
     if (lastOrder && lastOrder.orderNumber) {
-      const parts = lastOrder.orderNumber.split("-");
-      const lastIncrementStr = parts[parts.length - 1];
-      const lastIncrement = parseInt(lastIncrementStr, 10);
+      const lastNumberStr = lastOrder.orderNumber.replace(prefix, "");
+      const lastIncrement = parseInt(lastNumberStr, 10);
+
       if (!isNaN(lastIncrement)) {
         nextIncrement = lastIncrement + 1;
       }
     }
 
-    // Pad angka urut menjadi 4 digit (e.g., 0001)
     const incrementStr = String(nextIncrement).padStart(4, "0");
 
     return `${prefix}${incrementStr}`;
@@ -71,11 +65,11 @@ export class OrderService {
   // ====================================================================
   async createOrder(data: CreateOrderDTO) {
     const {
-      vendorIds,
       products,
       clientB2BPICId,
       purchaseChannelId,
       sampleFollowUps,
+      warrantyDays,
       ...orderCore
     } = data;
 
@@ -164,25 +158,6 @@ export class OrderService {
       orderProductsData.push(productData);
     }
 
-    const vendorsToConnect: any[] = [];
-    if (vendorIds && vendorIds.length > 0) {
-      const vendors = await this.prisma.vendor.findMany({
-        where: { id: { in: vendorIds } },
-        include: { contacts: true },
-      });
-
-      for (const v of vendors) {
-        const phone = v.contacts.length > 0 ? v.contacts[0].contactId : "-";
-
-        vendorsToConnect.push({
-          vendor: { connect: { id: v.id } },
-          vendorPicName: v.picName || "Unknown PIC",
-          vendorPicPhone: phone,
-          roleInOrder: "Supplier",
-        });
-      }
-    }
-
     const newOrder = await this.prisma.$transaction(async (tx) => {
       const connectRelations: any = {};
 
@@ -226,16 +201,14 @@ export class OrderService {
 
       const order = await tx.order.create({
         data: {
-          // ✨ TAMBAHAN BARU: Pasangkan nomor order otomatis ke database
           orderNumber: generatedOrderNumber,
-
           dateOrder: new Date(orderCore.dateOrder),
           salesCategory: orderCore.salesCategory,
-          poNumber: orderCore.poNumber || null,
           clientPoNumber: orderCore.clientPoNumber || null,
           remark: orderCore.remark || null,
           shippingAddress: orderCore.shippingAddress,
           totalAmount: totalAmount,
+          warrantyDays: warrantyDays ?? null,
 
           client: { connect: { id: orderCore.clientId } },
           sales: { connect: { id: orderCore.salesId } },
@@ -244,14 +217,10 @@ export class OrderService {
           products: {
             create: orderProductsData,
           },
-
-          vendors: {
-            create: vendorsToConnect,
-          },
         },
         include: {
           products: true,
-          vendors: true,
+          // ✨ HAPUS: vendors: true dihilangkan agar tidak error
           client: {
             include: {
               b2b: { include: { pics: true } },
@@ -289,12 +258,12 @@ export class OrderService {
 
   async updateOrder(id: string, data: CreateOrderDTO) {
     const {
-      vendorIds,
       products,
       clientB2BPICId,
       purchaseChannelId,
       referenceQuotationId,
       referenceSampleId,
+      warrantyDays,
       sampleFollowUps,
       ...orderCore
     } = data;
@@ -307,7 +276,6 @@ export class OrderService {
       throw new ApiError(`Order with ID ${id} not found`, 404);
     }
 
-    // Guard: clientId dan salesCategory tidak boleh diubah
     if (orderCore.clientId !== existingOrder.clientId) {
       throw new ApiError("Client tidak dapat diubah setelah order dibuat", 400);
     }
@@ -383,26 +351,6 @@ export class OrderService {
       }
     }
 
-    const vendorsToConnect: any[] = [];
-    if (vendorIds && vendorIds.length > 0) {
-      const vendors = await this.prisma.vendor.findMany({
-        where: { id: { in: vendorIds } },
-        include: { contacts: true },
-      });
-
-      for (const v of vendors) {
-        const phone =
-          v.contacts.length > 0 ? (v.contacts[0] as any).contactId || "-" : "-";
-
-        vendorsToConnect.push({
-          vendor: { connect: { id: v.id } },
-          vendorPicName: v.picName || "Unknown PIC",
-          vendorPicPhone: phone,
-          roleInOrder: "Supplier",
-        });
-      }
-    }
-
     const followUpsData =
       existingOrder.salesCategory === "SAMPLE" && sampleFollowUps?.length
         ? sampleFollowUps.map((fu) => ({
@@ -421,8 +369,6 @@ export class OrderService {
         await tx.orderProduct.deleteMany({ where: { orderId: id } });
       }
 
-      // Vendor dan followUps selalu bisa diupdate
-      await tx.orderVendor.deleteMany({ where: { orderId: id } });
       await tx.orderSampleFollowUp.deleteMany({ where: { orderId: id } });
 
       const updateRelations: any = {};
@@ -447,7 +393,7 @@ export class OrderService {
         where: { id },
         data: {
           dateOrder: new Date(orderCore.dateOrder),
-          poNumber: orderCore.poNumber,
+          warrantyDays: warrantyDays ?? null,
           clientPoNumber: orderCore.clientPoNumber || null,
           remark: orderCore.remark || null,
           currencyCode: orderCore.currencyCode || "IDR",
@@ -457,8 +403,6 @@ export class OrderService {
           sales: { connect: { id: orderCore.salesId } },
 
           ...updateRelations,
-
-          vendors: { create: vendorsToConnect },
 
           sampleFollowUps: followUpsData.length
             ? { create: followUpsData }
@@ -471,7 +415,7 @@ export class OrderService {
         },
         include: {
           products: true,
-          vendors: true,
+          // ✨ HAPUS: 'vendors: true' telah dihilangkan agar tidak error
           pic: true,
           purchaseChannel: true,
           sampleFollowUps: true,
@@ -488,17 +432,6 @@ export class OrderService {
       where: { id },
       include: {
         products: true,
-        vendors: {
-          include: {
-            vendor: {
-              select: {
-                id: true,
-                companyName: true,
-                picName: true,
-              },
-            },
-          },
-        },
         sampleFollowUps: {
           orderBy: { createdAt: "asc" },
         },
@@ -514,10 +447,10 @@ export class OrderService {
       orderNumber: order.orderNumber || "",
       dateOrder: order.dateOrder.toISOString().split("T")[0],
       salesCategory: order.salesCategory,
-      poNumber: order.poNumber || "",
       clientPoNumber: order.clientPoNumber || "",
       remark: order.remark || "",
       currencyCode: order.currencyCode || "IDR",
+      warrantyDays: order.warrantyDays ?? 0,
       status: order.status,
 
       // === DOCUMENT REFERENCES ===
@@ -531,17 +464,9 @@ export class OrderService {
       salesId: order.salesId || "",
       shippingAddress: order.shippingAddress,
 
-      // === VENDORS ===
-      // vendorIds untuk form field (array of vendorId string)
-      vendorIds: order.vendors.map((v) => v.vendorId),
-      // vendorDetails untuk display badge nama vendor
-      vendorDetails: order.vendors.map((v) => ({
-        vendorId: v.vendorId,
-        companyName: v.vendor.companyName,
-        vendorPicName: v.vendorPicName,
-        vendorPicPhone: v.vendorPicPhone,
-        roleInOrder: v.roleInOrder,
-      })),
+      // === VENDORS (Dihapus dari Form Update Order) ===
+      // Vendor sekarang dikelola melalui Purchase Order,
+      // sehingga tidak lagi dimuat di Form Update Order.
 
       // === PRODUCTS ===
       products: order.products.map((p) => {
@@ -601,9 +526,14 @@ export class OrderService {
             variant: true,
           },
         },
-        vendors: {
+
+        purchaseOrderItems: {
           include: {
-            vendor: true,
+            purchaseOrder: {
+              include: {
+                vendor: true,
+              },
+            },
           },
         },
         invoices: true,
@@ -630,7 +560,6 @@ export class OrderService {
     const activeInvoiceIds = activeInvoices.map((inv) => inv.id);
     const billedAmountByProduct = new Map<string, number>();
     for (const invoice of activeInvoices) {
-      // Hitung total harga semua items di invoice ini
       const invoiceItemsTotal = invoice.items.reduce(
         (sum, item) => sum + Number(item.price) * item.quantity,
         0,
@@ -639,12 +568,8 @@ export class OrderService {
       for (const item of invoice.items) {
         const key = `${item.productId}_${item.variantId ?? "null"}`;
         const itemBaseAmount = Number(item.price) * item.quantity;
-
-        // Proporsi item ini dari total invoice items
         const proportion =
           invoiceItemsTotal > 0 ? itemBaseAmount / invoiceItemsTotal : 0;
-
-        // Nominal yang dibayar untuk item ini = proporsi × totalAmount invoice
         const paidForThisItem = Number(invoice.totalAmount) * proportion;
 
         billedAmountByProduct.set(
@@ -663,7 +588,7 @@ export class OrderService {
           })
         : [];
 
-    // 3. Client Info Logic (Tetap Sama)
+    // 3. Client Info Logic
     let clientInfo = {
       name: "",
       phone: "",
@@ -689,7 +614,6 @@ export class OrderService {
 
     // 4. Products Detail Mapping dengan Perhitungan SISA
     const productsDetail = order.products.map((p) => {
-      // Logic Customization (Tetap Sama)
       let customizationDetail = "-";
       if (p.customization) {
         try {
@@ -729,7 +653,7 @@ export class OrderService {
         productName: p.product?.name || "Unknown Product",
         sku: p.product?.sku || "-",
         variantName: p.variant ? p.variant.variantName || "-" : "-",
-        quantity: p.quantity, // Total Qty Order Awal
+        quantity: p.quantity,
         unitPrice: Number(p.unitPrice),
         totalPrice: Number(p.unitPrice) * p.quantity,
         customization: customizationDetail,
@@ -742,16 +666,25 @@ export class OrderService {
       };
     });
 
-    // 5. Vendors Detail Mapping (Tetap Sama)
-    const vendorsDetail = order.vendors.map((v) => ({
-      id: v.vendor.id,
-      companyName: v.vendor.companyName,
-      picName: v.vendorPicName,
-      picPhone: v.vendorPicPhone,
-      role: v.roleInOrder,
-    }));
+    // 5. ✨ UPDATE 3: Vendors Detail Mapping (Diambil dari PurchaseOrder)
+    const uniqueVendorsMap = new Map();
+    order.purchaseOrderItems.forEach((poi) => {
+      const po = poi.purchaseOrder;
 
-    // 6. Invoices Mapping (Tetap Sama)
+      if (po.vendor && !uniqueVendorsMap.has(po.vendor.id)) {
+        uniqueVendorsMap.set(po.vendor.id, {
+          id: po.vendor.id,
+          companyName: po.vendor.companyName,
+          picName: po.vendor.picName || "Unknown",
+          picPhone: "-",
+          role: "Supplier (via PO)",
+          poRefNumber: po.poNumber,
+        });
+      }
+    });
+    const vendorsDetail = Array.from(uniqueVendorsMap.values());
+
+    // 6. Invoices Mapping
     const invoicesDetail = order.invoices.map((inv) => ({
       id: inv.id,
       invoiceNumber: inv.invoiceNumber,
@@ -766,7 +699,7 @@ export class OrderService {
     // === RETURN OBJECT ===
     return {
       id: order.id,
-      poNumber: order.poNumber,
+      orderNumber: order.orderNumber || "-",
       dateOrder: order.dateOrder,
       salesCategory: order.salesCategory,
       shippingAddress: order.shippingAddress,
@@ -780,11 +713,10 @@ export class OrderService {
         name: order.sales?.name || "-",
         phone: order.sales?.phone || "-",
       },
-
-      // Data Products yang sudah ada field 'remainingQuantity'
       products: productsDetail,
 
       vendors: vendorsDetail,
+
       invoices: invoicesDetail,
       sampleFollowUps: order.sampleFollowUps.map((fu) => ({
         id: fu.id,
@@ -810,7 +742,7 @@ export class OrderService {
     if (query.search) {
       const searchTerm = query.search.trim();
       where.OR = [
-        { poNumber: { contains: searchTerm } },
+        // Menggunakan orderNumber sebagai primary filter
         { orderNumber: { contains: searchTerm } },
         { clientPoNumber: { contains: searchTerm } },
         {
@@ -864,36 +796,26 @@ export class OrderService {
         },
         pic: { select: { name: true } },
         sales: { select: { name: true } },
-
-        // ✨ POINT 3: Audit Trails
         createdBy: { select: { name: true } },
-        updatedBy: { select: { name: true } }, // Memanggil relasi admin yang update
-
+        updatedBy: { select: { name: true } },
         referenceQuotation: { select: { quotationNumber: true } },
         referenceSample: { select: { orderNumber: true } },
-
-        // ✨ POINT 2: Data Pengiriman (Logistics / Packaging)
         shipments: {
           where: { type: "OUTBOUND" },
           orderBy: { updatedAt: "desc" },
           take: 1,
           select: { createdAt: true, departureDate: true, arrivalDate: true },
         },
-
-        // ✨ POINT 1: Data Produksi
         productionTrackers: {
           orderBy: { updatedAt: "desc" },
           take: 1,
           select: { status: true },
         },
-
-        // ✨ DATA FOLLOW UP (Khusus untuk tabel Sample)
         sampleFollowUps: {
           orderBy: { date: "desc" },
           take: 1,
           select: { date: true, notes: true },
         },
-
         _count: {
           select: { products: true },
         },
@@ -902,7 +824,6 @@ export class OrderService {
 
     // === Format Ulang Data (Data Mapping) ===
     const formattedData = orders.map((order) => {
-      // 1. Resolve Customer Name
       let clientName = "-";
       if (order.client?.b2b) {
         clientName = order.client.b2b.companyName;
@@ -910,7 +831,6 @@ export class OrderService {
         clientName = order.client.b2c.name;
       }
 
-      // 2. Ambil data record terbaru secara aman (Safe Check)
       const lastShipment =
         order.shipments.length > 0 ? order.shipments[0] : null;
       const lastProduction =
@@ -922,44 +842,37 @@ export class OrderService {
 
       return {
         id: order.id,
-        orderDate: order.dateOrder, // Date Order
+        orderDate: order.dateOrder,
 
-        soNumber: order.orderNumber || "-", // SO Number (Tabel Sales)
-        sampleNumber: order.orderNumber || "-", // Sample Number (Tabel Sample)
+        // Menggunakan orderNumber sebagai kunci utama
+        orderNumber: order.orderNumber || "-",
 
-        poNumber: order.poNumber || "-",
-        customerName: clientName, // Customer Name
-        shippingAddress: order.shippingAddress, // Shipping Address
-        picCustomer: order.pic?.name || "-", // PIC Customer
-        clientPoNumber: order.clientPoNumber || "-", // PO Customer (Opsional)
+        customerName: clientName,
+        shippingAddress: order.shippingAddress,
+        picCustomer: order.pic?.name || "-",
+        clientPoNumber: order.clientPoNumber || "-",
 
         // Dokumen Referensi
         sampleReference: order.referenceSample?.orderNumber || "-",
         quotationReference: order.referenceQuotation?.quotationNumber || "-",
 
-        remark: order.remark || "-", // Remarks
-        status: order.status, // Status Order (PENDING, PROCESSING, dll)
+        remark: order.remark || "-",
+        status: order.status,
 
-        // ✨ POINT 1: Produksi & Packaging
         productionData: lastProduction?.status || "-",
         packagingDate: lastShipment?.createdAt || null,
-
-        // ✨ POINT 2: Logistik (Ekspedisi/Shipment)
         shippingDate: lastShipment?.createdAt || null,
         sendToCustDate: lastShipment?.departureDate || null,
         arrivalInCustDate: lastShipment?.arrivalDate || null,
 
-        // ✨ Data Follow Up (Untuk Tabel Sample)
         lastFollowUpDate: lastFollowUp?.date || null,
         lastFollowUpRemark: lastFollowUp?.notes || "-",
 
-        // ✨ POINT 3: Audit Trail (Pembuatan & Update)
         createdBy: order.createdBy?.name || "System",
         createdTime: order.createdAt,
         updatedBy: order.updatedBy?.name || "-",
         updatedTime: order.updatedAt,
 
-        // Data Ekstra (Berguna untuk keperluan UI)
         totalAmount: Number(order.totalAmount),
         currencyCode: order.currencyCode,
         salesCategory: order.salesCategory,
@@ -976,7 +889,6 @@ export class OrderService {
 
     return { data: formattedData, meta };
   }
-
   async exportOrdersToExcel(query: OrderExportQuery): Promise<Buffer> {
     const { startDate, endDate, search, salesCategory } = query;
 
@@ -989,17 +901,16 @@ export class OrderService {
         where.dateOrder.gte = new Date(startDate);
       }
       if (endDate) {
-        // Tambahkan 1 hari agar endDate inklusif
         const end = new Date(endDate);
         end.setDate(end.getDate() + 1);
         where.dateOrder.lt = end;
       }
     }
 
-    // 2. Filter Pencarian (PO Number atau Nama Client)
+    // 2. Filter Pencarian (Order Number atau Nama Client)
     if (search) {
       where.OR = [
-        { poNumber: { contains: search } },
+        { orderNumber: { contains: search } }, // Diubah dari poNumber
         { client: { b2b: { companyName: { contains: search } } } },
         { client: { b2c: { name: { contains: search } } } },
       ];
@@ -1010,7 +921,7 @@ export class OrderService {
       where.salesCategory = salesCategory;
     }
 
-    // 4. FETCH DATA DENGAN RELASI LENGKAP
+    // 4. FETCH DATA
     const orders = await this.prisma.order.findMany({
       where,
       orderBy: { dateOrder: "desc" },
@@ -1027,21 +938,25 @@ export class OrderService {
             variant: { select: { variantName: true } },
           },
         },
-        vendors: {
+        purchaseOrderItems: {
           include: {
-            vendor: { select: { companyName: true } },
+            purchaseOrder: {
+              include: {
+                vendor: { select: { companyName: true } },
+              },
+            },
           },
         },
       },
     });
 
-    // 5. SETUP WORKBOOK EXCEL
+    // 5. SETUP WORKBOOK
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Data Orders");
 
-    // Definisi Kolom
+    // Definisi Kolom (Header diganti menjadi Order Number)
     worksheet.columns = [
-      { header: "PO Number", key: "poNumber", width: 20 },
+      { header: "Order Number", key: "orderNumber", width: 20 },
       { header: "Tanggal Order", key: "dateOrder", width: 20 },
       { header: "Kategori", key: "salesCategory", width: 15 },
       { header: "Nama Client", key: "clientName", width: 30 },
@@ -1053,7 +968,7 @@ export class OrderService {
       { header: "Alamat Pengiriman", key: "address", width: 40 },
     ];
 
-    // 6. POPULASI DATA BARIS
+    // 6. POPULASI DATA
     orders.forEach((order) => {
       let clientName = "-";
       let clientType = order.client.type;
@@ -1070,12 +985,19 @@ export class OrderService {
         })
         .join("\n");
 
-      const vendorsString = order.vendors
-        .map((v) => `${v.vendor.companyName} (${v.roleInOrder})`)
-        .join("\n");
+      const uniqueVendors = Array.from(
+        new Set(
+          order.purchaseOrderItems.map(
+            (poi) => poi.purchaseOrder.vendor.companyName,
+          ),
+        ),
+      );
+
+      const vendorsString =
+        uniqueVendors.length > 0 ? uniqueVendors.join("\n") : "-";
 
       worksheet.addRow({
-        poNumber: order.poNumber,
+        orderNumber: order.orderNumber,
         dateOrder: order.dateOrder,
         salesCategory: order.salesCategory,
         clientName: clientName,
@@ -1088,6 +1010,7 @@ export class OrderService {
       });
     });
 
+    // 7. FORMATTING
     const headerRow = worksheet.getRow(1);
     headerRow.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: "FFFFFF" } };
@@ -1099,30 +1022,17 @@ export class OrderService {
       cell.alignment = { vertical: "middle", horizontal: "center" };
     });
 
-    // Formatting Data Rows
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber > 1) {
-        const dateCell = row.getCell(2);
-        dateCell.numFmt = "dd/mm/yyyy";
-        dateCell.alignment = { vertical: "top", horizontal: "center" };
-
-        const amountCell = row.getCell(7);
-        amountCell.numFmt = "#,##0";
-        amountCell.alignment = { vertical: "top", horizontal: "right" };
-
-        // Wrap Text & Top Align untuk kolom teks panjang (Produk, Vendor, Alamat)
+        row.getCell(2).numFmt = "dd/mm/yyyy";
+        row.getCell(7).numFmt = "#,##0";
+        row.alignment = { vertical: "top" };
         row.getCell(8).alignment = { vertical: "top", wrapText: true };
         row.getCell(9).alignment = { vertical: "top", wrapText: true };
         row.getCell(10).alignment = { vertical: "top", wrapText: true };
-
-        // Default alignment untuk kolom lain
-        row.getCell(1).alignment = { vertical: "top" };
-        row.getCell(4).alignment = { vertical: "top" };
-        row.getCell(6).alignment = { vertical: "top" };
       }
     });
 
-    // 8. GENERATE BUFFER
     const buffer = await workbook.xlsx.writeBuffer();
     return buffer as unknown as Buffer;
   }
@@ -1178,26 +1088,19 @@ export class OrderService {
       throw new ApiError(`Order with ID ${id} not found`, 404);
     }
 
-    // Helper kalkulasi hari
+    // Helper kalkulasi hari (tetap sama)
     const diffDays = (start: Date | null, end: Date | null): number => {
       if (!start || !end) return 0;
-
-      // Ambil tanggal murni tanpa peduli jam (set ke 00:00:00)
       const startDate = new Date(start);
       startDate.setHours(0, 0, 0, 0);
-
       const endDate = new Date(end);
       endDate.setHours(0, 0, 0, 0);
-
-      // Hitung selisih
       const diffTime = endDate.getTime() - startDate.getTime();
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-      // Jika start dan end ada (proses sudah dimulai dan diakhiri), minimal hitungannya adalah 1 hari
       return diffDays + 1;
     };
 
-    // Mapping Data Products
+    // Mapping Data Products (tetap sama)
     const productsFormatted = order.products.map((p) => {
       const producedQty = p.productionTrackers.reduce(
         (sum, t) => sum + (t.status === "COMPLETED" ? t.quantity : 0),
@@ -1226,9 +1129,9 @@ export class OrderService {
       };
     });
 
-    // ✅ Kalkulasi Duration Summary
+    // Kalkulasi Duration Summary (tetap sama)
     const durationSummary = (() => {
-      // --- PRODUCTION ---
+      // ... (Logika durationSummary Anda tidak perlu diubah, tetap sama)
       const allTrackers = order.products.flatMap((p) => p.productionTrackers);
       const prodStarts = allTrackers
         .map((t) => t.startDate)
@@ -1245,7 +1148,6 @@ export class OrderService {
         : null;
       const productionDays = diffDays(prodStart, prodEnd);
 
-      // --- INBOUND ---
       const inboundShipments = order.shipments.filter(
         (s) => s.type === "INBOUND",
       );
@@ -1271,7 +1173,6 @@ export class OrderService {
           : null;
       const inboundDays = diffDays(inboundStart, inboundEnd);
 
-      // --- OUTBOUND ---
       const outboundShipments = order.shipments.filter(
         (s) => s.type === "OUTBOUND",
       );
@@ -1297,7 +1198,6 @@ export class OrderService {
           : null;
       const outboundDays = diffDays(outboundStart, outboundEnd);
 
-      // --- TOTAL ---
       const totalStart = prodStart || inboundStart || outboundStart;
       const totalEnd = outboundEnd || inboundEnd || prodEnd || new Date();
       const totalDays = diffDays(totalStart, totalEnd);
@@ -1333,7 +1233,7 @@ export class OrderService {
 
     return {
       id: order.id,
-      poNumber: order.poNumber,
+      orderNumber: order.orderNumber || "-",
       client: order.client,
       products: productsFormatted,
       shipments: order.shipments,
@@ -1433,7 +1333,7 @@ export class OrderService {
               invoices: {
                 some: {
                   status: {
-                    in: ["UNPAID", "DRAFT", "OVERDUE"], // Masih ada tagihan gantung
+                    in: ["UNPAID", "DRAFT", "OVERDUE"],
                   },
                 },
               },
@@ -1625,7 +1525,7 @@ export class OrderService {
       profitChange: calculatePercentage(current.totalProfit, last.totalProfit),
 
       totalOrders: current.totalOrders,
-      ordersChange: current.totalOrders - last.totalOrders, // Selisih jumlah (bukan %)
+      ordersChange: current.totalOrders - last.totalOrders,
 
       totalSpending: current.totalSpending,
       spendingChange: calculatePercentage(
@@ -1633,5 +1533,29 @@ export class OrderService {
         last.totalSpending,
       ),
     };
+  }
+
+  async checkExpiredWarranties() {
+    try {
+      const today = new Date();
+
+      const result = await this.prisma.orderWarranty.updateMany({
+        where: {
+          status: "ACTIVE",
+          expiryDate: { lt: today },
+        },
+        data: {
+          status: "EXPIRED",
+        },
+      });
+
+      if (result.count > 0) {
+        console.log(
+          `✅ [CRON] Berhasil mengupdate ${result.count} garansi menjadi EXPIRED.`,
+        );
+      }
+    } catch (error) {
+      console.error("❌ [CRON ERROR] Gagal mengecek garansi expired:", error);
+    }
   }
 }

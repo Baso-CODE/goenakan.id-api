@@ -34,7 +34,7 @@ export class OrderAnalyticsController {
 
       res.status(200).json({
         message: "Logistics summary retrieved",
-        ...result, // ini akan spread { data: [...], meta: {...} }
+        ...result,
       });
     } catch (error) {
       next(error);

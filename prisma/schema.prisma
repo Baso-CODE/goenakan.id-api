@@ -21,6 +21,13 @@ enum OrderStatus {
   CANCELLED // Dibatalkan (baik dari web maupun manual)
 }
 
+enum WarrantyStatus {
+  NOT_STARTED
+  ACTIVE
+  EXPIRED
+  VOID
+}
+
 enum QuotationStatus {
   DRAFT
   SENT
@@ -754,7 +761,7 @@ model Vendor {
   // === RELATIONS ===
   vendorItems    VendorVendorItem[]
   cashflowCost   CashflowCost[]
-  orderVendors   OrderVendor[]
+  // orderVendors   OrderVendor[]
   contacts       VendorContact[]
   productionJobs ProductionTracker[]
   shipments      Shipment[]
@@ -877,7 +884,7 @@ model Order {
   orderNumber          String?               @unique
   dateOrder            DateTime
   salesCategory        SalesCategory
-  poNumber             String?
+  // poNumber             String?
   clientPoNumber       String?
   remark               String?               @db.Text
   currencyCode         String                @default("IDR")
@@ -907,7 +914,7 @@ model Order {
   updatedById          String?
   updatedBy            User?                 @relation("OrderUpdatedBy", fields: [updatedById], references: [id])
   products             OrderProduct[]
-  vendors              OrderVendor[]
+  // vendors              OrderVendor[]
   cashflows            Cashflow[]
   productionTrackers   ProductionTracker[]
   shipments            Shipment[]
@@ -917,10 +924,30 @@ model Order {
   cashflowSummary      CashflowSummary[]
   sampleFollowUps      OrderSampleFollowUp[]
   purchaseOrderItems   PurchaseOrderItem[]
+  warrantyDays         Int?
+  warranties           OrderWarranty[]
   user                 User?                 @relation(fields: [userId], references: [id])
   userId               String?
 
   @@map("orders")
+}
+
+model OrderWarranty {
+  id              String         @id @default(uuid())
+  orderId         String
+  order           Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  shipmentId      String
+  shipment        Shipment       @relation(fields: [shipmentId], references: [id])
+  warrantyDays    Int            @default(30)
+  startDate       DateTime
+  expiryDate      DateTime
+  status          WarrantyStatus @default(NOT_STARTED)
+  isFinalShipment Boolean        @default(false)
+  notes           String?        @db.Text
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@map("order_warranties")
 }
 
 model OrderProduct {
@@ -941,18 +968,18 @@ model OrderProduct {
   @@map("order_products")
 }
 
-model OrderVendor {
-  id             String @id @default(uuid())
-  orderId        String
-  vendorId       String
-  vendorPicName  String
-  vendorPicPhone String
-  roleInOrder    String
-  order          Order  @relation(fields: [orderId], references: [id])
-  vendor         Vendor @relation(fields: [vendorId], references: [id])
+// model OrderVendor {
+//   id             String @id @default(uuid())
+//   orderId        String
+//   vendorId       String
+//   vendorPicName  String
+//   vendorPicPhone String
+//   roleInOrder    String
+//   order          Order  @relation(fields: [orderId], references: [id])
+//   vendor         Vendor @relation(fields: [vendorId], references: [id])
 
-  @@map("order_vendors")
-}
+//   @@map("order_vendors")
+// }
 
 model OrderSampleFollowUp {
   id         String   @id @default(uuid())
@@ -1076,14 +1103,11 @@ model ProductionTracker {
   endDate        DateTime?
   status         ProductionStatus @default(PENDING)
   remarks        String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  order        Order        @relation(fields: [orderId], references: [id])
-  orderProduct OrderProduct @relation(fields: [orderProductId], references: [id], onDelete: Cascade)
-  vendor       Vendor       @relation(fields: [vendorId], references: [id])
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  order          Order            @relation(fields: [orderId], references: [id])
+  orderProduct   OrderProduct     @relation(fields: [orderProductId], references: [id], onDelete: Cascade)
+  vendor         Vendor           @relation(fields: [vendorId], references: [id])
 
   @@map("production_trackers")
 }
@@ -1109,16 +1133,13 @@ model Shipment {
   destination        String?
   departureDate      DateTime?
   arrivalDate        DateTime?
-
-  notes ShipmentNote[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  order  Order          @relation(fields: [orderId], references: [id])
-  vendor Vendor?        @relation(fields: [vendorId], references: [id])
-  items  ShipmentItem[]
+  warranties         OrderWarranty[]
+  notes              ShipmentNote[]
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  order              Order             @relation(fields: [orderId], references: [id])
+  vendor             Vendor?           @relation(fields: [vendorId], references: [id])
+  items              ShipmentItem[]
 
   @@map("shipments")
 }
@@ -1131,32 +1152,28 @@ model ShipmentHistory {
   note       String?
   city       String?
   date       DateTime @default(now())
-
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
 }
 
 model ShipmentItem {
-  id             String @id @default(uuid())
+  id             String       @id @default(uuid())
   shipmentId     String
   orderProductId String
-  totalCarton    Int?   @default(0)
+  totalCarton    Int?         @default(0)
   quantity       Int
-
-  // Relations
-  shipment     Shipment     @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-  orderProduct OrderProduct @relation(fields: [orderProductId], references: [id], onDelete: Cascade)
+  shipment       Shipment     @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  orderProduct   OrderProduct @relation(fields: [orderProductId], references: [id], onDelete: Cascade)
 
   @@map("shipment_items")
 }
 
 model ShipmentNoteCategory {
-  id        String   @id @default(uuid())
+  id        String         @id @default(uuid())
   name      String
   templates Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  notes ShipmentNote[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  notes     ShipmentNote[]
 
   @@map("shipment_note_categories")
 }
@@ -1344,7 +1361,7 @@ model QuotationItemTier {
 model CashflowSummary {
   id             String   @id @default(uuid())
   orderId        String
-  poNumber       String
+  orderNumber    String?
   totalRevenue   Decimal
   totalCost      Decimal
   profitLoss     Decimal

@@ -10,6 +10,32 @@ import { CreateWebOrderDTO } from "./dto/web-order.dto";
 export class WebOrderService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async generateOrderNumber(
+    tx: any,
+    category: "SALES" | "SAMPLE",
+  ): Promise<string> {
+    const prefix = category === "SALES" ? "GI-SO" : "GI-SN";
+
+    const lastOrder = await tx.order.findFirst({
+      where: {
+        orderNumber: { startsWith: prefix },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { orderNumber: true },
+    });
+
+    let nextIncrement = 1;
+    if (lastOrder && lastOrder.orderNumber) {
+      const lastNumberStr = lastOrder.orderNumber.replace(prefix, "");
+      const lastIncrement = parseInt(lastNumberStr, 10);
+      if (!isNaN(lastIncrement)) {
+        nextIncrement = lastIncrement + 1;
+      }
+    }
+
+    const incrementStr = String(nextIncrement).padStart(4, "0");
+    return `${prefix}${incrementStr}`;
+  }
   async getMyOrders(profileId: string, query: any) {
     const { status } = query;
 
@@ -320,13 +346,11 @@ export class WebOrderService {
       });
 
       if (!webOrder) throw new Error("Web Order tidak ditemukan");
-      // Mencegah konversi ganda jika webhook terkirim dua kali dari Midtrans
       if (webOrder.status === "PAID" || webOrder.status === "PROCESSING")
         return;
 
-      // 2. Siapkan ID Client (Tentukan apakah B2C atau B2B)
+      // 2. Siapkan ID Client ... (Logika Client tetap sama) ...
       let clientIdToUse = "";
-
       const existingClient = webOrder.profile?.userId
         ? await tx.client.findFirst({
             where: { userId: webOrder.profile.userId },
@@ -338,8 +362,6 @@ export class WebOrderService {
       } else {
         const isCorporate = webOrder.profile?.accountType === "CORPORATE";
         const clientType = isCorporate ? ClientType.B2B : ClientType.B2C;
-
-        // Buat record utama di tabel Client
         const newClient = await tx.client.create({
           data: {
             custCode: `CUST-WEB-${Date.now()}`,
@@ -349,22 +371,17 @@ export class WebOrderService {
         });
         clientIdToUse = newClient.id;
 
-        // Ambil Channel Website (Wajib ada di database)
         const webChannel = await tx.purchaseChannel.findUnique({
           where: { slug: "website" },
         });
         if (!webChannel)
           throw new Error(
-            "Mohon buat data PurchaseChannel dengan slug 'website' di database!",
+            "Mohon buat data PurchaseChannel dengan slug 'website'!",
           );
 
-        // Pisahkan penyimpanan B2B dan B2C
         if (isCorporate) {
-          // Asumsi kamu punya data Department, kita ambil yang pertama sebagai default
           const defaultDept = await tx.department.findFirst();
-          if (!defaultDept)
-            throw new Error("Belum ada data Department di database untuk B2B!");
-
+          if (!defaultDept) throw new Error("Belum ada data Department!");
           await tx.clientB2B.create({
             data: {
               id: newClient.id,
@@ -390,27 +407,26 @@ export class WebOrderService {
         }
       }
 
-      // 3. Ambil ID Purchase Channel untuk Order
+      // 3. Ambil ID Purchase Channel
       const websiteChannel = await tx.purchaseChannel.findUnique({
         where: { slug: "website" },
       });
-      const totalOrders = await tx.order.count();
-      const sequence = String(totalOrders + 1).padStart(4, "0");
-      const generatedPoNumber = `GI-PO${sequence}`;
-      // 4. Buat Order Utama di dalam ekosistem perusahaan
+
+      // ✨ GENERATE NOMOR ORDER DENGAN FORMAT GI-SOxxxx
+      const generatedOrderNumber = await this.generateOrderNumber(tx, "SALES");
+
+      // 4. Buat Order Utama
       await tx.order.create({
         data: {
-          orderNumber: `ORD-${Date.now()}`,
+          orderNumber: generatedOrderNumber, // Gunakan format GI-SOxxxx
           dateOrder: new Date(),
           salesCategory: SalesCategory.SALES,
-          poNumber: generatedPoNumber,
           clientId: clientIdToUse,
           purchaseChannelId: websiteChannel!.id,
           shippingAddress: JSON.stringify(webOrder.shippingAddress),
           totalAmount: webOrder.totalAmount,
-          webOrderId: webOrder.id, // Sambungkan referensi order aslinya
+          webOrderId: webOrder.id,
 
-          // Memindahkan barang belanjaan dari keranjang (WebOrderItem) ke OrderProduct
           products: {
             create: webOrder.items.map((item) => ({
               productId: item.productId,
