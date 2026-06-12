@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsOptional, IsString } from "class-validator";
+import {
+  IsArray,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MinLength,
+} from "class-validator";
 
 // === DTO UNTUK CREATE TAG ===
 export class CreateTagDTO {
@@ -21,4 +27,10 @@ export class UpdateTagDTO {
   @IsOptional()
   @IsString()
   slug?: string;
+}
+export class CreateBulkTagsDTO {
+  @IsArray()
+  @IsString({ each: true, message: "Setiap tag harus berupa teks (string)" })
+  @MinLength(1, { each: true, message: "Nama tag tidak boleh kosong" })
+  names!: string[];
 }

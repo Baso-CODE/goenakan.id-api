@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
-import { CreateTagDTO, UpdateTagDTO } from "./dto/tags.dto";
+import { CreateBulkTagsDTO, CreateTagDTO, UpdateTagDTO } from "./dto/tags.dto";
 import { ProductTagService, TagExportQuery } from "./tags.service";
 
 @injectable()
@@ -12,6 +12,20 @@ export class ProductTagController {
     try {
       const body = req.body as CreateTagDTO;
       const result = await this.productTagService.createTag(body);
+      res.status(201).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === CREATE BULK TAGS (BARU) ===
+  createBulkTags = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // Ambil array 'names' dari hasil validasi DTO
+      const body = req.body as CreateBulkTagsDTO;
+
+      const result = await this.productTagService.createBulkTags(body.names);
+
       res.status(201).send(result);
     } catch (error) {
       next(error);

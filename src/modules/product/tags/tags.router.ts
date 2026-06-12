@@ -4,7 +4,7 @@ import { autoInjectable } from "tsyringe";
 import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
 import { verifyRole } from "../../../middleware/role.middleware";
 import { validateBody } from "../../../middleware/validation.middleware";
-import { CreateTagDTO, UpdateTagDTO } from "./dto/tags.dto";
+import { CreateBulkTagsDTO, CreateTagDTO, UpdateTagDTO } from "./dto/tags.dto";
 import { ProductTagController } from "./tags.controller";
 
 @autoInjectable()
@@ -56,6 +56,14 @@ export class ProductTagRouter {
       verifyRole(["SUPER_ADMIN"]),
       validateBody(CreateTagDTO),
       this.productTagController.createTag,
+    );
+
+    this.router.post(
+      "/bulk",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      validateBody(CreateBulkTagsDTO),
+      this.productTagController.createBulkTags,
     );
 
     this.router.patch(

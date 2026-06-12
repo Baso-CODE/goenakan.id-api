@@ -37,16 +37,11 @@ export class NextAuthMiddleware {
         payload = jwt.verify(token, secret);
       } catch (verifyErr) {
         console.warn("⚠️ JWT Verify failed!");
-        // JANGAN gunakan decode fallback di production karena tidak aman.
-        // Lempar error saja agar kita tahu ada yang salah dengan konfigurasi.
         throw new ApiError(
           "Token verification failed: Invalid secret or token expired",
           401,
         );
       }
-
-      // 🕵️ DEBUG: Lihat apa isi payload yang valid
-      console.log("✅ Token Verified, Payload:", payload);
 
       if (!payload || typeof payload === "string") {
         throw new ApiError("Invalid token payload", 401);

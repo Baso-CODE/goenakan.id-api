@@ -93,6 +93,47 @@ export class ProductTagService {
     return tag;
   }
 
+  // === CREATE BULK TAGS ===
+  async createBulkTags(names: string[]) {
+    const uniqueNames = Array.from(
+      new Set(names.map((n) => n.trim()).filter((n) => n.length > 0)),
+    );
+
+    if (uniqueNames.length === 0) return [];
+
+    const existingTags = await this.prisma.tag.findMany({
+      where: {
+        name: { in: uniqueNames },
+      },
+    });
+
+    const existingNames = existingTags.map((t) => t.name.toLowerCase());
+
+    const newTagsToCreate = uniqueNames.filter(
+      (name) => !existingNames.includes(name.toLowerCase()),
+    );
+
+    if (newTagsToCreate.length > 0) {
+      const newTagsData = newTagsToCreate.map((name) => ({
+        name: name,
+        slug: this.slug.create(name),
+      }));
+
+      await this.prisma.tag.createMany({
+        data: newTagsData,
+        skipDuplicates: true,
+      });
+    }
+
+    const allRequestedTags = await this.prisma.tag.findMany({
+      where: {
+        name: { in: uniqueNames },
+      },
+    });
+
+    return allRequestedTags;
+  }
+
   // === GET TAG BY ID ===
   async getTagById(id: string) {
     const tag = await this.prisma.tag.findUnique({
