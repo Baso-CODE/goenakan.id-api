@@ -327,8 +327,9 @@ model ClientB2B {
   purchaseChannelId String
   purchaseChannel   PurchaseChannel @relation(fields: [purchaseChannelId], references: [id])
 
-  pics   ClientB2BPIC[]
-  client Client         @relation(fields: [id], references: [id])
+  pics         ClientB2BPIC[]
+  client       Client         @relation(fields: [id], references: [id])
+  brandClients BrandClient[]
 
   @@map("clients_b2b")
 }
@@ -1832,15 +1833,17 @@ model ArticleSEO {
 }
 
 model BrandClient {
-  id           String  @id @default(cuid())
+  id           String     @id @default(cuid())
   name         String
-  slug         String  @unique
+  slug         String     @unique
   country      String
   logo         String
   logoId       String
   websiteUrl   String?
-  displayOrder Int     @default(0)
-  isActive     Boolean @default(true)
+  displayOrder Int        @default(0)
+  isActive     Boolean    @default(true)
+  clientB2bId  String?
+  clientB2b    ClientB2B? @relation(fields: [clientB2bId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

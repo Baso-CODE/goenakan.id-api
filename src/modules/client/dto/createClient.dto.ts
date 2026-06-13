@@ -1,11 +1,11 @@
+import { Type } from "class-transformer";
 import {
+  IsArray,
   IsEnum,
   IsOptional,
   IsString,
-  IsArray,
   ValidateNested,
 } from "class-validator";
-import { Type } from "class-transformer";
 
 export enum ClientType {
   B2B = "B2B",
@@ -44,6 +44,17 @@ export class CreateClientDTO {
   @IsString()
   custCode?: string;
 
+  @IsOptional()
+  @IsString()
+  brandName?: string;
+
+  @IsOptional()
+  @IsString()
+  brandWebsiteUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  brandCountry?: string;
   // ============================
   // B2B FIELDS
   // ============================

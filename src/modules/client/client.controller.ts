@@ -1,9 +1,9 @@
-import { Request, Response, NextFunction } from "express";
+import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
 import { ClientService } from "./client.service";
 import { CreateClientDTO } from "./dto/createClient.dto";
-import { UpdateClientDTO } from "./dto/updateClient.dto";
 import { ClientListQueryDTO } from "./dto/queryExportClient.dto";
+import { UpdateClientDTO } from "./dto/updateClient.dto";
 
 @injectable()
 export class ClientController {
@@ -11,8 +11,15 @@ export class ClientController {
 
   createClient = async (req: Request, res: Response, next: NextFunction) => {
     try {
+      if (req.body.pics && typeof req.body.pics === "string") {
+        req.body.pics = JSON.parse(req.body.pics);
+      }
+
       const body = req.body as CreateClientDTO;
-      const result = await this.clientService.createClient(body);
+
+      const file = req.file;
+
+      const result = await this.clientService.createClient(body, file);
       res.status(201).send(result);
     } catch (error) {
       next(error);

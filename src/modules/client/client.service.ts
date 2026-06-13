@@ -2,6 +2,8 @@ import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
 
 import { ApiError } from "../../utils/api-error";
+import { SlugService } from "../../utils/genereateSlug";
+import { CloudinaryService } from "../cloudinary/cloudinary.service";
 import { PaginationService } from "../pagination/pagination.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { ClientType, CreateClientDTO } from "./dto/createClient.dto";
@@ -13,23 +15,24 @@ export class ClientService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pagination: PaginationService,
+    private readonly cloudinary: CloudinaryService,
+    private readonly slugService: SlugService,
   ) {}
 
   // === CREATE CLIENT ===
-  async createClient(data: CreateClientDTO) {
-    const prefix = data.type === ClientType.B2B ? "B" : "C";
+  async createClient(data: CreateClientDTO, logoFile?: Express.Multer.File) {
+    const clientType = String(data.type).trim().toUpperCase();
 
-    // Ambil semua custCode sesuai prefix-nya masing-masing
+    if (clientType !== "B2B" && clientType !== "B2C") {
+      throw new ApiError(`Invalid client type: received ${data.type}`, 400);
+    }
+
+    const prefix = clientType === "B2B" ? "B" : "C";
     const allCustCodes = await this.prisma.client.findMany({
-      where: {
-        custCode: {
-          startsWith: prefix,
-        },
-      },
+      where: { custCode: { startsWith: prefix } },
       select: { custCode: true },
     });
 
-    // Cari angka tertinggi dari custCode yang sudah ada
     let maxNumber = 0;
     for (const client of allCustCodes) {
       if (!client.custCode) continue;
@@ -40,18 +43,14 @@ export class ClientService {
       }
     }
 
-    // Generate custCode baru yang pasti unik
     let custCode: string;
     let isUnique = false;
-
     do {
       maxNumber += 1;
       custCode = `${prefix}${String(maxNumber).padStart(5, "0")}`;
-
       const existing = await this.prisma.client.findUnique({
         where: { custCode },
       });
-
       isUnique = !existing;
     } while (!isUnique);
 
@@ -59,6 +58,26 @@ export class ClientService {
     // ====================== B2B ========================
     // ==================================================
     if (data.type === ClientType.B2B) {
+      let brandCreateInput: any = undefined;
+
+      if (data.brandName && logoFile) {
+        const uploadResult = await this.cloudinary.upload(logoFile, {
+          folder: "brand-clients",
+          resource_type: "image",
+        });
+
+        brandCreateInput = {
+          create: {
+            name: data.brandName,
+            slug: this.slugService.create(data.brandName),
+            country: data.brandCountry || data.country || "Indonesia",
+            websiteUrl: data.brandWebsiteUrl || data.website || null,
+            logo: uploadResult.secure_url,
+            logoId: uploadResult.public_id,
+          },
+        };
+      }
+
       return await this.prisma.client.create({
         data: {
           custCode,
@@ -71,7 +90,6 @@ export class ClientService {
               email: data.email ?? "",
               website: data.website ?? "",
 
-              // ---- NEW ADDRESS FIELDS ----
               country: data.country ?? "",
               province: data.province ?? "",
               city: data.city ?? "",
@@ -82,7 +100,6 @@ export class ClientService {
 
               purchaseChannelId: data.purchaseChannelId!,
 
-              // ---- MULTIPLE PIC ----
               pics: data.pics?.length
                 ? {
                     create: data.pics.map((pic) => ({
@@ -93,12 +110,17 @@ export class ClientService {
                     })),
                   }
                 : undefined,
+
+              brandClients: brandCreateInput,
             },
           },
         },
         include: {
           b2b: {
-            include: { pics: true },
+            include: {
+              pics: true,
+              brandClients: true,
+            },
           },
         },
       });

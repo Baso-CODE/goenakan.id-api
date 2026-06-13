@@ -2,11 +2,14 @@ import { Router } from "express";
 import { autoInjectable } from "tsyringe";
 import { ClientController } from "./client.controller";
 
+import multer from "multer";
 import { NextAuthMiddleware } from "../../middleware/nextAuth.middleware";
 import { verifyRole } from "../../middleware/role.middleware";
 import { validateBody } from "../../middleware/validation.middleware";
 import { CreateClientDTO } from "./dto/createClient.dto";
 import { UpdateClientDTO } from "./dto/updateClient.dto";
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 @autoInjectable()
 export class ClientRouter {
@@ -50,6 +53,7 @@ export class ClientRouter {
       this.nextAuthMiddleware.verifyNextAuthToken,
       verifyRole(["SUPER_ADMIN"]),
       validateBody(CreateClientDTO),
+      upload.single("logoFile"),
       this.clientController.createClient,
     );
 
