@@ -1,4 +1,3 @@
-import { Role } from "@prisma/client";
 import { injectable } from "tsyringe";
 import { ApiError } from "../../utils/api-error";
 import { PrismaService } from "../prisma/prisma.service";
@@ -21,6 +20,7 @@ export class AuthService {
 
   //   const existingUser = await this.prisma.user.findFirst({
   //     where: { email },
+  //     include: { role: true } // 👈 Nanti saat fitur login dibuka, jangan lupa include tabel role
   //   });
 
   //   if (!existingUser) {
@@ -39,7 +39,7 @@ export class AuthService {
   //   const accessToken = this.tokenService.generateToken(
   //     {
   //       id: existingUser.id,
-  //       role: existingUser.role,
+  //       role: existingUser.role.name, // 👈 Pastikan mengambil .name-nya saja
   //     },
   //     env().JWT_SECRET,
   //   );
@@ -72,13 +72,17 @@ export class AuthService {
     // 3. Hash password
     const hashedPassword = await this.passwordService.hashPassword(password);
 
-    // 4. Simpan user baru
+    // 4. Simpan user baru (Hubungkan dengan tabel Role menggunakan connect)
+    const targetRole = role || "CUSTOMER"; // Fallback otomatis ke CUSTOMER
+
     const newUser = await this.prisma.user.create({
       data: {
         name,
         email,
         password: hashedPassword,
-        role: (role as Role) || Role.ADMIN_INVOICE,
+        role: {
+          connect: { name: targetRole },
+        },
       },
       select: prismaExclude("User", ["password"]),
     });

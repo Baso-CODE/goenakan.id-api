@@ -1,11 +1,11 @@
-import { Role } from "@prisma/client";
 import { NextFunction, Request, Response } from "express";
 import jwt, { TokenExpiredError } from "jsonwebtoken";
 import { ApiError } from "../utils/api-error";
 
+// 1. Tipe role diubah menjadi string
 export interface JwtPayload {
   id: string;
-  role: Role;
+  role: string;
   email: string;
 }
 

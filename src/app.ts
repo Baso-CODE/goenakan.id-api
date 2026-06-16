@@ -33,7 +33,9 @@ import { PurchaseChannelRouter } from "./modules/purchaseChannel/purchaseChannel
 import { PurchaseOrderRouter } from "./modules/purchaseOrder/purchaseOrder.router";
 import { QuotationRouter } from "./modules/quotation/quotation.router";
 import { QuotationNoteCategoryRouter } from "./modules/quotation/quotationNoteCategory/quotationNoteCategory.router";
+import { RoleRouter } from "./modules/roles/roles.router";
 import { SalesRouter } from "./modules/sales/sales.router";
+import { UserRouter } from "./modules/userManagement/userManagement.router";
 import { VendorCategoryRouter } from "./modules/vendor/categoryVendor/categoryVendor.router";
 import { ItemVendorRouter } from "./modules/vendor/itemVendor/itemVendor.router";
 import { ContactPlatformRouter } from "./modules/vendor/platform/platform.route";
@@ -153,6 +155,8 @@ export default class App {
     const bannerProductRouter = container.resolve(BannerProductRouter);
     const analyticsRouter = container.resolve(AnalyticsRouter);
     const purchaseOrderRouter = container.resolve(PurchaseOrderRouter);
+    const userRouter = container.resolve(UserRouter);
+    const roleRouter = container.resolve(RoleRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -213,6 +217,8 @@ export default class App {
     this.app.use("/banner-products", bannerProductRouter.getRouter());
     this.app.use("/analytics", analyticsRouter.getRouter());
     this.app.use("/purchase-orders", purchaseOrderRouter.getRouter());
+    this.app.use("/users", userRouter.getRouter());
+    this.app.use("/roles", roleRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

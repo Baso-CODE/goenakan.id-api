@@ -35,7 +35,7 @@ export class ArticleBannerRouter {
     // 2. ADMIN ROUTES (WAJIB LOGIN & SUPER_ADMIN)
     // ====================================================================
     const auth = this.nextAuthMiddleware.verifyNextAuthToken;
-    const requireAdmin = verifyRole(["SUPER_ADMIN"]);
+    const requireAdmin = verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]);
 
     // Get All Banners (Pagination & Filter)
     this.router.get(

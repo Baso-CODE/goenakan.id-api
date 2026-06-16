@@ -7,6 +7,7 @@ export const verifyRole = (roles: string[]) => {
     const authReq = req as AuthenticatedRequest;
     const userRole = authReq.user?.role;
 
+    // Memastikan userRole ada dan cocok dengan array roles yang diizinkan
     if (!userRole || !roles.includes(userRole)) {
       throw new ApiError("Forbidden: insufficient permissions", 403);
     }

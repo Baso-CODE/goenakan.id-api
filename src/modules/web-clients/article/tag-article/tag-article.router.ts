@@ -29,28 +29,28 @@ export class ArticleTagRouter {
     this.router.get(
       "/",
       this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
+      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       this.articleTagController.getAllTags,
     );
 
     this.router.get(
       "/export/excel",
       this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
+      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       this.articleTagController.exportTags,
     );
 
     this.router.get(
       "/:id",
       this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
+      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       this.articleTagController.getTagById,
     );
 
     this.router.post(
       "/",
       this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
+      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       validateBody(CreateArticleTagDTO),
       this.articleTagController.createTag,
     );
@@ -58,7 +58,7 @@ export class ArticleTagRouter {
     this.router.patch(
       "/:id",
       this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
+      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       validateBody(UpdateArticleTagDTO),
       this.articleTagController.updateTag,
     );
@@ -66,7 +66,7 @@ export class ArticleTagRouter {
     this.router.delete(
       "/:id",
       this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
+      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       this.articleTagController.deleteTag,
     );
   };

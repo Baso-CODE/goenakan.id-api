@@ -26,7 +26,7 @@ export class ArticleCategoryRouter {
     this.router.get(
       "/",
       this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
+      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       this.articleCategoryController.getAllCategories,
     );
 
@@ -35,21 +35,21 @@ export class ArticleCategoryRouter {
     this.router.get(
       "/export/excel",
       this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
+      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       this.articleCategoryController.exportCategory,
     );
 
     this.router.get(
       "/:id",
       this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
+      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       this.articleCategoryController.getCategoryById,
     );
 
     this.router.post(
       "/",
       this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
+      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       validateBody(CreateArticleCategoryDTO),
       this.articleCategoryController.createCategory,
     );
@@ -57,7 +57,7 @@ export class ArticleCategoryRouter {
     this.router.patch(
       "/:id",
       this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
+      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       validateBody(UpdateArticleCategoryDTO),
       this.articleCategoryController.updateCategory,
     );
@@ -65,7 +65,7 @@ export class ArticleCategoryRouter {
     this.router.delete(
       "/:id",
       this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
+      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       this.articleCategoryController.deleteCategory,
     );
   };

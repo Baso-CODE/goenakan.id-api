@@ -1,4 +1,3 @@
-import { Role } from "@prisma/client";
 import { NextFunction, Request, Response } from "express";
 import * as jwt from "jsonwebtoken";
 import { ApiError } from "../utils/api-error";
@@ -49,12 +48,13 @@ export class NextAuthMiddleware {
 
       const authReq = req as AuthenticatedRequest;
 
-      // Pastikan properti ini ada di payload.
-      // Kadang NextAuth menggunakan 'sub' (ID user), 'email', dan 'role'.
+      // Perubahan di sini:
+      // Karena Role bukan lagi enum, kita langsung pakai string "CUSTOMER"
+      // as fallback jika payload.role kosong.
       authReq.user = {
         id: payload.id || payload.sub,
         email: payload.email,
-        role: (payload.role as Role) ?? Role.CUSTOMER,
+        role: payload.role || "CUSTOMER",
       };
 
       next();

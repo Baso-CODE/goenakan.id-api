@@ -1,4 +1,3 @@
-import { Role } from "@prisma/client";
 import * as argon2 from "argon2";
 import { injectable } from "tsyringe";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -38,7 +37,9 @@ export class AuthServiceWebClient {
           email: data.email,
           password: hashedPassword,
           name: primaryName, // Menggunakan fullName atau picName
-          role: Role.CUSTOMER, // Otomatis dijadikan CUSTOMER
+          role: {
+            connect: { name: "CUSTOMER" },
+          },
         },
       });
 

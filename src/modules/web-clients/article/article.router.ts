@@ -22,7 +22,7 @@ export class ArticleRouter {
   private initializeRoutes = (): void => {
     // === AUTH & ROLE SETUP ===
     const auth = this.nextAuthMiddleware.verifyNextAuthToken;
-    const requiredRole = ["SUPER_ADMIN"];
+    const requiredRole = ["SUPER_ADMIN", "ADMIN_ARTICLE"];
 
     // ====================================================================
     // 1. PUBLIC / LIST ROUTES
