@@ -1,5 +1,5 @@
+import { translate } from "@vitalets/google-translate-api";
 import { injectable } from "tsyringe";
-
 import { ApiError } from "../../../utils/api-error";
 import { SlugService } from "../../../utils/genereateSlug";
 import { CloudinaryService } from "../../cloudinary/cloudinary.service";
@@ -40,6 +40,7 @@ export class ArticleService {
   // =========================================================================
   // 2. CREATE ARTICLE (DENGAN UPLOAD COVER IMAGE, MOBILE IMAGE & TAGS)
   // =========================================================================
+
   async createArticle(
     data: CreateArticleDTO,
     authorId: string,
@@ -54,6 +55,35 @@ export class ArticleService {
 
     if (existing) {
       throw new ApiError("Article with this title/slug already exists", 400);
+    }
+
+    let title_en = data.title_en;
+    let content_en = data.content_en;
+    let focusKeywords_en = data.focusKeywords_en;
+
+    if (data.autoTranslate) {
+      try {
+        // ✅ Hanya translate jika belum ada manual
+        if (!title_en) {
+          const resTitle = await translate(data.title, { to: "en" });
+          title_en = resTitle.text;
+        }
+
+        if (!content_en) {
+          const resContent = await translate(data.content, { to: "en" });
+          content_en = resContent.text;
+        }
+
+        // ✅ Cek focusKeywords_id exist DAN belum ada manual
+        if (data.focusKeywords_id && !focusKeywords_en) {
+          const resFocusKeywords = await translate(data.focusKeywords_id, {
+            to: "en",
+          });
+          focusKeywords_en = resFocusKeywords.text;
+        }
+      } catch (err) {
+        console.error("Auto-translate failed:", err);
+      }
     }
 
     // --- UPLOAD GAMBAR DESKTOP ---
@@ -77,7 +107,7 @@ export class ArticleService {
       throw new ApiError("Cover image desktop is required", 400);
     }
 
-    // ✨ TAMBAHAN: UPLOAD GAMBAR MOBILE (Opsional) ---
+    // --- UPLOAD GAMBAR MOBILE (Opsional) ---
     let coverImageMobileUrl = data.coverImageMobile;
     let coverImageMobilePublicId = data.coverImageMobileId;
 
@@ -86,7 +116,7 @@ export class ArticleService {
         const uploadResultMobile = await this.cloudinary.upload(
           coverMobileFile,
           {
-            folder: "articles/covers/mobile", // Disimpan di sub-folder khusus mobile
+            folder: "articles/covers/mobile",
             resource_type: "image",
           },
         );
@@ -103,24 +133,29 @@ export class ArticleService {
     // --- SIMPAN KE DATABASE ---
     try {
       const newArticle = await this.prisma.$transaction(async (tx) => {
-        // 1. Create Article
+        // ✅ PENTING: Sesuaikan field names dengan Prisma schema
         const article = await tx.article.create({
           data: {
-            title: data.title,
-            slug,
-            content: data.content,
-            source: data.source,
+            // ✅ BENAR! Sesuai Prisma schema dengan suffix _id untuk Indonesia
+            title_id: data.title,
+            content_id: data.content,
+            focusKeywords_id: data.focusKeywords_id,
 
-            // Meta data Gambar Desktop
+            // ✅ BENAR! English version dengan suffix _en
+            title_en: title_en,
+            content_en: content_en,
+            focusKeywords_en: focusKeywords_en,
+
+            // Global fields (sama untuk semua bahasa)
+            slug,
+            source: data.source,
             coverImage: coverImageUrl,
             coverImageId: coverImagePublicId,
             coverImageAlt: data.coverImageAlt,
-
-            authorName: data.authorName,
-            focusKeywords: data.focusKeywords,
             coverImageMobile: coverImageMobileUrl,
             coverImageMobileId: coverImageMobilePublicId,
 
+            authorName: data.authorName,
             published: data.published ?? false,
             publishedAt: data.published
               ? data.publishedAt
@@ -129,6 +164,8 @@ export class ArticleService {
               : null,
             categoryId: data.categoryId,
             authorId: authorId,
+
+            // ✅ SEO nested create
             ...(data.seo && {
               seo: {
                 create: {
@@ -147,7 +184,7 @@ export class ArticleService {
           },
         });
 
-        // 2. Insert Related Products (Sticky Sidebar)
+        // 2. Insert Related Products
         if (data.productIds && data.productIds.length > 0) {
           await tx.articleProduct.createMany({
             data: data.productIds.map((productId) => ({
@@ -158,7 +195,7 @@ export class ArticleService {
           });
         }
 
-        // 3. INSERT ARTICLE TAGS (Tabel Pivot Baru)
+        // 3. Insert Article Tags
         if (data.tagIds && data.tagIds.length > 0) {
           await tx.articleTagMap.createMany({
             data: data.tagIds.map((tagId) => ({
@@ -172,7 +209,6 @@ export class ArticleService {
         return article;
       });
 
-      // Mengambil data lengkap (termasuk relasi tag) untuk response
       return this.getArticleById(newArticle.id);
     } catch (error) {
       console.error("🔥 ERROR CREATING ARTICLE:", error);

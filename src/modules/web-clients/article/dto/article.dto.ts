@@ -17,6 +17,10 @@ export class CreateArticleDTO {
   @IsNotEmpty({ message: "Judul artikel tidak boleh kosong" })
   title!: string;
 
+  @IsString()
+  @IsOptional()
+  title_en?: string; // Opsional: Bisa diisi manual atau auto
+
   // ✨ TAMBAHAN: Nama Penulis
   @IsString()
   @IsNotEmpty({ message: "Nama penulis wajib diisi" })
@@ -27,6 +31,14 @@ export class CreateArticleDTO {
   @IsString()
   @IsNotEmpty({ message: "Konten artikel tidak boleh kosong" })
   content!: string;
+
+  @IsString()
+  @IsOptional()
+  content_en?: string; // Opsional: Bisa diisi manual atau auto
+
+  @IsBoolean()
+  @IsOptional()
+  autoTranslate?: boolean;
 
   @IsString()
   @IsNotEmpty({ message: "Cover image desktop wajib diunggah" })
@@ -51,7 +63,11 @@ export class CreateArticleDTO {
 
   @IsString()
   @IsOptional()
-  focusKeywords?: string;
+  focusKeywords_id?: string;
+
+  @IsString()
+  @IsOptional()
+  focusKeywords_en?: string;
 
   @IsString()
   @IsOptional()
@@ -89,6 +105,12 @@ export class UpdateArticleDTO {
   @IsString()
   @IsOptional()
   title?: string;
+
+  // ✨ TAMBAHAN: Translasi Judul
+  @IsString()
+  @IsOptional()
+  title_en?: string;
+
   @IsString()
   @IsOptional()
   @MinLength(2, { message: "Nama penulis minimal 2 karakter" })
@@ -98,6 +120,16 @@ export class UpdateArticleDTO {
   @IsString()
   @IsOptional()
   content?: string;
+
+  // ✨ TAMBAHAN: Translasi Konten
+  @IsString()
+  @IsOptional()
+  content_en?: string;
+
+  // ✨ TAMBAHAN: Trigger Auto Translate
+  @IsBoolean()
+  @IsOptional()
+  autoTranslate?: boolean;
 
   @IsString()
   @IsOptional()
@@ -120,10 +152,14 @@ export class UpdateArticleDTO {
   @IsOptional()
   coverImageMobileId?: string;
 
-  // ✨ TAMBAHAN: Multi-Keyword SEO
+  // ✅ PERBAIKAN: Disesuaikan dengan logic service menjadi _id dan _en
   @IsString()
   @IsOptional()
-  focusKeywords?: string;
+  focusKeywords_id?: string;
+
+  @IsString()
+  @IsOptional()
+  focusKeywords_en?: string;
 
   @IsString()
   @IsOptional()

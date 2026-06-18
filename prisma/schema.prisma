@@ -1744,16 +1744,25 @@ model ArticleCategory {
 }
 
 model Article {
-  id                 String    @id @default(uuid())
-  title              String    @db.VarChar(255)
-  slug               String    @unique
-  content            String    @db.LongText
+  id   String @id @default(uuid())
+  slug String @unique
+
+  // === KONTEN BAHASA INDONESIA (DEFAULT) ===
+  title_id         String  @db.VarChar(255)
+  content_id       String  @db.LongText
+  focusKeywords_id String? @db.Text
+
+  // === KONTEN BAHASA INGGRIS (HASIL AUTO-TRANSLATE) ===
+  title_en         String? @db.VarChar(255)
+  content_en       String? @db.LongText
+  focusKeywords_en String? @db.Text
+
+  // === DATA GLOBAL (Sama untuk semua bahasa) ===
   coverImage         String
   coverImageId       String?
   coverImageAlt      String?
   coverImageMobile   String?
   coverImageMobileId String?
-  focusKeywords      String?   @db.Text
   source             String?   @db.Text
   published          Boolean   @default(false)
   publishedAt        DateTime?
@@ -1761,7 +1770,6 @@ model Article {
   authorId           String
   author             User      @relation(fields: [authorId], references: [id])
 
-  // Relasi Kategori
   categoryId      String
   category        ArticleCategory  @relation(fields: [categoryId], references: [id])
   articleTags     ArticleTagMap[]
