@@ -219,46 +219,126 @@ export class ArticleService {
     }
   }
 
-  // =========================================================================
-  // 3. UPDATE ARTICLE (DENGAN OPSI UPDATE COVER IMAGE, MOBILE IMAGE & TAGS)
-  // =========================================================================
   async updateArticle(
     id: string,
     data: UpdateArticleDTO,
     coverFile?: Express.Multer.File,
     coverMobileFile?: Express.Multer.File,
   ) {
+    // =========================================================================
+    // 1. VALIDASI: Cek artikel exists
+    // =========================================================================
     const existing = await this.prisma.article.findUnique({
       where: { id },
     });
 
-    if (!existing) throw new ApiError("Article not found", 404);
+    if (!existing) {
+      throw new ApiError("Article not found", 404);
+    }
 
+    // =========================================================================
+    // 2. DESTRUCTURE: Pisahkan relations dari field biasa
+    // =========================================================================
     const { productIds, tagIds, ...articleData } = data;
 
-    const slug = data.title ? this.slug.create(data.title) : existing.slug;
+    // =========================================================================
+    // 3. HANDLE SLUG: Generate slug baru jika title berubah
+    // =========================================================================
+    let newSlug = existing.slug;
 
-    // Cek duplikasi judul jika judul diubah
-    if (data.title && data.title !== existing.title) {
-      const duplicate = await this.prisma.article.findFirst({
-        where: { slug, id: { not: id } },
-      });
+    if (data.title) {
+      newSlug = this.slug.create(data.title);
 
-      if (duplicate) {
-        throw new ApiError("Article with this title/slug already exists", 400);
+      // ✅ FIX: Compare dengan title_id (bukan title yang tidak ada)
+      if (data.title !== existing.title_id) {
+        // Cek duplikasi slug
+        const duplicate = await this.prisma.article.findFirst({
+          where: { slug: newSlug, id: { not: id } },
+        });
+
+        if (duplicate) {
+          throw new ApiError(
+            "Article with this title/slug already exists",
+            400,
+          );
+        }
       }
     }
 
-    // --- PROSES UPDATE COVER IMAGE DESKTOP KE CLOUDINARY ---
+    // =========================================================================
+    // 4. TRANSLATION LOGIC: Initialize dengan existing values
+    // =========================================================================
+    let title_en = existing.title_en;
+    let content_en = existing.content_en;
+    let focusKeywords_en = existing.focusKeywords_en;
+
+    // ✅ AUTO-TRANSLATE jika content berubah dan flag = true
+    if (
+      data.autoTranslate &&
+      (data.title || data.content || data.focusKeywords_id)
+    ) {
+      try {
+        // Translate title jika berubah
+        if (data.title) {
+          // Jika ada manual title_en, gunakan itu
+          if (data.title_en) {
+            title_en = data.title_en;
+          } else {
+            // Jika tidak ada manual, translate otomatis
+            const resTitle = await translate(data.title, { to: "en" });
+            title_en = resTitle.text;
+          }
+        }
+
+        // Translate content jika berubah
+        if (data.content) {
+          if (data.content_en) {
+            content_en = data.content_en;
+          } else {
+            const resContent = await translate(data.content, { to: "en" });
+            content_en = resContent.text;
+          }
+        }
+
+        // Translate focus keywords jika berubah
+        if (data.focusKeywords_id) {
+          if (data.focusKeywords_en) {
+            focusKeywords_en = data.focusKeywords_en;
+          } else {
+            const resFocusKeywords = await translate(data.focusKeywords_id, {
+              to: "en",
+            });
+            focusKeywords_en = resFocusKeywords.text;
+          }
+        }
+      } catch (err) {
+        console.error("Auto-translate failed during update:", err);
+        // Fallback: gunakan manual values jika ada
+        if (data.title_en) title_en = data.title_en;
+        if (data.content_en) content_en = data.content_en;
+        if (data.focusKeywords_en) focusKeywords_en = data.focusKeywords_en;
+      }
+    } else {
+      // ✅ Jika autoTranslate false, gunakan manual values saja
+      if (data.title_en) title_en = data.title_en;
+      if (data.content_en) content_en = data.content_en;
+      if (data.focusKeywords_en) focusKeywords_en = data.focusKeywords_en;
+    }
+
+    // =========================================================================
+    // 5. HANDLE DESKTOP COVER IMAGE: Upload jika ada file baru
+    // =========================================================================
     let coverImageUrl = existing.coverImage;
     let coverImagePublicId = existing.coverImageId;
 
     if (coverFile) {
       try {
+        // Delete old image jika ada
         if (existing.coverImageId) {
           await this.cloudinary.delete(existing.coverImageId);
         }
 
+        // Upload image baru
         const uploadResult = await this.cloudinary.upload(coverFile, {
           folder: "articles/covers",
           resource_type: "image",
@@ -273,21 +353,24 @@ export class ArticleService {
       }
     }
 
-    // ✨ TAMBAHAN: PROSES UPDATE COVER IMAGE MOBILE KE CLOUDINARY ---
+    // =========================================================================
+    // 6. HANDLE MOBILE COVER IMAGE: Upload jika ada file baru
+    // =========================================================================
     let coverImageMobileUrl = existing.coverImageMobile;
     let coverImageMobilePublicId = existing.coverImageMobileId;
 
     if (coverMobileFile) {
       try {
+        // Delete old mobile image jika ada
         if (existing.coverImageMobileId) {
           await this.cloudinary.delete(existing.coverImageMobileId);
         }
 
-        // Upload gambar mobile yang baru
+        // Upload mobile image baru
         const uploadResultMobile = await this.cloudinary.upload(
           coverMobileFile,
           {
-            folder: "articles/covers/mobile", // Simpan di sub-folder khusus mobile
+            folder: "articles/covers/mobile",
             resource_type: "image",
           },
         );
@@ -302,18 +385,39 @@ export class ArticleService {
       }
     }
 
-    // --- MENGGABUNGKAN DATA UNTUK DISIMPAN ---
+    // =========================================================================
+    // 7. BUILD UPDATE DATA: Dengan field names yang BENAR
+    // =========================================================================
     const updateData: any = {
-      ...articleData, // Otomatis berisi authorName, focusKeywords, title, content, dll
-      slug,
+      // ✅ INDONESIA FIELDS (dengan suffix _id)
+      ...(data.title && { title_id: data.title }),
+      ...(data.content && { content_id: data.content }),
+      ...(data.focusKeywords_id && { focusKeywords_id: data.focusKeywords_id }),
+
+      // ✅ ENGLISH FIELDS (dengan suffix _en) - dari translate atau manual
+      title_en,
+      content_en,
+      focusKeywords_en,
+
+      // ✅ GLOBAL FIELDS
+      slug: newSlug,
+      ...(data.source && { source: data.source }),
       coverImage: coverImageUrl,
       coverImageId: coverImagePublicId,
-      coverImageMobile: coverImageMobileUrl, // ✨ TAMBAHAN: URL gambar mobile
-      coverImageMobileId: coverImageMobilePublicId, // ✨ TAMBAHAN: ID gambar mobile
+      ...(data.coverImageAlt && { coverImageAlt: data.coverImageAlt }),
+      coverImageMobile: coverImageMobileUrl,
+      coverImageMobileId: coverImageMobilePublicId,
+      ...(data.authorName && { authorName: data.authorName }),
+      ...(data.categoryId && { categoryId: data.categoryId }),
     };
 
-    // Logika Tanggal Publish
+    // =========================================================================
+    // 8. HANDLE PUBLISH STATUS & DATE
+    // =========================================================================
     if (data.published !== undefined) {
+      updateData.published = data.published;
+
+      // Auto-set publishedAt saat publish jika belum ada
       if (
         data.published === true &&
         !existing.publishedAt &&
@@ -321,48 +425,95 @@ export class ArticleService {
       ) {
         updateData.publishedAt = new Date();
       } else if (data.published === false) {
-        // Jika di-unpublish, biarkan saja logic sesuai kebutuhanmu
+        // Unpublish: bisa clear publishedAt atau keep, sesuai business logic
+        // Saat ini: keep saja (opsional uncomment di bawah untuk clear)
+        // updateData.publishedAt = null;
       } else if (data.publishedAt) {
         updateData.publishedAt = new Date(data.publishedAt);
       }
     }
 
+    // =========================================================================
+    // 9. HANDLE SEO: Upsert (create jika belum ada, update jika ada)
+    // =========================================================================
+    if (data.seo) {
+      updateData.seo = {
+        upsert: {
+          create: {
+            metaTitle: data.seo.metaTitle,
+            metaDescription: data.seo.metaDescription,
+            keywords: data.seo.keywords,
+            canonicalUrl: data.seo.canonicalUrl,
+            ogTitle: data.seo.ogTitle,
+            ogDescription: data.seo.ogDescription,
+            ogImage: data.seo.ogImage,
+            robots: data.seo.robots,
+            structuredData: data.seo.structuredData,
+          },
+          update: {
+            metaTitle: data.seo.metaTitle,
+            metaDescription: data.seo.metaDescription,
+            keywords: data.seo.keywords,
+            canonicalUrl: data.seo.canonicalUrl,
+            ogTitle: data.seo.ogTitle,
+            ogDescription: data.seo.ogDescription,
+            ogImage: data.seo.ogImage,
+            robots: data.seo.robots,
+            structuredData: data.seo.structuredData,
+          },
+        },
+      };
+    }
+
+    // =========================================================================
+    // 10. EXECUTE UPDATE: Dengan transaction untuk atomic operation
+    // =========================================================================
     try {
       const updated = await this.prisma.$transaction(async (tx) => {
-        // 1. Update data dasar artikel
+        // ✅ Update article data dengan field names yang benar
         const article = await tx.article.update({
           where: { id },
           data: updateData,
         });
 
-        // 2. Sync Related Products
+        // =========================================================================
+        // 11. SYNC RELATED PRODUCTS: Delete old, create new
+        // =========================================================================
         if (productIds !== undefined) {
+          // Delete semua product lama
           await tx.articleProduct.deleteMany({
             where: { articleId: id },
           });
 
+          // Create product baru jika ada
           if (productIds.length > 0) {
             await tx.articleProduct.createMany({
               data: productIds.map((productId) => ({
                 articleId: id,
                 productId: productId,
               })),
+              skipDuplicates: true,
             });
           }
         }
 
-        // 3. Sync Article Tags
+        // =========================================================================
+        // 12. SYNC ARTICLE TAGS: Delete old, create new
+        // =========================================================================
         if (tagIds !== undefined) {
+          // Delete semua tags lama
           await tx.articleTagMap.deleteMany({
             where: { articleId: id },
           });
 
+          // Create tags baru jika ada
           if (tagIds.length > 0) {
             await tx.articleTagMap.createMany({
               data: tagIds.map((tagId) => ({
                 articleId: id,
                 tagId: tagId,
               })),
+              skipDuplicates: true,
             });
           }
         }
@@ -370,6 +521,7 @@ export class ArticleService {
         return article;
       });
 
+      // Return lengkap dengan relations
       return this.getArticleById(updated.id);
     } catch (error) {
       console.error("🔥 ERROR UPDATING ARTICLE:", error);

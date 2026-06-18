@@ -74,11 +74,15 @@ export default class App {
     this.app.use(helmet());
 
     const allowedOrigins = env().CORS_ORIGIN
-      ? env().CORS_ORIGIN.split(",")
+      ? env()
+          .CORS_ORIGIN.split(",")
+          .map((origin) => origin.trim())
       : [
+          // 2. Update fallback default-nya juga agar lebih aman
           "http://localhost:3000",
-          "https://goenakan.edumatrixindonesia.cloud",
           "http://localhost:3001",
+          "https://goenakan.tech",
+          "https://goenakan.edumatrixindonesia.cloud",
         ];
 
     this.app.use(
@@ -98,7 +102,6 @@ export default class App {
       }),
     );
 
-    this.app.use(cors());
     this.app.use(json());
     this.app.use(cookieParser());
   }
