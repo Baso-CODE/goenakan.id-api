@@ -73,30 +73,21 @@ export default class App {
   private configure(): void {
     this.app.use(helmet());
 
-    const allowedOrigins = env().CORS_ORIGIN
-      ? env()
-          .CORS_ORIGIN.split(",")
-          .map((origin) => origin.trim())
-      : [
-          // 2. Update fallback default-nya juga agar lebih aman
-          "http://localhost:3000",
-          "http://localhost:3001",
-          "https://goenakan.tech",
-          "https://goenakan.edumatrixindonesia.cloud",
-        ];
+    // const allowedOrigins = env().CORS_ORIGIN
+    //   ? env()
+    //       .CORS_ORIGIN.split(",")
+    //       .map((origin) => origin.trim())
+    //   : [
+    //       "http://localhost:3000",
+    //       "http://localhost:3001",
+    //       "https://goenakan.tech",
+    //       "https://goenakan.edumatrixindonesia.cloud",
+    //     ];
 
     this.app.use(
       cors({
-        origin: function (origin, callback) {
-          if (!origin) return callback(null, true);
-
-          if (allowedOrigins.indexOf(origin) !== -1) {
-            callback(null, true);
-          } else {
-            callback(new Error("Not allowed by CORS"));
-          }
-        },
-        credentials: true,
+        origin: true, // Trik ajaib: Otomatis mengizinkan domain siapapun yang me-request
+        credentials: true, // Tetap izinkan cookie/token login
         methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
       }),
