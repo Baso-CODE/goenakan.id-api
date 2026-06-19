@@ -95,7 +95,8 @@ export class ArticleBannerService {
         article: {
           select: {
             id: true,
-            title: true,
+            title_id: true, // Sesuaikan dengan model baru
+            title_en: true, // Anda mungkin juga butuh ini di frontend
             coverImage: true,
           },
         },
@@ -103,12 +104,18 @@ export class ArticleBannerService {
     });
 
     if (!banner) throw new ApiError("Banner not found", 404);
-    return banner;
-  }
 
-  // =========================================================================
-  // 4. GET ALL BANNERS (Untuk Tabel List di Admin)
-  // =========================================================================
+    // Opsional: Jika ingin tetap mempertahankan properti 'title' untuk kemudahan frontend
+    return {
+      ...banner,
+      article: banner.article
+        ? {
+            ...banner.article,
+            title: banner.article.title_id, // Memetakan kembali ke 'title' agar frontend tidak rusak
+          }
+        : null,
+    };
+  }
   async getAllBanners(query: {
     page?: number;
     take?: number;
@@ -116,9 +123,11 @@ export class ArticleBannerService {
     isActive?: boolean | string;
   }) {
     const where: any = {};
+
+    // Perbaikan: Mencari berdasarkan title_id
     if (query.search) {
       where.article = {
-        title: { contains: query.search },
+        title_id: { contains: query.search },
       };
     }
 
@@ -131,6 +140,7 @@ export class ArticleBannerService {
     }
 
     const count = await this.prisma.articleBanner.count({ where });
+
     const data = await this.prisma.articleBanner.findMany({
       where,
       skip: (Number(query.page || 1) - 1) * Number(query.take || 10),
@@ -138,10 +148,27 @@ export class ArticleBannerService {
       orderBy: { createdAt: "desc" },
       include: {
         article: {
-          select: { title: true, coverImage: true, slug: true },
+          // Perbaikan: Select title_id (dan opsional title_en)
+          select: {
+            title_id: true,
+            title_en: true,
+            coverImage: true,
+            slug: true,
+          },
         },
       },
     });
+
+    // Melakukan mapping data agar tetap kompatibel dengan frontend yang mengharapkan 'title'
+    const formattedData = data.map((banner) => ({
+      ...banner,
+      article: banner.article
+        ? {
+            ...banner.article,
+            title: banner.article.title_id, // Frontend tetap menerima 'title'
+          }
+        : null,
+    }));
 
     const meta = this.pagination.generateMeta({
       count,
@@ -149,9 +176,8 @@ export class ArticleBannerService {
       take: Number(query.take || 10),
     });
 
-    return { data, meta };
+    return { data: formattedData, meta };
   }
-
   // =========================================================================
   // 5. DELETE BANNER
   // =========================================================================
@@ -183,13 +209,13 @@ export class ArticleBannerService {
           isActive: true,
         },
         orderBy: {
-          createdAt: "desc", // Banner terbaru tampil pertama
+          createdAt: "desc",
         },
-        // Include secara spesifik bagian-bagian artikel yang dibutuhkan UI Carousel
         include: {
           article: {
             select: {
-              title: true,
+              title_id: true, // Update: Ambil title_id
+              title_en: true, // Update: Ambil title_en untuk kebutuhan frontend
               coverImage: true,
               publishedAt: true,
               createdAt: true,
@@ -204,7 +230,17 @@ export class ArticleBannerService {
         },
       });
 
-      return banners;
+      // Mapping agar struktur data tetap kompatibel dengan frontend
+      // Frontend biasanya mengakses banner.article.title
+      return banners.map((banner) => ({
+        ...banner,
+        article: banner.article
+          ? {
+              ...banner.article,
+              title: banner.article.title_id, // Tetap sediakan 'title' untuk UI
+            }
+          : null,
+      }));
     } catch (error) {
       console.error("🔥 ERROR FETCHING PUBLIC BANNERS:", error);
       throw new ApiError("Failed to fetch active banners.", 500);

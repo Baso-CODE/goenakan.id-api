@@ -620,23 +620,27 @@ export class ArticleService {
             },
           },
         },
+        seo: true, // Pastikan SEO ikut ditarik
       },
     });
 
     if (!article || !article.published) {
       throw new ApiError("Article not found or not published", 404);
     }
+
     const relevantArticles = await this.getRelevantArticles(
       article.categoryId,
       article.id,
     );
+
+    // Perbaikan: Gunakan title_id karena model sudah berubah
     const prevArticle = await this.prisma.article.findFirst({
       where: {
         published: true,
         createdAt: { lt: article.createdAt },
       },
       orderBy: { createdAt: "desc" },
-      select: { title: true, slug: true },
+      select: { title_id: true, slug: true },
     });
 
     const nextArticle = await this.prisma.article.findFirst({
@@ -645,18 +649,17 @@ export class ArticleService {
         createdAt: { gt: article.createdAt },
       },
       orderBy: { createdAt: "asc" },
-      select: { title: true, slug: true },
+      select: { title_id: true, slug: true },
     });
 
-    // 4. Return artikel utama beserta prev dan next-nya
     return {
       ...article,
       relevantArticles,
       prevArticle: prevArticle
-        ? { title: prevArticle.title, href: `/article/${prevArticle.slug}` }
+        ? { title: prevArticle.title_id, href: `/article/${prevArticle.slug}` }
         : null,
       nextArticle: nextArticle
-        ? { title: nextArticle.title, href: `/article/${nextArticle.slug}` }
+        ? { title: nextArticle.title_id, href: `/article/${nextArticle.slug}` }
         : null,
     };
   }
