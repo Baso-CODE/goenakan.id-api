@@ -9,8 +9,8 @@ const WP_API_URL =
   "https://goenakan.id/wp-json/wp/v2/posts?per_page=100&_embed";
 
 // ⚠️ GANTI DENGAN UUID DARI DATABASE BARU ANDA
-const DEFAULT_AUTHOR_ID = "2085fd83-af3a-4224-b33a-318ffb63710b";
-const DEFAULT_CATEGORY_ID = "656a434b-e98c-4c89-9fb7-7e0de2dd88c3";
+const DEFAULT_AUTHOR_ID = "0d0db9a4-ab0c-4152-9c79-7270037b2a93";
+const DEFAULT_CATEGORY_ID = "0d3acec9-84d5-4f45-9ef2-0403f3179c8e";
 
 async function migrateWordPressArticles() {
   // 1. Ambil instance PrismaService dari container tsyringe
