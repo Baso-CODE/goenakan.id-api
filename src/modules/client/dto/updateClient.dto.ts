@@ -1,11 +1,11 @@
+import { Type } from "class-transformer";
 import {
+  IsArray,
   IsEnum,
   IsOptional,
   IsString,
-  IsArray,
   ValidateNested,
 } from "class-validator";
-import { Type } from "class-transformer";
 import { ClientType } from "./createClient.dto";
 
 // ============================
@@ -43,10 +43,6 @@ export class UpdateClientDTO {
   @IsOptional()
   @IsString()
   phone?: string;
-
-  @IsOptional()
-  @IsString()
-  purchaseChannelId?: string;
 
   // ============================
   // B2B FIELDS

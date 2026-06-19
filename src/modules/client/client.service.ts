@@ -98,8 +98,6 @@ export class ClientService {
               postalCode: data.postalCode ?? "",
               fullAddress: data.fullAddress ?? "",
 
-              purchaseChannelId: data.purchaseChannelId!,
-
               pics: data.pics?.length
                 ? {
                     create: data.pics.map((pic) => ({
@@ -148,9 +146,6 @@ export class ClientService {
               subDistrict: data.subDistrictB2C ?? "",
               postalCode: data.postalCodeB2C ?? "",
               fullAddress: data.fullAddressB2C ?? data.fullAddress ?? "",
-
-              purchaseChannelId:
-                data.purchaseChannelIdB2C ?? data.purchaseChannelId!,
             },
           },
         },
@@ -351,14 +346,11 @@ export class ClientService {
         b2b: {
           include: {
             department: true,
-            purchaseChannel: true,
             pics: true,
           },
         },
         b2c: {
-          include: {
-            purchaseChannel: true,
-          },
+          include: {},
         },
       },
     });
@@ -403,9 +395,6 @@ export class ClientService {
               postalCode: data.postalCode ?? existing.b2b?.postalCode,
 
               fullAddress: data.fullAddress ?? existing.b2b?.fullAddress,
-
-              purchaseChannelId:
-                data.purchaseChannelId ?? existing.b2b?.purchaseChannelId,
 
               pics: data.pics
                 ? {
@@ -452,9 +441,6 @@ export class ClientService {
                 data.fullAddressB2C ??
                 data.fullAddress ??
                 existing.b2c?.fullAddress,
-
-              purchaseChannelId:
-                data.purchaseChannelId ?? existing.b2c?.purchaseChannelId,
             },
           },
         },
@@ -593,9 +579,6 @@ export class ClientService {
         address = client.b2b.fullAddress;
         city = client.b2b.city || "";
 
-        // 2. AMBIL ID DARI B2B
-        purchaseChannelId = client.b2b.purchaseChannelId;
-
         if (client.b2b.pics && client.b2b.pics.length > 0) {
           pics = client.b2b.pics.map((p) => ({
             id: p.id,
@@ -612,9 +595,6 @@ export class ClientService {
         phone = client.b2c.phone || "";
         address = client.b2c.fullAddress;
         city = client.b2c.city || "";
-
-        // 3. AMBIL ID DARI B2C
-        purchaseChannelId = client.b2c.purchaseChannelId;
       }
 
       const formattedAddress = city ? `${address}, ${city}` : address;
@@ -666,9 +646,9 @@ export class ClientService {
       orderBy: { createdAt: "desc" },
       include: {
         b2b: {
-          include: { department: true, purchaseChannel: true, pics: true },
+          include: { department: true, pics: true },
         },
-        b2c: { include: { purchaseChannel: true } },
+        b2c: { include: {} },
       },
     });
 
@@ -702,7 +682,6 @@ export class ClientService {
         clientData.extraInfo1 = client.b2b.department?.name || "N/A";
         clientData.phone = client.b2b.phone || "N/A";
         clientData.extraInfo2 = client.b2b.email || client.b2b.website || "N/A";
-        clientData.channel = client.b2b.purchaseChannel.name;
         clientData.address = `${client.b2b.fullAddress}, ${client.b2b.city}, ${client.b2b.province}`;
         clientData.pics =
           client.b2b.pics.map((p) => `${p.name} (${p.phone})`).join("; ") ||
@@ -712,7 +691,6 @@ export class ClientService {
         clientData.extraInfo1 = client.b2c.prefix || "N/A";
         clientData.phone = client.b2c.phone || "N/A";
         clientData.extraInfo2 = "N/A"; // B2C tidak punya email/website di model ini
-        clientData.channel = client.b2c.purchaseChannel.name;
         clientData.address = `${client.b2c.fullAddress}, ${client.b2c.city}, ${client.b2c.province}`;
         clientData.pics = "N/A"; // B2C tidak punya PIC terpisah
       } else {

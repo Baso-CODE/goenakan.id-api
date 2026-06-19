@@ -390,7 +390,6 @@ export class WebOrderService {
               website: "-",
               phone: webOrder.profile?.picPhone || webOrder.guestPhone,
               fullAddress: JSON.stringify(webOrder.shippingAddress),
-              purchaseChannelId: webChannel.id,
             },
           });
         } else {
@@ -401,7 +400,6 @@ export class WebOrderService {
               name: webOrder.guestName || "Guest",
               phone: webOrder.guestPhone,
               fullAddress: JSON.stringify(webOrder.shippingAddress),
-              purchaseChannelId: webChannel.id,
             },
           });
         }

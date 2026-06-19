@@ -139,9 +139,9 @@ export class CreateOrderDTO {
   @Type(() => Number)
   warrantyDays?: number | null;
 
-  @IsString()
-  @IsNotEmpty()
-  salesId!: string;
+  // @IsString()
+  // @IsNotEmpty()
+  // salesId!: string;
 
   @IsString()
   @IsNotEmpty()

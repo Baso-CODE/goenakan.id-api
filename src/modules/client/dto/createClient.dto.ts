@@ -107,10 +107,6 @@ export class CreateClientDTO {
   @IsString()
   fullAddress?: string;
 
-  @IsOptional()
-  @IsString()
-  purchaseChannelId?: string;
-
   // MULTIPLE PIC
   @IsOptional()
   @IsArray()

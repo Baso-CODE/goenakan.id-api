@@ -211,7 +211,7 @@ export class OrderService {
           warrantyDays: warrantyDays ?? null,
 
           client: { connect: { id: orderCore.clientId } },
-          sales: { connect: { id: orderCore.salesId } },
+          // sales: { connect: { id: orderCore.salesId } },
           ...connectRelations,
 
           products: {
@@ -220,7 +220,6 @@ export class OrderService {
         },
         include: {
           products: true,
-          // ✨ HAPUS: vendors: true dihilangkan agar tidak error
           client: {
             include: {
               b2b: { include: { pics: true } },
@@ -400,7 +399,7 @@ export class OrderService {
           shippingAddress: orderCore.shippingAddress,
           totalAmount,
 
-          sales: { connect: { id: orderCore.salesId } },
+          // sales: { connect: { id: orderCore.salesId } },
 
           ...updateRelations,
 
@@ -427,6 +426,7 @@ export class OrderService {
 
     return updatedOrder;
   }
+
   async getOrderForUpdate(id: string) {
     const order = await this.prisma.order.findUnique({
       where: { id },
@@ -666,7 +666,6 @@ export class OrderService {
       };
     });
 
-    // 5. ✨ UPDATE 3: Vendors Detail Mapping (Diambil dari PurchaseOrder)
     const uniqueVendorsMap = new Map();
     order.purchaseOrderItems.forEach((poi) => {
       const po = poi.purchaseOrder;
@@ -889,6 +888,7 @@ export class OrderService {
 
     return { data: formattedData, meta };
   }
+
   async exportOrdersToExcel(query: OrderExportQuery): Promise<Buffer> {
     const { startDate, endDate, search, salesCategory } = query;
 
@@ -910,7 +910,7 @@ export class OrderService {
     // 2. Filter Pencarian (Order Number atau Nama Client)
     if (search) {
       where.OR = [
-        { orderNumber: { contains: search } }, // Diubah dari poNumber
+        { orderNumber: { contains: search } },
         { client: { b2b: { companyName: { contains: search } } } },
         { client: { b2c: { name: { contains: search } } } },
       ];
@@ -1312,6 +1312,7 @@ export class OrderService {
       throw new ApiError("Gagal membuat nomor referensi otomatis.", 500);
     }
   }
+
   async getGeneralOrderStats() {
     try {
       // 1. Hitung Semua Order
