@@ -53,6 +53,7 @@ import { BrandClientRouter } from "./modules/web-clients/content/brandClient/bra
 import { ClientLogoRouter } from "./modules/web-clients/content/clientLogo/clientLogo.router";
 import { FaqRouter } from "./modules/web-clients/content/faq/faq.router";
 import { HeroRouter } from "./modules/web-clients/content/hero/hero.router";
+import { PolicyRouter } from "./modules/web-clients/content/policy/policy.router";
 import { PortfolioRouter } from "./modules/web-clients/content/portfolio/portfolio.router";
 import { AppSettingRouter } from "./modules/web-clients/content/setting/setting.router";
 import { CustomerProfileRouter } from "./modules/web-clients/customer-profile/customer-profile.router";
@@ -122,6 +123,7 @@ export default class App {
       ShipmentNoteCategoryRouter,
     );
     const faqsRouter = container.resolve(FaqRouter);
+    const policyRouter = container.resolve(PolicyRouter);
     const heroRouter = container.resolve(HeroRouter);
     const quotationRouter = container.resolve(QuotationRouter);
     const bannerRouter = container.resolve(PopupBannerRouter);
@@ -180,6 +182,7 @@ export default class App {
     this.app.use("/quotations", quotationRouter.getRouter());
     this.app.use("/content/popup-banners", bannerRouter.getRouter());
     this.app.use("/content/faqs", faqsRouter.getRouter());
+    this.app.use("/content/policies", policyRouter.getRouter());
     this.app.use("/content/heros", heroRouter.getRouter());
     this.app.use("/content/client-logos", clientLogoRouter.getRouter());
     this.app.use("/app-settings", appSettingRouter.getRouter());

@@ -1437,10 +1437,13 @@ model Currency {
 // ===============================================
 
 model FaqCategory {
-  id           String   @id @default(uuid())
-  name         String
-  slug         String   @unique
-  description  String?
+  id            String  @id @default(uuid())
+  nameId        String
+  nameEn        String
+  slug          String  @unique
+  descriptionId String?
+  descriptionEn String?
+
   displayOrder Int      @default(0)
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
@@ -1452,9 +1455,13 @@ model FaqCategory {
 }
 
 model Faq {
-  id           String   @id @default(uuid())
-  question     String
-  answer       String   @db.Text
+  id String @id @default(uuid())
+
+  questionId String
+  questionEn String
+  answerId   String @db.Text
+  answerEn   String @db.Text
+
   displayOrder Int      @default(0)
   isFeatured   Boolean  @default(false)
   isActive     Boolean  @default(true)
@@ -1466,6 +1473,45 @@ model Faq {
   category   FaqCategory @relation(fields: [categoryId], references: [id])
 
   @@map("faqs")
+}
+
+model PolicyCategory {
+  id Int @id @default(autoincrement())
+
+  nameId        String
+  nameEn        String
+  slug          String  @unique
+  descriptionId String?
+  descriptionEn String?
+
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  policies Policy[]
+
+  @@map("policy_categories")
+}
+
+model Policy {
+  id Int @id @default(autoincrement())
+
+  titleId   String
+  titleEn   String
+  contentId String @db.Text
+  contentEn String @db.Text
+
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relasi ke Kategori
+  categoryId Int
+  category   PolicyCategory @relation(fields: [categoryId], references: [id])
+
+  @@map("policies")
 }
 
 model HeroSlide {
@@ -1739,11 +1785,10 @@ model Article {
   focusKeywords_id String? @db.Text
 
   // === KONTEN BAHASA INGGRIS (HASIL AUTO-TRANSLATE) ===
-  title_en         String? @db.VarChar(255)
-  content_en       String? @db.LongText
-  focusKeywords_en String? @db.Text
-
-  // === DATA GLOBAL (Sama untuk semua bahasa) ===
+  title_en           String?   @db.VarChar(255)
+  content_en         String?   @db.LongText
+  focusKeywords_en   String?   @db.Text
+  isTranslated       Boolean   @default(false)
   coverImage         String
   coverImageId       String?
   coverImageAlt      String?

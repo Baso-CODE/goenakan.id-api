@@ -86,6 +86,10 @@ export class ArticleService {
       }
     }
 
+    // ✨ CEK APAKAH ARTIKEL SUDAH DITERJEMAHKAN
+    // Bernilai true jika title_en DAN content_en sudah ada isinya
+    const hasTranslation = !!(title_en && content_en);
+
     // --- UPLOAD GAMBAR DESKTOP ---
     let coverImageUrl = data.coverImage;
     let coverImagePublicId = data.coverImageId;
@@ -145,6 +149,9 @@ export class ArticleService {
             title_en: title_en,
             content_en: content_en,
             focusKeywords_en: focusKeywords_en,
+
+            // ✨ SIMPAN STATUS TRANSLATE KE DATABASE
+            isTranslated: hasTranslation,
 
             // Global fields (sama untuk semua bahasa)
             slug,
@@ -305,6 +312,8 @@ export class ArticleService {
       if (data.focusKeywords_en) focusKeywords_en = data.focusKeywords_en;
     }
 
+    const hasTranslation = !!(title_en && content_en);
+
     // =========================================================================
     // 5. HANDLE DESKTOP COVER IMAGE
     // =========================================================================
@@ -391,6 +400,10 @@ export class ArticleService {
       content_en,
       focusKeywords_en,
       slug: newSlug,
+
+      // ✨ SIMPAN STATUS TRANSLATE KE DATABASE
+      isTranslated: hasTranslation,
+
       ...(data.source && { source: data.source }),
       coverImage: coverImageUrl,
       coverImageId: coverImagePublicId,
@@ -641,7 +654,11 @@ export class ArticleService {
     const where: any = {};
 
     if (query.search) {
-      where.title = { contains: query.search };
+      // ✨ Menggunakan OR agar sistem mencari di judul bahasa Indonesia ATAU bahasa Inggris
+      where.OR = [
+        { title_id: { contains: query.search } },
+        { title_en: { contains: query.search } },
+      ];
     }
 
     if (query.categoryId) {

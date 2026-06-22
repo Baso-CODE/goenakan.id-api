@@ -121,12 +121,10 @@ export class UpdateArticleDTO {
   @IsOptional()
   content?: string;
 
-  // ✨ TAMBAHAN: Translasi Konten
   @IsString()
   @IsOptional()
   content_en?: string;
 
-  // ✨ TAMBAHAN: Trigger Auto Translate
   @IsBoolean()
   @IsOptional()
   autoTranslate?: boolean;
