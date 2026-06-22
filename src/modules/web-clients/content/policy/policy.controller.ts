@@ -81,6 +81,26 @@ export class PolicyController {
     }
   };
 
+  getCategoryById = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = Number(req.params.id);
+      const result = await this.policyCategoryService.getPolicyCategoryById(id);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Menghapus kategori
+  deleteCategory = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = Number(req.params.id);
+      await this.policyCategoryService.deletePolicyCategory(id);
+      res.status(200).json({ message: "Policy category deleted successfully" });
+    } catch (error) {
+      next(error);
+    }
+  };
   // =================================================================
   // SECTION 2: POLICY ITEMS
   // =================================================================
@@ -105,6 +125,16 @@ export class PolicyController {
         search: search as string,
         categoryId: Number(categoryId),
       });
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getPolicyById = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = Number(req.params.id);
+      const result = await this.policyService.getPolicyById(id);
       res.status(200).json(result);
     } catch (error) {
       next(error);

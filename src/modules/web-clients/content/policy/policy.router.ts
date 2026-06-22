@@ -41,6 +41,13 @@ export class PolicyRouter {
       this.policyController.getAllCategories,
     );
 
+    this.router.get(
+      "/categories/:id",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
+      this.policyController.getCategoryById,
+    );
+
     this.router.post(
       "/categories",
       this.nextAuthMiddleware.verifyNextAuthToken,
@@ -57,6 +64,12 @@ export class PolicyRouter {
       this.policyController.updateCategory,
     );
 
+    this.router.delete(
+      "/categories/:id",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
+      this.policyController.deleteCategory,
+    );
     // ==========================================
     // SECTION 2: POLICY ITEMS (CONTENTS) ROUTES
     // ==========================================
@@ -74,6 +87,13 @@ export class PolicyRouter {
       verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       validateBody(CreatePolicyDTO),
       this.policyController.createPolicy,
+    );
+
+    this.router.get(
+      "/items/:id",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
+      this.policyController.getPolicyById,
     );
 
     this.router.patch(

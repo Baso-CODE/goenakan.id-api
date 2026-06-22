@@ -128,4 +128,24 @@ export class PolicyCategoryService {
 
     return (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
   }
+
+  // === GET BY ID ===
+  async getPolicyCategoryById(id: number) {
+    const category = await this.prisma.policyCategory.findUnique({
+      where: { id },
+    });
+
+    if (!category) throw new ApiError("Policy Category not found", 404);
+    return category;
+  }
+
+  // === DELETE ===
+  async deletePolicyCategory(id: number) {
+    const existing = await this.prisma.policyCategory.findUnique({
+      where: { id },
+    });
+    if (!existing) throw new ApiError("Policy Category not found", 404);
+
+    return await this.prisma.policyCategory.delete({ where: { id } });
+  }
 }

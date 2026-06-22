@@ -36,6 +36,25 @@ export class PolicyService {
     return category;
   }
 
+  // === GET BY ID ===
+  async getPolicyById(id: number) {
+    const policy = await this.prisma.policy.findUnique({
+      where: { id },
+      include: { category: true },
+    });
+
+    if (!policy) throw new ApiError("Policy item not found", 404);
+    return policy;
+  }
+
+  // === DELETE ===
+  async deletePolicy(id: number) {
+    const existing = await this.prisma.policy.findUnique({ where: { id } });
+    if (!existing) throw new ApiError("Policy item not found", 404);
+
+    return await this.prisma.policy.delete({ where: { id } });
+  }
+
   // === GET ALL WITH PAGINATION (Bilingual Search) ===
   async getAllPolicies(query: {
     page?: number;
@@ -105,14 +124,6 @@ export class PolicyService {
       where: { id },
       data: data,
     });
-  }
-
-  // === DELETE ===
-  async deletePolicy(id: number) {
-    const existing = await this.prisma.policy.findUnique({ where: { id } });
-    if (!existing) throw new ApiError("Policy item not found", 404);
-
-    return await this.prisma.policy.delete({ where: { id } });
   }
 
   // === EXCEL EXPORT ===
