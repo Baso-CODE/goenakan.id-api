@@ -8,6 +8,7 @@ Backend RESTful API untuk platform **Goenakan.id** — dibangun dengan **Express
 
 - [Tech Stack](#-tech-stack)
 - [Struktur Proyek](#-struktur-proyek)
+- [Arsitektur Sistem](#-arsitektur-sistem)
 - [Prasyarat](#-prasyarat)
 - [Instalasi](#-instalasi)
 - [Environment Variables](#-environment-variables)
@@ -65,6 +66,246 @@ goenakan.id-api/
 ├── tsconfig.json           # Konfigurasi TypeScript
 └── package.json
 ```
+
+---
+
+## 🏗️ Arsitektur Sistem
+
+Proyek ini menggunakan **Layered Architecture** berbasis modul, dikombinasikan dengan **Dependency Injection** via `tsyringe`. Setiap fitur dikemas dalam modul tersendiri yang berisi Router, Controller, Service, dan DTO-nya masing-masing.
+
+### Alur Request
+
+```
+HTTP Request
+     │
+     ▼
+┌─────────────────────────────────┐
+│          src/index.ts           │  ← Entry point, inisialisasi Express App,
+│        (App Bootstrap)          │    middleware global, dan mount semua router
+└────────────────┬────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────┐
+│     src/modules/**/router.ts    │  ← Mendefinisikan endpoint & method HTTP,
+│          (Router Layer)         │    memasang middleware (auth, upload, dll.),
+└────────────────┬────────────────┘    lalu meneruskan ke Controller
+                 │
+                 ▼
+┌─────────────────────────────────┐
+│   src/modules/**/controller.ts  │  ← Menerima req/res, memvalidasi input
+│       (Controller Layer)        │    dengan DTO (class-validator),
+└────────────────┬────────────────┘    lalu memanggil Service
+                 │
+                 ▼
+┌─────────────────────────────────┐
+│    src/modules/**/service.ts    │  ← Berisi business logic utama:
+│        (Service Layer)          │    kalkulasi, integrasi pihak ketiga
+└────────────────┬────────────────┘    (Midtrans, Cloudinary, Nodemailer)
+                 │
+                 ▼
+┌─────────────────────────────────┐
+│         Prisma Client           │  ← ORM untuk query & mutasi database,
+│       (Data Access Layer)       │    type-safe berdasarkan schema.prisma
+└────────────────┬────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────┐
+│       MySQL / MariaDB           │  ← Database utama
+│         (Database)              │
+└─────────────────────────────────┘
+```
+
+---
+
+### Struktur Modul
+
+Setiap fitur ditempatkan di `src/modules/<nama-fitur>/` dengan struktur yang konsisten:
+
+```
+src/modules/
+└── auth/                      # Contoh modul "auth"
+    ├── auth.router.ts         # Definisi route & middleware
+    ├── auth.controller.ts     # Handler request/response
+    ├── auth.service.ts        # Business logic
+    └── dto/
+        ├── login.dto.ts       # Validasi input login
+        └── register.dto.ts    # Validasi input register
+```
+
+---
+
+### Penjelasan Tiap Layer
+
+#### 1. `index.ts` — Bootstrap Aplikasi
+
+File entry point yang menginisialisasi Express, mendaftarkan middleware global (CORS, body-parser, dll.), dan me-mount seluruh modul router ke dalam aplikasi.
+
+```typescript
+// src/index.ts
+import "reflect-metadata";
+import { container } from "tsyringe";
+import express from "express";
+import { AuthRouter } from "./modules/auth/auth.router";
+
+const app = express();
+app.use(express.json());
+
+// Mount router dari setiap modul
+const authRouter = container.resolve(AuthRouter);
+app.use("/api/auth", authRouter.getRouter());
+
+app.listen(process.env.PORT, () => {
+  console.log(`Server berjalan di port ${process.env.PORT}`);
+});
+```
+
+---
+
+#### 2. `*.router.ts` — Router Layer
+
+Mendefinisikan endpoint HTTP, memasang middleware (autentikasi, upload file, dsb.), lalu mendelegasikan ke method Controller yang sesuai.
+
+```typescript
+// src/modules/auth/auth.router.ts
+import { Router } from "express";
+import { injectable } from "tsyringe";
+import { AuthController } from "./auth.controller";
+
+@injectable()
+export class AuthRouter {
+  private router: Router;
+
+  constructor(private authController: AuthController) {
+    this.router = Router();
+    this.initRoutes();
+  }
+
+  private initRoutes() {
+    this.router.post("/register", (req, res) =>
+      this.authController.register(req, res)
+    );
+    this.router.post("/login", (req, res) =>
+      this.authController.login(req, res)
+    );
+  }
+
+  getRouter(): Router {
+    return this.router;
+  }
+}
+```
+
+---
+
+#### 3. `*.controller.ts` — Controller Layer
+
+Menerima `Request` dan `Response` dari Express, memvalidasi body menggunakan DTO (`class-validator`), lalu memanggil Service. Controller tidak boleh mengandung business logic.
+
+```typescript
+// src/modules/auth/auth.controller.ts
+import { Request, Response } from "express";
+import { injectable } from "tsyringe";
+import { plainToInstance } from "class-transformer";
+import { validate } from "class-validator";
+import { AuthService } from "./auth.service";
+import { RegisterDto } from "./dto/register.dto";
+
+@injectable()
+export class AuthController {
+  constructor(private authService: AuthService) {}
+
+  async register(req: Request, res: Response) {
+    // 1. Transformasi body ke DTO
+    const dto = plainToInstance(RegisterDto, req.body);
+
+    // 2. Validasi input
+    const errors = await validate(dto);
+    if (errors.length > 0) {
+      return res.status(400).json({ errors });
+    }
+
+    // 3. Delegate ke Service
+    const result = await this.authService.register(dto);
+    return res.status(201).json(result);
+  }
+}
+```
+
+---
+
+#### 4. `*.service.ts` — Service Layer
+
+Berisi seluruh business logic aplikasi: hash password, generate token JWT, kirim email, upload ke Cloudinary, buat transaksi Midtrans, dsb. Service berkomunikasi langsung dengan Prisma untuk operasi database.
+
+```typescript
+// src/modules/auth/auth.service.ts
+import { injectable } from "tsyringe";
+import { hash } from "argon2";
+import { PrismaClient } from "@prisma/client";
+import { RegisterDto } from "./dto/register.dto";
+
+@injectable()
+export class AuthService {
+  constructor(private prisma: PrismaClient) {}
+
+  async register(dto: RegisterDto) {
+    // 1. Hash password
+    const hashedPassword = await hash(dto.password);
+
+    // 2. Simpan user ke database via Prisma
+    const user = await this.prisma.user.create({
+      data: {
+        name: dto.name,
+        email: dto.email,
+        password: hashedPassword,
+      },
+    });
+
+    // 3. Return response (tanpa password)
+    const { password, ...result } = user;
+    return result;
+  }
+}
+```
+
+---
+
+#### 5. `*.dto.ts` — Data Transfer Object
+
+Mendefinisikan struktur & aturan validasi input menggunakan decorator dari `class-validator`. Dipakai di Controller untuk memastikan data yang masuk sudah sesuai sebelum diproses.
+
+```typescript
+// src/modules/auth/dto/register.dto.ts
+import { IsEmail, IsString, MinLength } from "class-validator";
+
+export class RegisterDto {
+  @IsString()
+  name: string;
+
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  @MinLength(8)
+  password: string;
+}
+```
+
+---
+
+### Dependency Injection (tsyringe)
+
+Seluruh class (Router, Controller, Service) didekorasi dengan `@injectable()` dan dikelola oleh container `tsyringe`. Ini memungkinkan dependency antar class diinjeksikan secara otomatis tanpa perlu membuat instance manual.
+
+```
+tsyringe Container
+       │
+       ├── AuthRouter       → membutuhkan AuthController
+       ├── AuthController   → membutuhkan AuthService
+       └── AuthService      → membutuhkan PrismaClient
+```
+
+> **Keuntungan:** mudah di-mock saat testing, tidak ada coupling antar modul, dan setiap class bertanggung jawab atas satu hal saja (Single Responsibility Principle).
 
 ---
 
