@@ -741,7 +741,6 @@ export class OrderService {
     if (query.search) {
       const searchTerm = query.search.trim();
       where.OR = [
-        // Menggunakan orderNumber sebagai primary filter
         { orderNumber: { contains: searchTerm } },
         { clientPoNumber: { contains: searchTerm } },
         {
@@ -754,10 +753,17 @@ export class OrderService {
             b2c: { is: { name: { contains: searchTerm } } },
           },
         },
+        // Mencari berdasarkan PIC Customer (pihak klien B2B)
+        {
+          pic: { is: { name: { contains: searchTerm } } },
+        },
+        // ✨ Mencari berdasarkan PIC Sales (User yang login & membuat order)
+        {
+          createdBy: { is: { name: { contains: searchTerm } } },
+        },
       ];
     }
 
-    // 2. Filter Kategori Sales
     if (query.salesCategory) {
       where.salesCategory = query.salesCategory;
     }
@@ -791,11 +797,15 @@ export class OrderService {
       orderBy: { createdAt: "desc" },
       include: {
         client: {
-          include: { b2b: true, b2c: true },
+          include: {
+            b2c: true,
+            b2b: {
+              include: { pics: { select: { name: true } } },
+            },
+          },
         },
-        pic: { select: { name: true } },
-        sales: { select: { name: true } },
-        createdBy: { select: { name: true } },
+        pic: { select: { name: true } }, // PIC Customer
+        createdBy: { select: { name: true } }, // ✨ User yang login (PIC Sales)
         updatedBy: { select: { name: true } },
         referenceQuotation: { select: { quotationNumber: true } },
         referenceSample: { select: { orderNumber: true } },
@@ -824,10 +834,19 @@ export class OrderService {
     // === Format Ulang Data (Data Mapping) ===
     const formattedData = orders.map((order) => {
       let clientName = "-";
+      let picCustomer: string | null = null;
+
+      // Logika PIC Customer (Pihak Klien)
       if (order.client?.b2b) {
         clientName = order.client.b2b.companyName;
+        picCustomer =
+          order.pic?.name ||
+          (order.client.b2b.pics && order.client.b2b.pics.length > 0
+            ? order.client.b2b.pics[0].name
+            : "-");
       } else if (order.client?.b2c) {
         clientName = order.client.b2c.name;
+        picCustomer = null;
       }
 
       const lastShipment =
@@ -842,16 +861,11 @@ export class OrderService {
       return {
         id: order.id,
         orderDate: order.dateOrder,
-
-        // Menggunakan orderNumber sebagai kunci utama
         orderNumber: order.orderNumber || "-",
-
         customerName: clientName,
         shippingAddress: order.shippingAddress,
-        picCustomer: order.pic?.name || "-",
+        picCustomer: picCustomer, // PIC dari pihak klien pembeli
         clientPoNumber: order.clientPoNumber || "-",
-
-        // Dokumen Referensi
         sampleReference: order.referenceSample?.orderNumber || "-",
         quotationReference: order.referenceQuotation?.quotationNumber || "-",
 
@@ -875,7 +889,9 @@ export class OrderService {
         totalAmount: Number(order.totalAmount),
         currencyCode: order.currencyCode,
         salesCategory: order.salesCategory,
-        salesName: order.sales?.name || "-",
+
+        salesName: order.createdBy?.name || "-",
+
         totalItems: order._count.products,
       };
     });

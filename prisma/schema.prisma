@@ -417,6 +417,7 @@ model Product {
   sku             String                  @unique
   slug            String                  @unique
   description     String?                 @db.Text
+  uom             String                  @default("pcs")
   basePrice       Decimal
   isCustom        Boolean                 @default(false)
   materialTypeId  String?

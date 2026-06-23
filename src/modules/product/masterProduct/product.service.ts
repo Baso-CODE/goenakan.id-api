@@ -1249,6 +1249,7 @@ export class ProductService {
         select: {
           id: true,
           name: true,
+          uom: true,
           sku: true,
           basePrice: true,
           isCustom: true,
@@ -1283,6 +1284,7 @@ export class ProductService {
         id: p.id,
         name: p.name,
         sku: p.sku,
+        uom: p.uom,
         basePrice: p.basePrice,
         isCustom: p.isCustom,
         category: p.category
