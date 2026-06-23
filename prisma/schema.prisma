@@ -1514,6 +1514,40 @@ model Policy {
   @@map("policies")
 }
 
+model BestPriceGuaranteeCategory {
+  id            Int     @id @default(autoincrement())
+  nameId        String
+  nameEn        String
+  slug          String  @unique
+  descriptionId String?
+  descriptionEn String?
+
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  guarantees BestPriceGuarantee[]
+
+  @@map("best_price_guarantee_categories")
+}
+
+model BestPriceGuarantee {
+  id           Int                        @id @default(autoincrement())
+  titleId      String
+  titleEn      String
+  contentId    String                     @db.Text
+  contentEn    String                     @db.Text
+  displayOrder Int                        @default(0)
+  isActive     Boolean                    @default(true)
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
+  categoryId   Int
+  category     BestPriceGuaranteeCategory @relation(fields: [categoryId], references: [id])
+
+  @@map("best_price_guarantees")
+}
+
 model HeroSlide {
   id    String @id @default(uuid())
   title String

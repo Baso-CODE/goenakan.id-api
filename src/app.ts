@@ -49,6 +49,7 @@ import { ArticleTagRouter } from "./modules/web-clients/article/tag-article/tag-
 import { BannerProductRouter } from "./modules/web-clients/banner-product/banner-product.router";
 import { CartRouter } from "./modules/web-clients/cart/cart.router";
 import { PopupBannerRouter } from "./modules/web-clients/content/banner/banner.router";
+import { BestPriceGuaranteeRouter } from "./modules/web-clients/content/bestPriceGuarantee/bestPriceGuarantee.router";
 import { BrandClientRouter } from "./modules/web-clients/content/brandClient/brandClient.router";
 import { ClientLogoRouter } from "./modules/web-clients/content/clientLogo/clientLogo.router";
 import { FaqRouter } from "./modules/web-clients/content/faq/faq.router";
@@ -124,6 +125,9 @@ export default class App {
     );
     const faqsRouter = container.resolve(FaqRouter);
     const policyRouter = container.resolve(PolicyRouter);
+    const bestPriceGuaranteeRouter = container.resolve(
+      BestPriceGuaranteeRouter,
+    );
     const heroRouter = container.resolve(HeroRouter);
     const quotationRouter = container.resolve(QuotationRouter);
     const bannerRouter = container.resolve(PopupBannerRouter);
@@ -183,6 +187,10 @@ export default class App {
     this.app.use("/content/popup-banners", bannerRouter.getRouter());
     this.app.use("/content/faqs", faqsRouter.getRouter());
     this.app.use("/content/policies", policyRouter.getRouter());
+    this.app.use(
+      "/content/best-price-guarantee",
+      bestPriceGuaranteeRouter.getRouter(),
+    );
     this.app.use("/content/heros", heroRouter.getRouter());
     this.app.use("/content/client-logos", clientLogoRouter.getRouter());
     this.app.use("/app-settings", appSettingRouter.getRouter());
