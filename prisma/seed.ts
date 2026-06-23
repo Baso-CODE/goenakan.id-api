@@ -1,11 +1,10 @@
-import * as argon2 from "argon2"; // Jangan lupa import argon2 kembali
+import * as argon2 from "argon2";
 import "dotenv/config";
 import "reflect-metadata"; // Wajib untuk tsyringe
 import { container } from "tsyringe";
 import { PrismaService } from "../src/modules/prisma/prisma.service";
 
 async function main() {
-  // ✨ Resolve PrismaService dari container tsyringe
   const prisma = container.resolve(PrismaService);
 
   // --- 1. SEED DATA ROLE TERLEBIH DAHULU ---
@@ -18,7 +17,6 @@ async function main() {
   ];
 
   for (const roleName of defaultRoles) {
-    // Tetap gunakan prisma.role, bukan prisma.roles
     await prisma.role.upsert({
       where: { name: roleName },
       update: {},
@@ -41,7 +39,15 @@ async function main() {
     return;
   }
 
-  const hashedPassword = await argon2.hash("superadmin123", {
+  const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD;
+
+  if (!superAdminPassword) {
+    throw new Error(
+      "❌ SUPER_ADMIN_PASSWORD is not defined in .env file. Please add it before seeding.",
+    );
+  }
+
+  const hashedPassword = await argon2.hash(superAdminPassword, {
     type: argon2.argon2id,
   });
 
@@ -65,7 +71,8 @@ async function main() {
     },
   });
 
-  console.log("🚀 SUPER_ADMIN password has been synced to: superadmin123");
+  // Jangan mencetak password aslinya ke terminal demi keamanan
+  console.log("🚀 SUPER_ADMIN seeded successfully with password from .env");
 }
 
 main()

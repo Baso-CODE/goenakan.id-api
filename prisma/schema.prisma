@@ -1438,8 +1438,8 @@ model Currency {
 
 model FaqCategory {
   id            String  @id @default(uuid())
-  nameId        String
-  nameEn        String
+  nameId        String?
+  nameEn        String?
   slug          String  @unique
   descriptionId String?
   descriptionEn String?
