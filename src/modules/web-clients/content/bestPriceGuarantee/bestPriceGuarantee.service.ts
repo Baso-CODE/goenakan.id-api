@@ -27,10 +27,6 @@ export class BestPriceGuaranteeService {
   // === PUBLIC SERVICES (UNTUK FRONTEND CLIENT) ===
   // =========================================================
 
-  // =========================================================
-  // === PUBLIC SERVICES (UNTUK FRONTEND CLIENT) ===
-  // =========================================================
-
   async getMainPageGuarantees(query?: { categoryId?: number }) {
     try {
       const where: any = {
