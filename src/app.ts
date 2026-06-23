@@ -1,5 +1,6 @@
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import "dotenv/config";
 import express, { json } from "express";
 import helmet from "helmet";
 import "reflect-metadata";
@@ -210,7 +211,6 @@ export default class App {
     this.app.use("/article-seo", articleSeoRouter.getRouter());
     this.app.use("/brand-clients", brandClientRouter.getRouter());
     this.app.use("/portfolios", portfolioRouter.getRouter());
-    this.app.use("/contact-messages", contactMessageRouter.getRouter());
     this.app.use("/contact-messages", contactMessageRouter.getRouter());
     this.app.use("/cart", cartRouter.getRouter());
     this.app.use("/auth-web-client", authWebClientRouter.getRouter());
