@@ -246,6 +246,7 @@ export class ProductController {
       const dto: UpdateProductAttributesDTO = {
         productId: req.params.id,
         attributeValueIds: req.body.attributeValueIds,
+        priceModifiers: req.body.priceModifiers,
       };
 
       const result = await this.productService.updateProductAttributes(dto);
@@ -496,6 +497,25 @@ export class ProductController {
     try {
       const result = await this.productService.getProductFilterOptions();
       res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === SYNC MOCKUP AREAS FOR IMAGE ===
+  syncMockupAreas = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { imageId } = req.params;
+      const data = req.body;
+      const result = await this.productService.syncMockupAreas(imageId, data);
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
     } catch (error) {
       next(error);
     }
