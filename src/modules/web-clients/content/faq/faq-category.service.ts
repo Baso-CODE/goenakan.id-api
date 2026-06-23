@@ -71,7 +71,6 @@ export class FaqCategoryService {
 
   // === CREATE ===
   async createFaqCategory(data: CreateFaqCategoryDTO) {
-    // ✨ Pembaruan: Prioritaskan nameEn untuk pembuatan slug, jika tidak ada, gunakan nameId
     const baseNameForSlug = data.slug || data.nameEn || data.nameId;
     const slug = this.slug.create(baseNameForSlug);
 

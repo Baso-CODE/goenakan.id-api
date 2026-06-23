@@ -155,7 +155,6 @@ export class FaqService {
   }
 
   // === CREATE ===
-  // === CREATE (Bilingual) ===
   async createFaq(data: CreateFaqDTO) {
     const categoryExists = await this.prisma.faqCategory.findUnique({
       where: { id: data.categoryId },
@@ -181,7 +180,7 @@ export class FaqService {
     const faq = await this.prisma.faq.findUnique({
       where: { id },
       include: {
-        category: true, // Include category details
+        category: true,
       },
     });
 
