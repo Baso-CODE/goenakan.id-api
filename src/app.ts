@@ -62,6 +62,7 @@ import { CustomerProfileRouter } from "./modules/web-clients/customer-profile/cu
 import { EventCategoryRouter } from "./modules/web-clients/event-category/event-category.router";
 import { AuthWebClientRouter } from "./modules/web-clients/register-user/register-user.router";
 import { WebOrderRouter } from "./modules/web-clients/web-order/web-order.router";
+import { WilayahRouter } from "./modules/wilayah/wilayah.router";
 import { initializeCronJobs } from "./utils/cron";
 export default class App {
   public app;
@@ -158,6 +159,7 @@ export default class App {
     const purchaseOrderRouter = container.resolve(PurchaseOrderRouter);
     const userRouter = container.resolve(UserRouter);
     const roleRouter = container.resolve(RoleRouter);
+    const wilayahRouter = container.resolve(WilayahRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -224,6 +226,7 @@ export default class App {
     this.app.use("/purchase-orders", purchaseOrderRouter.getRouter());
     this.app.use("/users", userRouter.getRouter());
     this.app.use("/roles", roleRouter.getRouter());
+    this.app.use("/wilayah", wilayahRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);
