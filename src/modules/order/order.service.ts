@@ -395,12 +395,9 @@ export class OrderService {
           warrantyDays: warrantyDays ?? null,
           clientPoNumber: orderCore.clientPoNumber || null,
           remark: orderCore.remark || null,
-          currencyCode: orderCore.currencyCode || "IDR",
+          currency: { connect: { code: orderCore.currencyCode || "IDR" } },
           shippingAddress: orderCore.shippingAddress,
           totalAmount,
-
-          // sales: { connect: { id: orderCore.salesId } },
-
           ...updateRelations,
 
           sampleFollowUps: followUpsData.length
@@ -414,7 +411,6 @@ export class OrderService {
         },
         include: {
           products: true,
-          // ✨ HAPUS: 'vendors: true' telah dihilangkan agar tidak error
           pic: true,
           purchaseChannel: true,
           sampleFollowUps: true,
