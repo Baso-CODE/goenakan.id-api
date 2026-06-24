@@ -2405,7 +2405,6 @@ export class ProductService {
   }
 
   async getProductFilterOptions() {
-    // ✨ 1. Ambil Kategori secara bersarang (Nested)
     const categories = await this.prisma.productCategory.findMany({
       select: {
         id: true,

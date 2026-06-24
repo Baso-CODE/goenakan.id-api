@@ -5,6 +5,7 @@ import { ApiError } from "../../utils/api-error";
 import { PaginationService } from "../pagination/pagination.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateOrderDTO } from "./dto/createOrder.dto";
+import { UpdateOrderDTO } from "./dto/upadateOrder.dto";
 
 export interface OrderExportQuery {
   startDate?: string;
@@ -255,7 +256,7 @@ export class OrderService {
     return newOrder;
   }
 
-  async updateOrder(id: string, data: CreateOrderDTO) {
+  async updateOrder(id: string, data: UpdateOrderDTO) {
     const {
       products,
       clientB2BPICId,
@@ -264,6 +265,7 @@ export class OrderService {
       referenceSampleId,
       warrantyDays,
       sampleFollowUps,
+      updatedById,
       ...orderCore
     } = data;
 
@@ -363,7 +365,6 @@ export class OrderService {
         : [];
 
     const updatedOrder = await this.prisma.$transaction(async (tx) => {
-      // Rebuild products hanya jika PENDING
       if (isPending) {
         await tx.orderProduct.deleteMany({ where: { orderId: id } });
       }
@@ -387,7 +388,9 @@ export class OrderService {
       updateRelations.referenceSample = referenceSampleId
         ? { connect: { id: referenceSampleId } }
         : { disconnect: true };
-
+      if (updatedById) {
+        updateRelations.updatedBy = { connect: { id: updatedById } };
+      }
       const order = await tx.order.update({
         where: { id },
         data: {

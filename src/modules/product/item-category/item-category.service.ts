@@ -28,7 +28,7 @@ export class ItemCategoryService {
     page?: number;
     take?: number;
     search?: string;
-    productCategoryId?: string; // Filter berdasarkan induk
+    productCategoryId?: string;
   }) {
     try {
       const page = Number(query.page) || 1;

@@ -75,13 +75,10 @@ export class ProductCategoryService {
     data: CreateProductCategoryDTO,
     file?: Express.Multer.File,
   ) {
-    // 🔄 1. Buat slug dari nama bahasa Indonesia
     const slug = this.slug.create(data.name_id);
 
-    // 🔄 2. Autogenerate code: Ambil 3 huruf pertama dari name_id (Kapital)
     const generatedCode = data.name_id.substring(0, 3).toUpperCase();
 
-    // 🔄 3. Validasi keberadaan kategori menggunakan name_id
     const existing = await this.prisma.productCategory.findUnique({
       where: { name_id: data.name_id },
     });
@@ -250,25 +247,24 @@ export class ProductCategoryService {
           id: true,
           name_id: true,
           name_en: true,
-          // ✨ TAMBAHAN BARU: Tarik data anak (ItemCategory) sekalian
+          code: true,
           itemCategories: {
             select: {
               id: true,
               name: true,
             },
             orderBy: {
-              name: "asc", // Agar anak kategori juga rapi sesuai abjad
+              name: "asc",
             },
           },
         },
       });
 
-      // Format ulang data agar rapi saat dikirim ke Frontend
       const formattedCategories = categories.map((cat) => ({
         id: cat.id,
         name: cat.name_id,
         name_en: cat.name_en,
-        // ✨ TAMBAHAN BARU: Masukkan anak kategori ke hasil akhir
+        code: cat.code,
         itemCategories: cat.itemCategories,
       }));
 
