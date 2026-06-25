@@ -63,7 +63,6 @@ export class ArticleService {
 
     if (data.autoTranslate) {
       try {
-        // ✅ Hanya translate jika belum ada manual
         if (!title_en) {
           const resTitle = await translate(data.title, { to: "en" });
           title_en = resTitle.text;
@@ -74,7 +73,6 @@ export class ArticleService {
           content_en = resContent.text;
         }
 
-        // ✅ Cek focusKeywords_id exist DAN belum ada manual
         if (data.focusKeywords_id && !focusKeywords_en) {
           const resFocusKeywords = await translate(data.focusKeywords_id, {
             to: "en",
@@ -86,24 +84,44 @@ export class ArticleService {
       }
     }
 
-    // ✨ CEK APAKAH ARTIKEL SUDAH DITERJEMAHKAN
-    // Bernilai true jika title_en DAN content_en sudah ada isinya
     const hasTranslation = !!(title_en && content_en);
 
-    // --- UPLOAD GAMBAR DESKTOP ---
+    // =========================================================================
+    // 5. HANDLE DESKTOP COVER IMAGE
+    // =========================================================================
     let coverImageUrl = data.coverImage;
     let coverImagePublicId = data.coverImageId;
 
+    if (coverImagePublicId === "null" || coverImagePublicId === "undefined") {
+      coverImagePublicId = null;
+    }
+
     if (coverFile) {
+      // Karena ini fungsi Create (Buat Baru), kita tidak perlu menghapus gambar lama
       try {
+        // Pastikan Multer menyertakan buffer
+        if (!coverFile.buffer) {
+          throw new Error(
+            "File buffer kosong. Pastikan config Multer menggunakan memoryStorage().",
+          );
+        }
+
         const uploadResult = await this.cloudinary.upload(coverFile, {
           folder: "articles/covers",
           resource_type: "image",
         });
+
         coverImageUrl = uploadResult.secure_url;
         coverImagePublicId = uploadResult.public_id;
-      } catch (error) {
-        throw new ApiError("Failed to upload cover image to Cloudinary", 500);
+      } catch (error: any) {
+        console.error(
+          "🔥 ERROR UPLOAD CLOUDINARY (DESKTOP):",
+          error.message || error,
+        );
+        throw new ApiError(
+          "Failed to upload new cover image to Cloudinary",
+          500,
+        );
       }
     }
 
@@ -111,12 +129,25 @@ export class ArticleService {
       throw new ApiError("Cover image desktop is required", 400);
     }
 
-    // --- UPLOAD GAMBAR MOBILE (Opsional) ---
+    // =========================================================================
+    // 6. HANDLE MOBILE COVER IMAGE
+    // =========================================================================
     let coverImageMobileUrl = data.coverImageMobile;
     let coverImageMobilePublicId = data.coverImageMobileId;
 
+    if (
+      coverImageMobilePublicId === "null" ||
+      coverImageMobilePublicId === "undefined"
+    ) {
+      coverImageMobilePublicId = null;
+    }
+
     if (coverMobileFile) {
       try {
+        if (!coverMobileFile.buffer) {
+          throw new Error("File buffer kosong.");
+        }
+
         const uploadResultMobile = await this.cloudinary.upload(
           coverMobileFile,
           {
@@ -124,36 +155,35 @@ export class ArticleService {
             resource_type: "image",
           },
         );
+
         coverImageMobileUrl = uploadResultMobile.secure_url;
         coverImageMobilePublicId = uploadResultMobile.public_id;
-      } catch (error) {
+      } catch (error: any) {
+        console.error(
+          "🔥 ERROR UPLOAD CLOUDINARY (MOBILE):",
+          error.message || error,
+        );
         throw new ApiError(
-          "Failed to upload mobile cover image to Cloudinary",
+          "Failed to upload new mobile cover image to Cloudinary",
           500,
         );
       }
     }
-
     // --- SIMPAN KE DATABASE ---
     try {
       const newArticle = await this.prisma.$transaction(async (tx) => {
-        // ✅ PENTING: Sesuaikan field names dengan Prisma schema
         const article = await tx.article.create({
           data: {
-            // ✅ BENAR! Sesuai Prisma schema dengan suffix _id untuk Indonesia
             title_id: data.title,
             content_id: data.content,
             focusKeywords_id: data.focusKeywords_id,
 
-            // ✅ BENAR! English version dengan suffix _en
             title_en: title_en,
             content_en: content_en,
             focusKeywords_en: focusKeywords_en,
 
-            // ✨ SIMPAN STATUS TRANSLATE KE DATABASE
             isTranslated: hasTranslation,
 
-            // Global fields (sama untuk semua bahasa)
             slug,
             source: data.source,
             coverImage: coverImageUrl,
@@ -172,7 +202,6 @@ export class ArticleService {
             categoryId: data.categoryId,
             authorId: authorId,
 
-            // ✅ SEO nested create
             ...(data.seo && {
               seo: {
                 create: {
