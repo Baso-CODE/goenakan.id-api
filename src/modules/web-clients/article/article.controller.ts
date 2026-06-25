@@ -27,17 +27,35 @@ export class ArticleController {
   // 1. CREATE ARTICLE
   // =========================================================================
   createArticle = async (req: Request, res: Response, next: NextFunction) => {
+    console.log("========== CREATE ARTICLE ==========");
+
     try {
       const data: CreateArticleDTO = req.body;
 
-      // ✨ TAMBAHAN 1: Menangkap multiple files dari Multer
-      // Kita menggunakan req.files untuk menangkap lebih dari satu input file
       const files = req.files as
         | { [fieldname: string]: Express.Multer.File[] }
         | undefined;
 
-      const coverFile = files?.coverFile?.[0]; // Ambil file pertama dari array coverFile
-      const coverMobileFile = files?.coverMobileFile?.[0]; // Ambil file pertama dari array coverMobileFile
+      const coverFile = files?.coverFile?.[0];
+      const coverMobileFile = files?.coverMobileFile?.[0];
+
+      console.log("User:", (req as any).user?.email);
+
+      console.log("Cover Desktop:", {
+        exists: !!coverFile,
+        name: coverFile?.originalname,
+        mime: coverFile?.mimetype,
+        size: coverFile?.size,
+      });
+
+      console.log("Cover Mobile:", {
+        exists: !!coverMobileFile,
+        name: coverMobileFile?.originalname,
+        mime: coverMobileFile?.mimetype,
+        size: coverMobileFile?.size,
+      });
+
+      console.log("===================================");
 
       if (typeof data.published === "string") {
         data.published = data.published === "true";

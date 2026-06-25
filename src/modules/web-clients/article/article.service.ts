@@ -114,10 +114,7 @@ export class ArticleService {
         coverImageUrl = uploadResult.secure_url;
         coverImagePublicId = uploadResult.public_id;
       } catch (error: any) {
-        console.error(
-          "🔥 ERROR UPLOAD CLOUDINARY (DESKTOP):",
-          error.message || error,
-        );
+        console.error("🔥 CLOUDINARY ERROR", JSON.stringify(error, null, 2));
         throw new ApiError(
           "Failed to upload new cover image to Cloudinary",
           500,
@@ -159,10 +156,7 @@ export class ArticleService {
         coverImageMobileUrl = uploadResultMobile.secure_url;
         coverImageMobilePublicId = uploadResultMobile.public_id;
       } catch (error: any) {
-        console.error(
-          "🔥 ERROR UPLOAD CLOUDINARY (MOBILE):",
-          error.message || error,
-        );
+        console.error("🔥 CLOUDINARY ERROR", JSON.stringify(error, null, 2));
         throw new ApiError(
           "Failed to upload new mobile cover image to Cloudinary",
           500,

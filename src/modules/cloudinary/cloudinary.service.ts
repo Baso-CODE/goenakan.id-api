@@ -25,8 +25,6 @@ export class CloudinaryService {
     return readable;
   };
 
-  // ⚠️ Peringatan: Fungsi ini akan memotong nama folder.
-  // Hanya gunakan jika file Cloudinary Anda ada di root folder.
   private extractPublicIdFromUrl = (url: string): string => {
     const urlParts = url.split("/");
     const publicIdWithExtension = urlParts[urlParts.length - 1];
