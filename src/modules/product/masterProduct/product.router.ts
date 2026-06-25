@@ -9,6 +9,8 @@ import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
 import { parseFormData } from "../../../middleware/parseFormData.middleware";
 import { verifyRole } from "../../../middleware/role.middleware";
 import { transformVariantFiles } from "../../../middleware/transformVariantFiles";
+import { validateBody } from "../../../middleware/validation.middleware";
+import { SyncMockupPayloadDto } from "./dto/syncMockups.dto";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -139,6 +141,14 @@ export class ProductRouter {
       auth,
       verifyRole(requiredRole),
       this.productController.updateImageSEO,
+    );
+
+    this.router.put(
+      "/image/:imageId/mockups",
+      auth,
+      verifyRole(requiredRole),
+      validateBody(SyncMockupPayloadDto),
+      this.productController.syncMockupAreas,
     );
 
     this.router.post(

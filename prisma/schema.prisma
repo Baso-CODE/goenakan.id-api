@@ -450,6 +450,15 @@ model Product {
   webOrderItems   WebOrderItem[]
   purchaseItems   PurchaseOrderItem[]
 
+  mockupAreaX      Float?
+  mockupAreaY      Float?
+  mockupAreaWidth  Float?
+  mockupAreaHeight Float?
+
+  isMultiFace        Boolean @default(false)
+  mockupFrontImageId String?
+  mockupBackImageId  String?
+
   @@map("products")
 }
 
@@ -522,6 +531,7 @@ model ProductAttributeValue {
   attributeValue   AttributeValue @relation(fields: [attributeValueId], references: [id])
   attribute        Attribute?     @relation(fields: [attributeId], references: [id])
   attributeId      String?
+  priceModifier    Float?         @default(0)
 
   @@unique([productId, attributeValueId])
   @@map("product_attribute_values")
@@ -609,8 +619,34 @@ model ProductImage {
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
+  mockupAreas ProductImageMockupArea[]
+
   @@map("product_images")
 }
+
+model ProductImageMockupArea {
+  id            String   @id @default(uuid())
+  x             Float
+  y             Float
+  width         Float
+  height        Float
+  label         String
+  description   String?
+
+  // Real physical print size of this placement area
+  physicalWidth  Float?
+  physicalHeight Float?
+  unit           String?  @default("cm")  // "cm" | "mm"
+
+  productImageId String
+  productImage   ProductImage @relation(fields: [productImageId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("product_image_mockup_areas")
+}
+
 
 model ProductVideo {
   id         String  @id @default(uuid())

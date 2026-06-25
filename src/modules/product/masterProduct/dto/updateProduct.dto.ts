@@ -79,4 +79,36 @@ export class UpdateProductCoreDTO {
   @IsNumber({}, { message: "Length must be a valid number" })
   @Min(0)
   length?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  mockupAreaX?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  mockupAreaY?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  mockupAreaWidth?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  mockupAreaHeight?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isMultiFace?: boolean;
+
+  @IsOptional()
+  @IsString()
+  mockupFrontImageId?: string;
+
+  @IsOptional()
+  @IsString()
+  mockupBackImageId?: string;
 }

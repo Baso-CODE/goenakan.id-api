@@ -2380,6 +2380,14 @@ export class ProductService {
         isMultiFace: product.isMultiFace,
         mockupFrontImageId: product.mockupFrontImageId,
         mockupBackImageId: product.mockupBackImageId,
+        attributeValues: product.attributeValues.map((av) => ({
+          id: av.id,
+          attributeId: av.attributeId,
+          attributeValueId: av.attributeValueId,
+          priceModifier: av.priceModifier ? Number(av.priceModifier) : 0,
+          value: av.attributeValue?.value || "",
+          attributeName: av.attribute?.name || "",
+        })),
       };
     } catch (error) {
       console.error(`❌ Error fetching product by slug (${slug}):`, error);
