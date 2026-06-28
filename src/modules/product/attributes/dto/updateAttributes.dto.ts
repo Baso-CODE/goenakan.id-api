@@ -18,6 +18,9 @@ export class UpdateAttributeValueDTO {
   @IsOptional()
   @IsBoolean()
   deleted?: boolean; // true → hapus value
+
+  @IsOptional()
+  position?: number;
 }
 
 export class UpdateAttributeDTO {
@@ -34,4 +37,7 @@ export class UpdateAttributeDTO {
   @ValidateNested({ each: true })
   @Type(() => UpdateAttributeValueDTO)
   values?: UpdateAttributeValueDTO[];
+
+  @IsOptional()
+  position?: number;
 }

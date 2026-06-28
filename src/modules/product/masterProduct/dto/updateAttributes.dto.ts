@@ -4,4 +4,8 @@ export class UpdateProductAttributesDTO {
   attributeValueIds!: string[];
 
   priceModifiers?: Record<string, number>;
+
+  orderedAttributeIds?: string[];
+
+  orderedAttributeValueIds?: string[];
 }

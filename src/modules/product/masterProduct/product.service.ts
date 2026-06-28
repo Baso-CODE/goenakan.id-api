@@ -931,7 +931,13 @@ export class ProductService {
 
   // === UPDATE PRODUCT ATTRIBUTES (CREATE/DELETE) ===
   async updateProductAttributes(dto: UpdateProductAttributesDTO) {
-    const { productId, attributeValueIds, priceModifiers = {} } = dto;
+    const {
+      productId,
+      attributeValueIds,
+      priceModifiers = {},
+      orderedAttributeIds,
+      orderedAttributeValueIds,
+    } = dto;
 
     // 1. Delete all existing attribute associations for this product
     await this.prisma.productAttributeValue.deleteMany({
@@ -959,6 +965,28 @@ export class ProductService {
         data: insertData,
         skipDuplicates: true,
       });
+    }
+
+    // 3. Update position of attributes based on order in payload
+    if (orderedAttributeIds && orderedAttributeIds.length > 0) {
+      for (let i = 0; i < orderedAttributeIds.length; i++) {
+        const attrId = orderedAttributeIds[i];
+        await this.prisma.attribute.updateMany({
+          where: { id: attrId },
+          data: { position: i },
+        });
+      }
+    }
+
+    // 4. Update position of attribute values based on order in payload
+    if (orderedAttributeValueIds && orderedAttributeValueIds.length > 0) {
+      for (let i = 0; i < orderedAttributeValueIds.length; i++) {
+        const valId = orderedAttributeValueIds[i];
+        await this.prisma.attributeValue.updateMany({
+          where: { id: valId },
+          data: { position: i },
+        });
+      }
     }
 
     return { message: "Product attributes updated successfully." };
@@ -1164,6 +1192,37 @@ export class ProductService {
     });
 
     if (!product) throw new ApiError("Product not found", 404);
+
+    // Sort product-level attributeValues in memory by attribute position and value position
+    if (product.attributeValues) {
+      product.attributeValues.sort((a: any, b: any) => {
+        const aAttrPos = a.attributeValue?.attribute?.position ?? 0;
+        const bAttrPos = b.attributeValue?.attribute?.position ?? 0;
+        if (aAttrPos !== bAttrPos) return aAttrPos - bAttrPos;
+
+        const aValPos = a.attributeValue?.position ?? 0;
+        const bValPos = b.attributeValue?.position ?? 0;
+        return aValPos - bValPos;
+      });
+    }
+
+    // Sort variant-level attributeValues in memory by attribute position and value position
+    if (product.productVariants) {
+      product.productVariants.forEach((v: any) => {
+        if (v.attributeValues) {
+          v.attributeValues.sort((a: any, b: any) => {
+            const aAttrPos = a.attributeValue?.attribute?.position ?? 0;
+            const bAttrPos = b.attributeValue?.attribute?.position ?? 0;
+            if (aAttrPos !== bAttrPos) return aAttrPos - bAttrPos;
+
+            const aValPos = a.attributeValue?.position ?? 0;
+            const bValPos = b.attributeValue?.position ?? 0;
+            return aValPos - bValPos;
+          });
+        }
+      });
+    }
+
     return this.injectLegacyMockupArea(product);
   }
 
@@ -2277,10 +2336,25 @@ export class ProductService {
             : "-";
 
         // Ambil atribut (contoh: Warna: Merah)
-        const attributes = v.attributeValues.map((av) => ({
-          name: av.attributeValue.attribute?.name,
-          value: av.attributeValue.value,
-        }));
+        const attributes = v.attributeValues
+          .map((av) => ({
+            name: av.attributeValue.attribute?.name || "",
+            value: av.attributeValue.value || "",
+            attributePosition: av.attributeValue.attribute?.position ?? 0,
+            valuePosition: av.attributeValue.position ?? 0,
+          }))
+          .sort((a, b) => {
+            if (a.attributePosition !== b.attributePosition) {
+              return a.attributePosition - b.attributePosition;
+            }
+            return a.valuePosition - b.valuePosition;
+          })
+          .map(({ name, value, attributePosition, valuePosition }) => ({
+            name,
+            value,
+            attributePosition,
+            valuePosition,
+          }));
 
         return {
           id: v.id,
@@ -2380,14 +2454,24 @@ export class ProductService {
         isMultiFace: product.isMultiFace,
         mockupFrontImageId: product.mockupFrontImageId,
         mockupBackImageId: product.mockupBackImageId,
-        attributeValues: product.attributeValues.map((av) => ({
-          id: av.id,
-          attributeId: av.attributeId,
-          attributeValueId: av.attributeValueId,
-          priceModifier: av.priceModifier ? Number(av.priceModifier) : 0,
-          value: av.attributeValue?.value || "",
-          attributeName: av.attribute?.name || "",
-        })),
+        attributeValues: product.attributeValues
+          .map((av) => ({
+            id: av.id,
+            attributeId: av.attributeId,
+            attributeValueId: av.attributeValueId,
+            priceModifier: av.priceModifier ? Number(av.priceModifier) : 0,
+            value: av.attributeValue?.value || "",
+            attributeName: av.attribute?.name || "",
+            attributePosition: av.attribute?.position ?? 0,
+            valuePosition: av.attributeValue?.position ?? 0,
+          }))
+          .sort((a, b) => {
+            if (a.attributePosition !== b.attributePosition) {
+              return a.attributePosition - b.attributePosition;
+            }
+            return a.valuePosition - b.valuePosition;
+          })
+          .map(({ attributePosition, valuePosition, ...rest }) => rest),
       };
     } catch (error) {
       console.error(`❌ Error fetching product by slug (${slug}):`, error);

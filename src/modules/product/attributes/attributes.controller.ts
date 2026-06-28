@@ -27,12 +27,13 @@ export class AttributeController {
     next: NextFunction,
   ) => {
     try {
-      const { page, take, search } = req.query;
+      const { page, take, search, productId } = req.query;
 
       const result = await this.attributeService.getAllAttributes({
         page: Number(page),
         take: Number(take),
         search: search as string,
+        productId: productId as string,
       });
 
       res.status(200).json(result);
@@ -63,8 +64,27 @@ export class AttributeController {
     next: NextFunction,
   ) => {
     try {
-      const result = await this.attributeService.getAllAttributesList();
+      const { productId } = req.query;
+      const result = await this.attributeService.getAllAttributesList(productId as string);
       res.status(200).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === CLONE ATTRIBUTE ===
+  cloneAttribute = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { sourceAttributeId, targetProductId } = req.body;
+      const result = await this.attributeService.cloneAttribute(
+        sourceAttributeId,
+        targetProductId,
+      );
+      res.status(201).send(result);
     } catch (error) {
       next(error);
     }

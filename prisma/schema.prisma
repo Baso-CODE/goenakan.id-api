@@ -444,6 +444,7 @@ model Product {
   images          ProductImage[]
   videos          ProductVideo[]
   productVariants ProductVariant[]
+  attributes      Attribute[]
   seo             ProductSEO?
   articleProducts ArticleProduct[]
   cartItems       CartItem[]
@@ -500,8 +501,12 @@ model Attribute {
   id        String   @id @default(uuid())
   name      String
   slug      String   @unique
+  position  Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  productId String?
+  product   Product?   @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   values   AttributeValue[]
   products ProductAttributeValue[]
@@ -512,6 +517,7 @@ model Attribute {
 model AttributeValue {
   id          String    @id @default(uuid())
   value       String
+  position    Int       @default(0)
   attributeId String
   attribute   Attribute @relation(fields: [attributeId], references: [id])
 

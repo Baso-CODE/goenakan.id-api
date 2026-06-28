@@ -247,6 +247,8 @@ export class ProductController {
         productId: req.params.id,
         attributeValueIds: req.body.attributeValueIds,
         priceModifiers: req.body.priceModifiers,
+        orderedAttributeIds: req.body.orderedAttributeIds,
+        orderedAttributeValueIds: req.body.orderedAttributeValueIds,
       };
 
       const result = await this.productService.updateProductAttributes(dto);

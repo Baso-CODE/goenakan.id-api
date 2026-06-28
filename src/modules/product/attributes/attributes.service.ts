@@ -25,6 +25,7 @@ export class AttributeService {
     page?: number;
     take?: number;
     search?: string;
+    productId?: string;
   }) {
     try {
       const page = Number(query.page) || 1;
@@ -32,6 +33,15 @@ export class AttributeService {
       const skip = (page - 1) * take;
 
       const where: any = {};
+
+      if (query.productId) {
+        where.OR = [
+          { productId: null },
+          { productId: query.productId },
+        ];
+      } else {
+        where.productId = null;
+      }
 
       // Search by name
       if (query.search) {
@@ -47,11 +57,14 @@ export class AttributeService {
         skip,
         take,
         include: {
-          values: true,
+          values: {
+            orderBy: { position: "asc" },
+          },
         },
-        orderBy: {
-          createdAt: "desc",
-        },
+        orderBy: [
+          { position: "asc" },
+          { createdAt: "desc" },
+        ],
       });
 
       const meta = this.pagination.generateMeta({
@@ -69,7 +82,17 @@ export class AttributeService {
 
   // === CREATE ATTRIBUTE (WITH VALUES) ===
   async createAttribute(data: CreateAttributeDTO) {
-    const generatedSlug = this.slug.create(data.name);
+    let generatedSlug = this.slug.create(data.name);
+
+    if (data.productId) {
+      const product = await this.prisma.product.findUnique({
+        where: { id: data.productId },
+        select: { slug: true },
+      });
+      if (product) {
+        generatedSlug = `${generatedSlug}-${product.slug}`;
+      }
+    }
 
     // Check duplicate slug
     const existingSlug = await this.prisma.attribute.findUnique({
@@ -80,27 +103,89 @@ export class AttributeService {
     }
 
     // Pisahkan values
-    const { values, name } = data;
+    const { values, name, productId } = data;
 
     // Create Attribute + Values dalam 1 transaksi
     const attribute = await this.prisma.attribute.create({
       data: {
         name,
         slug: generatedSlug,
+        productId: productId || null,
         values: {
           createMany: {
-            data: values.map((v) => ({
+            data: values.map((v, index) => ({
               value: v.value,
+              position: v.position ?? index,
             })),
           },
         },
       },
       include: {
-        values: true,
+        values: {
+          orderBy: { position: "asc" },
+        },
       },
     });
 
     return attribute;
+  }
+
+  // === CLONE ATTRIBUTE ===
+  async cloneAttribute(sourceId: string, targetProductId: string) {
+    const source = await this.prisma.attribute.findUnique({
+      where: { id: sourceId },
+      include: { values: true },
+    });
+    if (!source) {
+      throw new ApiError("Source attribute not found", 404);
+    }
+
+    const product = await this.prisma.product.findUnique({
+      where: { id: targetProductId },
+      select: { slug: true },
+    });
+    if (!product) {
+      throw new ApiError("Target product not found", 404);
+    }
+
+    const baseSlug = this.slug.create(source.name);
+    const generatedSlug = `${baseSlug}-${product.slug}`;
+
+    // Check duplicate slug
+    const existing = await this.prisma.attribute.findUnique({
+      where: { slug: generatedSlug },
+      include: {
+        values: {
+          orderBy: { position: "asc" },
+        },
+      },
+    });
+    if (existing) {
+      return existing; // already cloned / exists
+    }
+
+    const cloned = await this.prisma.attribute.create({
+      data: {
+        name: source.name,
+        slug: generatedSlug,
+        productId: targetProductId,
+        values: {
+          createMany: {
+            data: source.values.map((v) => ({
+              value: v.value,
+              position: v.position,
+            })),
+          },
+        },
+      },
+      include: {
+        values: {
+          orderBy: { position: "asc" },
+        },
+      },
+    });
+
+    return cloned;
   }
 
   // === GET ATTRIBUTE BY ID ===
@@ -108,7 +193,9 @@ export class AttributeService {
     const attribute = await this.prisma.attribute.findUnique({
       where: { id },
       include: {
-        values: true,
+        values: {
+          orderBy: { position: "asc" },
+        },
       },
     });
 
@@ -152,6 +239,7 @@ export class AttributeService {
         data: {
           name: data.name ?? existing.name,
           slug: newSlug,
+          position: data.position ?? existing.position,
         },
       }),
     );
@@ -174,7 +262,10 @@ export class AttributeService {
           updateOps.push(
             this.prisma.attributeValue.update({
               where: { id: val.id },
-              data: { value: val.value },
+              data: {
+                value: val.value,
+                position: val.position,
+              },
             }),
           );
           continue;
@@ -187,6 +278,7 @@ export class AttributeService {
               data: {
                 value: val.value,
                 attributeId: id,
+                position: val.position,
               },
             }),
           );
@@ -200,7 +292,11 @@ export class AttributeService {
     // Return updated attribute with values
     return await this.prisma.attribute.findUnique({
       where: { id },
-      include: { values: true },
+      include: {
+        values: {
+          orderBy: { position: "asc" },
+        },
+      },
     });
   }
 
@@ -222,26 +318,43 @@ export class AttributeService {
   }
 
   // === LIST ONLY (FOR DROPDOWN) ===
-  async getAllAttributesList() {
+  async getAllAttributesList(productId?: string) {
     try {
+      const where: any = {};
+      if (productId && productId !== "all") {
+        where.OR = [
+          { productId: null },
+          { productId },
+        ];
+      } else if (productId === "all") {
+        // No filter on productId to allow cloning from any attribute
+      } else {
+        where.productId = null;
+      }
+
       const attributes = await this.prisma.attribute.findMany({
+        where,
         select: {
           id: true,
           name: true,
           slug: true,
+          position: true,
           values: {
             select: {
               id: true,
               value: true,
+              attributeId: true,
+              position: true,
             },
             orderBy: {
-              value: "asc",
+              position: "asc",
             },
           },
         },
-        orderBy: {
-          name: "asc",
-        },
+        orderBy: [
+          { position: "asc" },
+          { name: "asc" },
+        ],
       });
 
       return attributes;
