@@ -736,7 +736,6 @@ export class OrderService {
   }) {
     const where: any = {};
 
-    // 1. Filter Pencarian Cerdas
     if (query.search) {
       const searchTerm = query.search.trim();
       where.OR = [
@@ -752,11 +751,9 @@ export class OrderService {
             b2c: { is: { name: { contains: searchTerm } } },
           },
         },
-        // Mencari berdasarkan PIC Customer (pihak klien B2B)
         {
           pic: { is: { name: { contains: searchTerm } } },
         },
-        // ✨ Mencari berdasarkan PIC Sales (User yang login & membuat order)
         {
           createdBy: { is: { name: { contains: searchTerm } } },
         },
@@ -863,7 +860,7 @@ export class OrderService {
         orderNumber: order.orderNumber || "-",
         customerName: clientName,
         shippingAddress: order.shippingAddress,
-        picCustomer: picCustomer, // PIC dari pihak klien pembeli
+        picCustomer: picCustomer,
         clientPoNumber: order.clientPoNumber || "-",
         sampleReference: order.referenceSample?.orderNumber || "-",
         quotationReference: order.referenceQuotation?.quotationNumber || "-",
@@ -878,8 +875,7 @@ export class OrderService {
         arrivalInCustDate: lastShipment?.arrivalDate || null,
 
         lastFollowUpDate: lastFollowUp?.date || null,
-        lastFollowUpRemark: lastFollowUp?.notes || "-",
-
+        lastFollowUpNotes: lastFollowUp?.notes || "-",
         createdBy: order.createdBy?.name || "System",
         createdTime: order.createdAt,
         updatedBy: order.updatedBy?.name || "-",
