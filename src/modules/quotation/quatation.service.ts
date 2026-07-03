@@ -34,7 +34,6 @@ export class QuotationService {
     ];
     return months[date.getMonth()];
   }
-
   // ==========================================
   // 1. GET ALL (PAGINATION & SEARCH)
   // ==========================================
@@ -58,7 +57,6 @@ export class QuotationService {
     if (query.search) {
       where.OR = [
         { quotationNumber: { contains: query.search } },
-        // Pencarian murni diarahkan ke relasi Client (B2C dan B2B)
         { client: { b2c: { name: { contains: query.search } } } },
         { client: { b2b: { companyName: { contains: query.search } } } },
       ];
@@ -71,16 +69,28 @@ export class QuotationService {
       take,
       orderBy: { createdAt: "desc" },
       include: {
+        // 1. Data Klien Utama
         client: {
           include: {
             b2c: { select: { name: true, prefix: true } },
             b2b: { select: { companyName: true } },
           },
         },
-        // ✨ TAMBAHAN: Mengambil nama user pembuat untuk ditampilkan di tabel frontend
-        user: {
-          select: { name: true, email: true },
+        // 2. PIC Klien (Khusus B2B)
+        pic: {
+          select: { name: true, phone: true, position: true },
         },
+        // 3. Jejak Audit Pengguna Sistem
+        user: {
+          select: { name: true }, // Created By
+        },
+        updatedBy: {
+          select: { name: true }, // Updated By
+        },
+        approvedBy: {
+          select: { name: true }, // Approved By
+        },
+        // 4. Riwayat Tindak Lanjut
         followUps: {
           orderBy: { date: "asc" },
           take: 3,
@@ -100,7 +110,6 @@ export class QuotationService {
 
     return { data, meta };
   }
-
   // ==========================================
   // 2. GET BY ID (DETAIL)
   // ==========================================

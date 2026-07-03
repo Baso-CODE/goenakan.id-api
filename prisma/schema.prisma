@@ -208,7 +208,9 @@ model User {
   approvedPOs         PurchaseOrder[]      @relation("POApprovedBy")
   orders              Order[]
   role                Role                 @relation(fields: [roleId], references: [id])
-  quotations          Quotation[]          @relation("QuotationCreatedBy")
+  createdQuotations   Quotation[]          @relation("QuotationCreatedBy")
+  updatedQuotations   Quotation[]          @relation("QuotationUpdatedBy")
+  approvedQuotations  Quotation[]          @relation("QuotationApprovedBy")
 
   @@map("users")
 }
@@ -1246,6 +1248,13 @@ model Quotation {
   // === CREATED BY (INTERNAL SALES / USER) ===
   userId String?
   user   User?   @relation("QuotationCreatedBy", fields: [userId], references: [id])
+
+  updatedById String?
+  updatedBy   User?   @relation("QuotationUpdatedBy", fields: [updatedById], references: [id])
+
+  approvedById String?
+  approvedBy   User?     @relation("QuotationApprovedBy", fields: [approvedById], references: [id])
+  approvedAt   DateTime?
 
   items     QuotationItem[]
   followUps QuotationFollowUp[]
