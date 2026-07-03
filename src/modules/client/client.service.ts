@@ -27,7 +27,18 @@ export class ClientService {
       throw new ApiError(`Invalid client type: received ${data.type}`, 400);
     }
 
-    const prefix = clientType === "B2B" ? "B" : "C";
+    // ==================================================
+    // 1. TENTUKAN PREFIX BERDASARKAN STATUS
+    // ==================================================
+    let prefix = clientType === "B2B" ? "B" : "C";
+
+    if (data.status === "POTENTIAL") {
+      prefix = "P";
+    }
+
+    // ==================================================
+    // 2. GENERATE CUSTOMER CODE (CUSTCODE)
+    // ==================================================
     const allCustCodes = await this.prisma.client.findMany({
       where: { custCode: { startsWith: prefix } },
       select: { custCode: true },
@@ -53,6 +64,9 @@ export class ClientService {
       });
       isUnique = !existing;
     } while (!isUnique);
+
+    // Pastikan status default adalah OFFICIAL jika tidak dikirim dari frontend
+    const clientStatus = data.status === "POTENTIAL" ? "POTENTIAL" : "OFFICIAL";
 
     // ==================================================
     // ====================== B2B ========================
@@ -82,6 +96,7 @@ export class ClientService {
         data: {
           custCode,
           type: data.type,
+          status: clientStatus, // ✨ Simpan status ke database
           b2b: {
             create: {
               companyName: data.companyName!,
@@ -132,6 +147,7 @@ export class ClientService {
         data: {
           custCode,
           type: data.type,
+          status: clientStatus, // ✨ Simpan status ke database
           b2c: {
             create: {
               prefix: data.prefix ?? "",

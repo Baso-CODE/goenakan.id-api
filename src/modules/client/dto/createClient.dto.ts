@@ -46,6 +46,10 @@ export class CreateClientDTO {
 
   @IsOptional()
   @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsString()
   brandName?: string;
 
   @IsOptional()

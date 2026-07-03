@@ -2,7 +2,6 @@ import { Transform, Type } from "class-transformer";
 import {
   IsArray,
   IsDate,
-  IsEmail,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -34,9 +33,18 @@ export class CreateQuotationDTO {
   date?: Date;
 
   @IsOptional()
+  @EmptyStringToUndefined
+  @IsUUID(4)
+  userId?: string;
+
+  @IsOptional()
   @Type(() => Date)
   @IsDate()
   validUntil?: Date;
+
+  @IsOptional()
+  @IsString()
+  paymentTerms?: string;
 
   @IsOptional()
   @EmptyStringToUndefined
@@ -55,24 +63,7 @@ export class CreateQuotationDTO {
 
   @IsOptional()
   @IsString()
-  manualClientName?: string;
-
-  @IsOptional()
-  @IsString()
-  manualClientCompany?: string;
-
-  @IsOptional()
-  @EmptyStringToUndefined
-  @IsEmail()
-  manualClientEmail?: string;
-
-  @IsOptional()
-  @IsString()
-  manualClientPhone?: string;
-
-  @IsOptional()
-  @IsString()
-  manualClientAddress?: string;
+  currencyCode?: string;
 
   @IsArray()
   @ValidateNested({ each: true })
@@ -104,6 +95,11 @@ export class UpdateQuotationDTO {
   @IsOptional()
   @EmptyStringToUndefined
   @IsUUID(4)
+  userId?: string;
+
+  @IsOptional()
+  @EmptyStringToUndefined
+  @IsUUID(4)
   picId?: string;
 
   @IsOptional()
@@ -113,24 +109,11 @@ export class UpdateQuotationDTO {
 
   @IsOptional()
   @IsString()
-  manualClientName?: string;
+  currencyCode?: string;
 
   @IsOptional()
   @IsString()
-  manualClientCompany?: string;
-
-  @IsOptional()
-  @EmptyStringToUndefined
-  @IsEmail()
-  manualClientEmail?: string;
-
-  @IsOptional()
-  @IsString()
-  manualClientPhone?: string;
-
-  @IsOptional()
-  @IsString()
-  manualClientAddress?: string;
+  paymentTerms?: string;
 
   @IsOptional()
   @IsArray()

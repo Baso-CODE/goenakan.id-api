@@ -168,6 +168,11 @@ enum PaymentTerm {
   NET_60 // 60 Days
 }
 
+enum ClientStatus {
+  POTENTIAL
+  OFFICIAL
+}
+
 enum PurchaseOrderStatus {
   DRAFT
   APPROVED
@@ -203,6 +208,7 @@ model User {
   approvedPOs         PurchaseOrder[]      @relation("POApprovedBy")
   orders              Order[]
   role                Role                 @relation(fields: [roleId], references: [id])
+  quotations          Quotation[]          @relation("QuotationCreatedBy")
 
   @@map("users")
 }
@@ -274,14 +280,14 @@ model PurchaseChannel {
 }
 
 model Client {
-  id        String     @id @default(uuid())
-  custCode  String     @unique
-  type      ClientType
-  userId    String?    @unique
-  user      User?      @relation(fields: [userId], references: [id])
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-
+  id         String       @id @default(uuid())
+  custCode   String       @unique
+  type       ClientType
+  userId     String?      @unique
+  user       User?        @relation(fields: [userId], references: [id])
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  status     ClientStatus @default(OFFICIAL)
   b2b        ClientB2B?
   b2c        ClientB2C?
   orders     Order[]
@@ -856,7 +862,6 @@ model Sales {
   orders              Order[]
   bankAccounts        SalesBank[]
   financeTransactions FinanceTransaction[]
-  quotations          Quotation[]
 
   @@map("sales")
 }
@@ -1213,33 +1218,35 @@ model Quotation {
   validUntil      DateTime?
   status          QuotationStatus @default(DRAFT)
 
+  // === CLIENT RELATION ===
   clientId String?
   client   Client?       @relation(fields: [clientId], references: [id])
   picId    String?
   pic      ClientB2BPIC? @relation(fields: [picId], references: [id])
 
-  manualClientName    String?
-  manualClientCompany String?
-  manualClientEmail   String?
-  manualClientPhone   String?
-  manualClientAddress String? @db.Text
+  // === FINANCIALS, CURRENCY & TERMS ===
+  currencyCode String   @default("IDR")
+  currency     Currency @relation(fields: [currencyCode], references: [code])
+  paymentTerms String?  @db.Text
 
-  // === FINANCIALS ===
   subTotal       Decimal         @default(0)
   taxAmount      Decimal?        @default(0)
   discountAmount Decimal?        @default(0)
   totalAmount    Decimal         @default(0)
   notes          QuotationNote[]
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // === RELATIONS ===
   orderId         String?
   order           Order?  @relation("OrderQuotations", fields: [orderId], references: [id])
   resultingOrders Order[] @relation("OrderSourcedFromQuotation")
 
-  salesId   String?
-  sales     Sales?              @relation(fields: [salesId], references: [id])
+  // === CREATED BY (INTERNAL SALES / USER) ===
+  userId String?
+  user   User?   @relation("QuotationCreatedBy", fields: [userId], references: [id])
+
   items     QuotationItem[]
   followUps QuotationFollowUp[]
 
@@ -1429,6 +1436,7 @@ model Currency {
   cashflowCosts     CashflowCost[]
   orders            Order[]
   purchaseOrders    PurchaseOrder[]
+  quotations        Quotation[]
 
   @@map("currencies")
 }
