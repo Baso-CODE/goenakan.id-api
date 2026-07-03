@@ -777,7 +777,7 @@ export class QuotationService {
     try {
       return await this.prisma.quotation.findMany({
         where: {
-          status: "ACCEPTED",
+          // status: "ACCEPTED",
           orderId: null,
           resultingOrders: {
             none: {},
