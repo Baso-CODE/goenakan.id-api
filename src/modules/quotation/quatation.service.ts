@@ -78,7 +78,7 @@ export class QuotationService {
         },
         // 2. PIC Klien (Khusus B2B)
         pic: {
-          select: { name: true, phone: true, position: true },
+          select: { name: true, phone: true },
         },
         // 3. Jejak Audit Pengguna Sistem
         user: {
