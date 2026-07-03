@@ -30,6 +30,10 @@ export class UpdateProductCoreDTO {
   isCustom?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  isMadeByOrder?: boolean;
+
+  @IsOptional()
   @IsString()
   materialTypeId?: string;
 

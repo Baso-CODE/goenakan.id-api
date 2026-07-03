@@ -180,6 +180,10 @@ export class CreateProductDTO {
   isCustom?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  isMadeByOrder?: boolean;
+
+  @IsOptional()
   @IsString()
   materialTypeId?: string;
 

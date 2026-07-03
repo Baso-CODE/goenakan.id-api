@@ -21,6 +21,12 @@ export class UpdateAttributeValueDTO {
 
   @IsOptional()
   position?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UpdateAttributeDTO)
+  subAttributes?: any[]; // type as any to avoid circular dependency compile issues in TS
 }
 
 export class UpdateAttributeDTO {
@@ -40,4 +46,12 @@ export class UpdateAttributeDTO {
 
   @IsOptional()
   position?: number;
+
+  @IsOptional()
+  @IsString()
+  type?: string;
+
+  @IsOptional()
+  @IsString()
+  parentValueId?: string;
 }

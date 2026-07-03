@@ -34,13 +34,11 @@ export class AttributeService {
 
       const where: any = {};
 
-      if (query.productId) {
+      if (query.productId && query.productId !== "undefined") {
         where.OR = [
           { productId: null },
           { productId: query.productId },
         ];
-      } else {
-        where.productId = null;
       }
 
       // Search by name
@@ -59,6 +57,21 @@ export class AttributeService {
         include: {
           values: {
             orderBy: { position: "asc" },
+          },
+          product: {
+            select: { name: true },
+          },
+          parentValue: {
+            select: {
+              id: true,
+              value: true,
+              attribute: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
           },
         },
         orderBy: [
@@ -80,12 +93,18 @@ export class AttributeService {
     }
   }
 
-  // === CREATE ATTRIBUTE (WITH VALUES) ===
+  // === CREATE ATTRIBUTE (WITH VALUES & NESTED HIERARCHY RECURSIVELY) ===
   async createAttribute(data: CreateAttributeDTO) {
+    return await this.prisma.$transaction(async (tx) => {
+      return await this.createAttributeRecursive(data, null, tx);
+    });
+  }
+
+  private async createAttributeRecursive(data: any, parentValueId: string | null, tx: any): Promise<any> {
     let generatedSlug = this.slug.create(data.name);
 
     if (data.productId) {
-      const product = await this.prisma.product.findUnique({
+      const product = await tx.product.findUnique({
         where: { id: data.productId },
         select: { slug: true },
       });
@@ -94,40 +113,71 @@ export class AttributeService {
       }
     }
 
-    // Check duplicate slug
-    const existingSlug = await this.prisma.attribute.findUnique({
-      where: { slug: generatedSlug },
-    });
-    if (existingSlug) {
-      throw new ApiError("Attribute slug already exists", 400);
+    // Check duplicate slug with counter safeguard
+    let slugExists = true;
+    let finalSlug = generatedSlug;
+    let counter = 0;
+    while (slugExists) {
+      const existing = await tx.attribute.findUnique({
+        where: { slug: finalSlug },
+      });
+      if (existing) {
+        counter++;
+        finalSlug = `${generatedSlug}-${counter}`;
+      } else {
+        slugExists = false;
+      }
     }
 
-    // Pisahkan values
-    const { values, name, productId } = data;
-
-    // Create Attribute + Values dalam 1 transaksi
-    const attribute = await this.prisma.attribute.create({
+    const attribute = await tx.attribute.create({
       data: {
-        name,
-        slug: generatedSlug,
-        productId: productId || null,
-        values: {
-          createMany: {
-            data: values.map((v, index) => ({
-              value: v.value,
-              position: v.position ?? index,
-            })),
-          },
-        },
+        name: data.name,
+        slug: finalSlug,
+        productId: data.productId || null,
+        type: data.type || "TEXT",
+        parentValueId: parentValueId || null,
       },
+    });
+
+    if (data.values && data.values.length > 0) {
+      for (let index = 0; index < data.values.length; index++) {
+        const v = data.values[index];
+        const attrVal = await tx.attributeValue.create({
+          data: {
+            value: v.value,
+            position: v.position ?? index,
+            attributeId: attribute.id,
+          },
+        });
+
+        if (v.subAttributes && v.subAttributes.length > 0) {
+          for (const subAttr of v.subAttributes) {
+            await this.createAttributeRecursive(subAttr, attrVal.id, tx);
+          }
+        }
+      }
+    }
+
+    return await tx.attribute.findUnique({
+      where: { id: attribute.id },
       include: {
         values: {
           orderBy: { position: "asc" },
         },
+        parentValue: {
+          select: {
+            id: true,
+            value: true,
+            attribute: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
       },
     });
-
-    return attribute;
   }
 
   // === CLONE ATTRIBUTE ===
@@ -188,27 +238,76 @@ export class AttributeService {
     return cloned;
   }
 
-  // === GET ATTRIBUTE BY ID ===
+  // === GET ATTRIBUTE BY ID (RECURSIVE DETAILS) ===
   async getAttributeById(id: string) {
-    const attribute = await this.prisma.attribute.findUnique({
+    const attribute = await this.getAttributeByIdRecursive(id);
+    if (!attribute) {
+      throw new ApiError("Attribute not found", 404);
+    }
+    return attribute;
+  }
+
+  private async getAttributeByIdRecursive(id: string, tx: any = this.prisma): Promise<any> {
+    const attribute = await tx.attribute.findUnique({
       where: { id },
       include: {
         values: {
           orderBy: { position: "asc" },
         },
+        parentValue: {
+          select: {
+            id: true,
+            value: true,
+            attribute: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
       },
     });
 
-    if (!attribute) {
-      throw new ApiError("Attribute not found", 404);
+    if (!attribute) return null;
+
+    const valuesWithSub = [];
+    for (const val of attribute.values) {
+      const subAttrs = await tx.attribute.findMany({
+        where: { parentValueId: val.id },
+        orderBy: { position: "asc" },
+      });
+
+      const processedSubAttrs = [];
+      for (const subAttr of subAttrs) {
+        const fullSubAttr = await this.getAttributeByIdRecursive(subAttr.id, tx);
+        if (fullSubAttr) {
+          processedSubAttrs.push(fullSubAttr);
+        }
+      }
+
+      valuesWithSub.push({
+        ...val,
+        subAttributes: processedSubAttrs,
+      });
     }
 
-    return attribute;
+    return {
+      ...attribute,
+      values: valuesWithSub,
+    };
   }
 
-  // === UPDATE ATTRIBUTE ===
+  // === UPDATE ATTRIBUTE (RECURSIVE LOGIC) ===
   async updateAttribute(id: string, data: UpdateAttributeDTO) {
-    const existing = await this.prisma.attribute.findUnique({
+    return await this.prisma.$transaction(async (tx) => {
+      await this.updateAttributeRecursive(id, data, tx);
+      return await this.getAttributeByIdRecursive(id, tx);
+    });
+  }
+
+  private async updateAttributeRecursive(id: string, data: any, tx: any) {
+    const existing = await tx.attribute.findUnique({
       where: { id },
       include: { values: true },
     });
@@ -217,87 +316,130 @@ export class AttributeService {
       throw new ApiError("Attribute not found", 404);
     }
 
-    // ===== HANDLE ATTRIBUTE NAME + SLUG =====
     const newSlug =
       data.name && data.name !== existing.name
         ? this.slug.create(data.name)
         : existing.slug;
 
     if (newSlug !== existing.slug) {
-      const duplicateSlug = await this.prisma.attribute.findUnique({
+      const duplicateSlug = await tx.attribute.findUnique({
         where: { slug: newSlug },
       });
       if (duplicateSlug) throw new ApiError("Slug already exists", 400);
     }
 
-    const updateOps = [];
+    await tx.attribute.update({
+      where: { id },
+      data: {
+        name: data.name ?? existing.name,
+        slug: newSlug,
+        position: data.position ?? existing.position,
+        type: data.type ?? existing.type,
+        parentValueId: data.parentValueId !== undefined ? (data.parentValueId || null) : existing.parentValueId,
+      },
+    });
 
-    // ===== UPDATE ATTRIBUTE BASIC DATA =====
-    updateOps.push(
-      this.prisma.attribute.update({
-        where: { id },
-        data: {
-          name: data.name ?? existing.name,
-          slug: newSlug,
-          position: data.position ?? existing.position,
-        },
-      }),
-    );
-
-    // ===== HANDLE VALUES (CREATE / UPDATE / DELETE =====
     if (data.values && data.values.length > 0) {
       for (const val of data.values) {
         // DELETE VALUE
         if (val.deleted && val.id) {
-          updateOps.push(
-            this.prisma.attributeValue.delete({
-              where: { id: val.id },
-            }),
-          );
+          await this.deleteAttributeValueRelationsRecursive(val.id, tx);
+          await tx.attributeValue.delete({
+            where: { id: val.id },
+          });
           continue;
         }
 
         // UPDATE VALUE
         if (val.id && !val.deleted) {
-          updateOps.push(
-            this.prisma.attributeValue.update({
-              where: { id: val.id },
-              data: {
-                value: val.value,
-                position: val.position,
-              },
-            }),
-          );
+          await tx.attributeValue.update({
+            where: { id: val.id },
+            data: {
+              value: val.value,
+              position: val.position,
+            },
+          });
+
+          if (val.subAttributes) {
+            for (const subAttr of val.subAttributes) {
+              if (subAttr.deleted && subAttr.id) {
+                // Delete attribute relation and then the attribute
+                await this.deleteAttributeRelationsRecursive(subAttr.id, tx);
+                await tx.attribute.delete({
+                  where: { id: subAttr.id },
+                });
+              } else if (subAttr.id && !subAttr.deleted) {
+                await this.updateAttributeRecursive(subAttr.id, subAttr, tx);
+              } else if (!subAttr.id && !subAttr.deleted) {
+                await this.createAttributeRecursive(subAttr, val.id, tx);
+              }
+            }
+          }
           continue;
         }
 
         // CREATE NEW VALUE
-        if (!val.id) {
-          updateOps.push(
-            this.prisma.attributeValue.create({
-              data: {
-                value: val.value,
-                attributeId: id,
-                position: val.position,
-              },
-            }),
-          );
+        if (!val.id && !val.deleted) {
+          const newVal = await tx.attributeValue.create({
+            data: {
+              value: val.value,
+              attributeId: id,
+              position: val.position,
+            },
+          });
+
+          if (val.subAttributes) {
+            for (const subAttr of val.subAttributes) {
+              if (!subAttr.deleted) {
+                await this.createAttributeRecursive(subAttr, newVal.id, tx);
+              }
+            }
+          }
         }
       }
     }
+  }
 
-    // ===== EXECUTE ALL OPERATIONS IN ONE TRANSACTION =====
-    await this.prisma.$transaction(updateOps);
-
-    // Return updated attribute with values
-    return await this.prisma.attribute.findUnique({
-      where: { id },
-      include: {
-        values: {
-          orderBy: { position: "asc" },
-        },
-      },
+  private async deleteAttributeValueRelationsRecursive(valueId: string, tx: any) {
+    // Find all sub-attributes of this value
+    const subAttrs = await tx.attribute.findMany({
+      where: { parentValueId: valueId },
+      select: { id: true },
     });
+
+    for (const subAttr of subAttrs) {
+      // Find all values of this sub-attribute
+      const subVals = await tx.attributeValue.findMany({
+        where: { attributeId: subAttr.id },
+        select: { id: true },
+      });
+
+      for (const subVal of subVals) {
+        // Recursive step
+        await this.deleteAttributeValueRelationsRecursive(subVal.id, tx);
+      }
+    }
+
+    // Delete references in product_attribute_values
+    await tx.productAttributeValue.deleteMany({
+      where: { attributeValueId: valueId },
+    });
+
+    // Delete references in product_variant_attribute_values
+    await tx.productVariantAttributeValue.deleteMany({
+      where: { attributeValueId: valueId },
+    });
+  }
+
+  private async deleteAttributeRelationsRecursive(attributeId: string, tx: any) {
+    const vals = await tx.attributeValue.findMany({
+      where: { attributeId },
+      select: { id: true },
+    });
+
+    for (const val of vals) {
+      await this.deleteAttributeValueRelationsRecursive(val.id, tx);
+    }
   }
 
   // === DELETE ATTRIBUTE ===
@@ -310,18 +452,22 @@ export class AttributeService {
       throw new ApiError("Attribute not found", 404);
     }
 
-    const deleted = await this.prisma.attribute.delete({
-      where: { id },
-    });
+    return await this.prisma.$transaction(async (tx) => {
+      // Delete all child relations recursively
+      await this.deleteAttributeRelationsRecursive(id, tx);
 
-    return deleted;
+      const deleted = await tx.attribute.delete({
+        where: { id },
+      });
+      return deleted;
+    });
   }
 
   // === LIST ONLY (FOR DROPDOWN) ===
   async getAllAttributesList(productId?: string) {
     try {
       const where: any = {};
-      if (productId && productId !== "all") {
+      if (productId && productId !== "all" && productId !== "undefined") {
         where.OR = [
           { productId: null },
           { productId },
@@ -338,7 +484,16 @@ export class AttributeService {
           id: true,
           name: true,
           slug: true,
+          type: true,
           position: true,
+          parentValueId: true,
+          parentValue: {
+            select: {
+              id: true,
+              value: true,
+              attributeId: true,
+            },
+          },
           values: {
             select: {
               id: true,

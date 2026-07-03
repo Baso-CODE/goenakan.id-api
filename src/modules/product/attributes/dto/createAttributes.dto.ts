@@ -8,6 +8,12 @@ export class CreateAttributeValueDTO {
 
   @IsOptional()
   position?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateAttributeDTO)
+  subAttributes?: any[]; // type as any to avoid immediate circular reference issues in TS
 }
 
 export class CreateAttributeDTO {
@@ -23,4 +29,12 @@ export class CreateAttributeDTO {
   @IsOptional()
   @IsString()
   productId?: string;
+
+  @IsOptional()
+  @IsString()
+  type?: string;
+
+  @IsOptional()
+  @IsString()
+  parentValueId?: string;
 }

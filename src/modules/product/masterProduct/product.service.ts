@@ -180,6 +180,7 @@ export class ProductService {
             description: data.description,
             basePrice: data.basePrice,
             isCustom: data.isCustom,
+            isMadeByOrder: data.isMadeByOrder || false,
             materialTypeId: data.materialTypeId,
             stock: !data.isCustom ? data.stock || 0 : 0,
             weight: data.weight,
@@ -430,6 +431,10 @@ export class ProductService {
     if (data.isCustom !== undefined) {
       updateData.isCustom = data.isCustom;
       if (data.isCustom === true) updateData.stock = 0;
+    }
+
+    if (data.isMadeByOrder !== undefined) {
+      updateData.isMadeByOrder = data.isMadeByOrder;
     }
 
     if (data.stock !== undefined) {
@@ -1591,7 +1596,10 @@ export class ProductService {
       where: { id: imageId },
       data: {
         altText: data.altText ?? undefined,
+        mockupSideName: data.mockupSideName !== undefined ? data.mockupSideName : undefined,
         isFeatured: data.isFeatured ?? undefined,
+        attributeValueId: data.attributeValueId !== undefined ? data.attributeValueId : undefined,
+        printPositionValueId: data.printPositionValueId !== undefined ? data.printPositionValueId : undefined,
       },
     });
 
@@ -2285,12 +2293,15 @@ export class ProductService {
         0,
       );
 
-      // Gabungkan Media
       const combinedMedia: {
         id: string;
         type: "image" | "video";
         url: string;
         mockupAreas?: any[];
+        altText?: string | null;
+        mockupSideName?: string | null;
+        printPositionValueId?: string | null;
+        attributeValueId?: string | null;
       }[] = [];
 
       if (product.images && product.images.length > 0) {
@@ -2300,6 +2311,10 @@ export class ProductService {
             type: "image",
             url: img.url,
             mockupAreas: img.mockupAreas || [],
+            altText: img.altText,
+            mockupSideName: img.mockupSideName,
+            printPositionValueId: img.printPositionValueId,
+            attributeValueId: img.attributeValueId,
           });
         });
       }
@@ -2340,8 +2355,11 @@ export class ProductService {
           .map((av) => ({
             name: av.attributeValue.attribute?.name || "",
             value: av.attributeValue.value || "",
+            attributeValueId: av.attributeValueId,
             attributePosition: av.attributeValue.attribute?.position ?? 0,
             valuePosition: av.attributeValue.position ?? 0,
+            type: av.attributeValue.attribute?.type || "TEXT",
+            parentValueId: av.attributeValue.attribute?.parentValueId || null,
           }))
           .sort((a, b) => {
             if (a.attributePosition !== b.attributePosition) {
@@ -2349,11 +2367,14 @@ export class ProductService {
             }
             return a.valuePosition - b.valuePosition;
           })
-          .map(({ name, value, attributePosition, valuePosition }) => ({
+          .map(({ name, value, attributeValueId, attributePosition, valuePosition, type, parentValueId }) => ({
             name,
             value,
+            attributeValueId,
             attributePosition,
             valuePosition,
+            type,
+            parentValueId,
           }));
 
         return {
@@ -2422,6 +2443,7 @@ export class ProductService {
         name: product.name,
         sku: product.sku,
         slug: product.slug,
+        basePrice: Number(product.basePrice),
         category: product.category?.name_id || "Uncategorized",
         sold: totalSold,
         media: combinedMedia,
@@ -2442,6 +2464,7 @@ export class ProductService {
           ? formattedVariants.reduce((a, b) => a + b.stock, 0)
           : product.stock,
         isCustom: product.isCustom,
+        isMadeByOrder: product.isMadeByOrder,
         whatsappNumber: "6281234567890",
         accessories: [],
 
@@ -2462,8 +2485,10 @@ export class ProductService {
             priceModifier: av.priceModifier ? Number(av.priceModifier) : 0,
             value: av.attributeValue?.value || "",
             attributeName: av.attribute?.name || "",
+            attributeType: av.attribute?.type || "TEXT",
             attributePosition: av.attribute?.position ?? 0,
             valuePosition: av.attributeValue?.position ?? 0,
+            parentValueId: av.attribute?.parentValueId || null,
           }))
           .sort((a, b) => {
             if (a.attributePosition !== b.attributePosition) {

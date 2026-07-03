@@ -419,6 +419,7 @@ model Product {
   description     String?                 @db.Text
   basePrice       Decimal
   isCustom        Boolean                 @default(false)
+  isMadeByOrder   Boolean                 @default(false)
   materialTypeId  String?
   materialType    MaterialType?           @relation(fields: [materialTypeId], references: [id])
   stock           Int                     @default(0)
@@ -498,18 +499,22 @@ model ProductSEO {
 }
 
 model Attribute {
-  id        String   @id @default(uuid())
-  name      String
-  slug      String   @unique
-  position  Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String          @id @default(uuid())
+  name          String
+  slug          String          @unique
+  position      Int             @default(0)
+  type          String          @default("TEXT")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
-  productId String?
-  product   Product?   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId     String?
+  product       Product?        @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  values   AttributeValue[]
-  products ProductAttributeValue[]
+  parentValueId String?
+  parentValue   AttributeValue? @relation("ValueToSubAttributes", fields: [parentValueId], references: [id], onDelete: Cascade)
+
+  values        AttributeValue[] @relation("AttributeToValues")
+  products      ProductAttributeValue[]
 
   @@map("attributes")
 }
@@ -519,10 +524,13 @@ model AttributeValue {
   value       String
   position    Int       @default(0)
   attributeId String
-  attribute   Attribute @relation(fields: [attributeId], references: [id])
+  attribute   Attribute @relation("AttributeToValues", fields: [attributeId], references: [id], onDelete: Cascade)
 
+  subAttributes                 Attribute[]                     @relation("ValueToSubAttributes")
   products                      ProductAttributeValue[]
   productVariantAttributeValues ProductVariantAttributeValue[]
+  productImages                 ProductImage[]
+  productImagesAsPosition       ProductImage[]                  @relation("PrintPositionValue")
 
   @@map("attribute_values")
 }
@@ -621,9 +629,16 @@ model ProductImage {
   publicId   String
   isFeatured Boolean @default(false)
   altText    String?
+  mockupSideName String?
 
   productId String
   product   Product @relation(fields: [productId], references: [id])
+
+  attributeValueId String?
+  attributeValue   AttributeValue? @relation(fields: [attributeValueId], references: [id])
+
+  printPositionValueId String?
+  printPositionValue   AttributeValue? @relation("PrintPositionValue", fields: [printPositionValueId], references: [id])
 
   mockupAreas ProductImageMockupArea[]
 
