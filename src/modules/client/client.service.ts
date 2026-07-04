@@ -27,13 +27,12 @@ export class ClientService {
       throw new ApiError(`Invalid client type: received ${data.type}`, 400);
     }
 
-    // ==================================================
-    // 1. TENTUKAN PREFIX BERDASARKAN STATUS
-    // ==================================================
-    let prefix = clientType === "B2B" ? "B" : "C";
-
-    if (data.status === "POTENTIAL") {
-      prefix = "P";
+    const clientStatus = data.status === "POTENTIAL" ? "POTENTIAL" : "OFFICIAL";
+    let prefix = "";
+    if (clientStatus === "POTENTIAL") {
+      prefix = clientType === "B2B" ? "PBB" : "PBC";
+    } else {
+      prefix = clientType === "B2B" ? "B" : "C";
     }
 
     // ==================================================
@@ -65,9 +64,6 @@ export class ClientService {
       isUnique = !existing;
     } while (!isUnique);
 
-    // Pastikan status default adalah OFFICIAL jika tidak dikirim dari frontend
-    const clientStatus = data.status === "POTENTIAL" ? "POTENTIAL" : "OFFICIAL";
-
     // ==================================================
     // ====================== B2B ========================
     // ==================================================
@@ -96,7 +92,7 @@ export class ClientService {
         data: {
           custCode,
           type: data.type,
-          status: clientStatus, // ✨ Simpan status ke database
+          status: clientStatus,
           b2b: {
             create: {
               companyName: data.companyName!,
@@ -147,7 +143,7 @@ export class ClientService {
         data: {
           custCode,
           type: data.type,
-          status: clientStatus, // ✨ Simpan status ke database
+          status: clientStatus,
           b2c: {
             create: {
               prefix: data.prefix ?? "",
@@ -177,10 +173,11 @@ export class ClientService {
     page?: number;
     take?: number;
     type?: string;
+    status?: string;
     search?: string;
   }) {
     try {
-      const { page = 1, take = 10, type, search } = query;
+      const { page = 1, take = 10, type, status, search } = query;
       const skip = (page - 1) * take;
 
       const where: any = {};
@@ -190,6 +187,13 @@ export class ClientService {
       // =======================
       if (type && type !== "ALL") {
         where.type = type;
+      }
+
+      // =======================
+      // FILTER BY STATUS
+      // =======================
+      if (status && status !== "ALL") {
+        where.status = status;
       }
 
       // =======================
@@ -256,6 +260,7 @@ export class ClientService {
           id: true,
           custCode: true,
           type: true,
+          status: true,
           createdAt: true,
 
           b2b: {
@@ -301,6 +306,7 @@ export class ClientService {
             id: c.id,
             custCode: c.custCode,
             type: c.type,
+            status: c.status, // ✨ TAMBAHAN: Mengirim status ke objek B2B
             createdAt: c.createdAt,
             companyName: c.b2b.companyName,
             department: c.b2b.department?.name ?? "-",
@@ -318,6 +324,7 @@ export class ClientService {
             id: c.id,
             custCode: c.custCode,
             type: c.type,
+            status: c.status, // ✨ TAMBAHAN: Mengirim status ke objek B2C
             createdAt: c.createdAt,
             name: c.b2c.name,
             phone: c.b2c.phone,
@@ -329,6 +336,7 @@ export class ClientService {
           id: c.id,
           custCode: c.custCode,
           type: c.type,
+          status: c.status, // ✨ TAMBAHAN: Mengirim status sebagai fallback
           createdAt: c.createdAt,
           name: "-",
           phone: "-",
@@ -353,7 +361,6 @@ export class ClientService {
       throw new Error("Failed to fetch clients. See server log for details.");
     }
   }
-
   // === GET CLIENT BY ID ===
   async getClientById(id: string) {
     const client = await this.prisma.client.findUnique({

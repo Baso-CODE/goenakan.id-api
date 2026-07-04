@@ -28,12 +28,13 @@ export class ClientController {
 
   getAllClients = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { page, take, type, search } = req.query;
+      const { page, take, type, status, search } = req.query;
 
       const result = await this.clientService.getAllClients({
         page: Number(page) || 1,
         take: Number(take) || 10,
         type: (type as string) || "ALL",
+        status: (status as string) || "ALL",
         search: (search as string) || "",
       });
 
