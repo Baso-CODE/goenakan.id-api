@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsArray } from "class-validator";
+import { IsNotEmpty, IsString, IsArray, IsOptional } from "class-validator";
 
 export class CreateProductAttributeSelectionDTO {
   @IsNotEmpty()
@@ -8,4 +8,10 @@ export class CreateProductAttributeSelectionDTO {
   @IsArray()
   @IsString({ each: true })
   valueIds!: string[];
+
+  @IsOptional()
+  priceModifiers?: Record<string, number>;
+
+  @IsOptional()
+  isVariantGenerator?: boolean;
 }

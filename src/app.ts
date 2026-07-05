@@ -97,7 +97,7 @@ export default class App {
       }),
     );
 
-    this.app.use(json());
+    this.app.use(json({ limit: "50mb" }));
     this.app.use(cookieParser());
   }
   private routes(): void {

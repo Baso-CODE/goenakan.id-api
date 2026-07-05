@@ -8,4 +8,16 @@ export class UpdateProductImageDTO {
   @IsOptional()
   @IsBoolean()
   isFeatured?: boolean;
+
+  @IsOptional()
+  @IsString()
+  attributeValueId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  mockupSideName?: string | null;
+
+  @IsOptional()
+  @IsString()
+  printPositionValueId?: string | null;
 }

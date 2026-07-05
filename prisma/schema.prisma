@@ -428,6 +428,7 @@ model Product {
   uom             String                  @default("pcs")
   basePrice       Decimal
   isCustom        Boolean                 @default(false)
+  isMadeByOrder   Boolean                 @default(false)
   materialTypeId  String?
   materialType    MaterialType?           @relation(fields: [materialTypeId], references: [id])
   stock           Int                     @default(0)
@@ -453,11 +454,21 @@ model Product {
   images          ProductImage[]
   videos          ProductVideo[]
   productVariants ProductVariant[]
+  attributes      Attribute[]
   seo             ProductSEO?
   articleProducts ArticleProduct[]
   cartItems       CartItem[]
   webOrderItems   WebOrderItem[]
   purchaseItems   PurchaseOrderItem[]
+
+  mockupAreaX      Float?
+  mockupAreaY      Float?
+  mockupAreaWidth  Float?
+  mockupAreaHeight Float?
+
+  isMultiFace        Boolean @default(false)
+  mockupFrontImageId String?
+  mockupBackImageId  String?
 
   @@map("products")
 }
@@ -497,14 +508,22 @@ model ProductSEO {
 }
 
 model Attribute {
-  id        String   @id @default(uuid())
-  name      String
-  slug      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String          @id @default(uuid())
+  name          String
+  slug          String          @unique
+  position      Int             @default(0)
+  type          String          @default("TEXT")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
-  values   AttributeValue[]
-  products ProductAttributeValue[]
+  productId     String?
+  product       Product?        @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  parentValueId String?
+  parentValue   AttributeValue? @relation("ValueToSubAttributes", fields: [parentValueId], references: [id], onDelete: Cascade)
+
+  values        AttributeValue[] @relation("AttributeToValues")
+  products      ProductAttributeValue[]
 
   @@map("attributes")
 }
@@ -512,11 +531,15 @@ model Attribute {
 model AttributeValue {
   id          String    @id @default(uuid())
   value       String
+  position    Int       @default(0)
   attributeId String
-  attribute   Attribute @relation(fields: [attributeId], references: [id])
+  attribute   Attribute @relation("AttributeToValues", fields: [attributeId], references: [id], onDelete: Cascade)
 
+  subAttributes                 Attribute[]                     @relation("ValueToSubAttributes")
   products                      ProductAttributeValue[]
   productVariantAttributeValues ProductVariantAttributeValue[]
+  productImages                 ProductImage[]
+  productImagesAsPosition       ProductImage[]                  @relation("PrintPositionValue")
 
   @@map("attribute_values")
 }
@@ -531,6 +554,7 @@ model ProductAttributeValue {
   attributeValue   AttributeValue @relation(fields: [attributeValueId], references: [id])
   attribute        Attribute?     @relation(fields: [attributeId], references: [id])
   attributeId      String?
+  priceModifier    Float?         @default(0)
 
   @@unique([productId, attributeValueId])
   @@map("product_attribute_values")
@@ -614,12 +638,45 @@ model ProductImage {
   publicId   String
   isFeatured Boolean @default(false)
   altText    String?
+  mockupSideName String?
 
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
+  attributeValueId String?
+  attributeValue   AttributeValue? @relation(fields: [attributeValueId], references: [id])
+
+  printPositionValueId String?
+  printPositionValue   AttributeValue? @relation("PrintPositionValue", fields: [printPositionValueId], references: [id])
+
+  mockupAreas ProductImageMockupArea[]
+
   @@map("product_images")
 }
+
+model ProductImageMockupArea {
+  id            String   @id @default(uuid())
+  x             Float
+  y             Float
+  width         Float
+  height        Float
+  label         String
+  description   String?
+
+  // Real physical print size of this placement area
+  physicalWidth  Float?
+  physicalHeight Float?
+  unit           String?  @default("cm")  // "cm" | "mm"
+
+  productImageId String
+  productImage   ProductImage @relation(fields: [productImageId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("product_image_mockup_areas")
+}
+
 
 model ProductVideo {
   id         String  @id @default(uuid())

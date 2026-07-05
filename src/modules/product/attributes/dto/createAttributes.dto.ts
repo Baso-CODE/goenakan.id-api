@@ -1,10 +1,19 @@
-import { IsNotEmpty, IsString, IsArray, ValidateNested } from "class-validator";
+import { IsNotEmpty, IsString, IsArray, ValidateNested, IsOptional } from "class-validator";
 import { Type } from "class-transformer";
 
 export class CreateAttributeValueDTO {
   @IsNotEmpty()
   @IsString()
   value!: string;
+
+  @IsOptional()
+  position?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateAttributeDTO)
+  subAttributes?: any[]; // type as any to avoid immediate circular reference issues in TS
 }
 
 export class CreateAttributeDTO {
@@ -16,4 +25,16 @@ export class CreateAttributeDTO {
   @ValidateNested({ each: true })
   @Type(() => CreateAttributeValueDTO)
   values!: CreateAttributeValueDTO[];
+
+  @IsOptional()
+  @IsString()
+  productId?: string;
+
+  @IsOptional()
+  @IsString()
+  type?: string;
+
+  @IsOptional()
+  @IsString()
+  parentValueId?: string;
 }

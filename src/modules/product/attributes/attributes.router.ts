@@ -52,6 +52,14 @@ export class AttributeRouter {
       this.attributeController.createAttribute,
     );
 
+    // CLONE ATTRIBUTE
+    this.router.post(
+      "/clone",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.attributeController.cloneAttribute,
+    );
+
     // UPDATE ATTRIBUTE + VALUES SEKALIGUS
     this.router.patch(
       "/:id",

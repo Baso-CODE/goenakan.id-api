@@ -180,6 +180,10 @@ export class CreateProductDTO {
   isCustom?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  isMadeByOrder?: boolean;
+
+  @IsOptional()
   @IsString()
   materialTypeId?: string;
 
@@ -244,4 +248,24 @@ export class CreateProductDTO {
     isFeatured?: boolean;
     altText?: string;
   }[];
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  mockupAreaX?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  mockupAreaY?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  mockupAreaWidth?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  mockupAreaHeight?: number;
 }

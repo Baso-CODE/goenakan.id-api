@@ -18,6 +18,15 @@ export class UpdateAttributeValueDTO {
   @IsOptional()
   @IsBoolean()
   deleted?: boolean; // true → hapus value
+
+  @IsOptional()
+  position?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UpdateAttributeDTO)
+  subAttributes?: any[]; // type as any to avoid circular dependency compile issues in TS
 }
 
 export class UpdateAttributeDTO {
@@ -34,4 +43,15 @@ export class UpdateAttributeDTO {
   @ValidateNested({ each: true })
   @Type(() => UpdateAttributeValueDTO)
   values?: UpdateAttributeValueDTO[];
+
+  @IsOptional()
+  position?: number;
+
+  @IsOptional()
+  @IsString()
+  type?: string;
+
+  @IsOptional()
+  @IsString()
+  parentValueId?: string;
 }

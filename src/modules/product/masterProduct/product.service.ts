@@ -180,6 +180,7 @@ export class ProductService {
             description: data.description,
             basePrice: data.basePrice,
             isCustom: data.isCustom,
+            isMadeByOrder: data.isMadeByOrder || false,
             materialTypeId: data.materialTypeId,
             stock: !data.isCustom ? data.stock || 0 : 0,
             weight: data.weight,
@@ -190,6 +191,10 @@ export class ProductService {
             itemCategoryId: data.itemCategoryId,
             itemNameId: data.itemNameId,
             slug,
+            mockupAreaX: data.mockupAreaX !== undefined ? data.mockupAreaX : null,
+            mockupAreaY: data.mockupAreaY !== undefined ? data.mockupAreaY : null,
+            mockupAreaWidth: data.mockupAreaWidth !== undefined ? data.mockupAreaWidth : null,
+            mockupAreaHeight: data.mockupAreaHeight !== undefined ? data.mockupAreaHeight : null,
             tags:
               tagIds.length > 0
                 ? { connect: tagIds.map((id) => ({ id })) }
@@ -214,13 +219,16 @@ export class ProductService {
           const productAttributeValueData: {
             productId: string;
             attributeValueId: string;
+            priceModifier: number;
           }[] = [];
 
           for (const attr of attributes) {
             for (const valueId of attr.valueIds) {
+              const modifier = attr.priceModifiers?.[valueId] !== undefined ? Number(attr.priceModifiers[valueId]) : 0;
               productAttributeValueData.push({
                 productId: product.id,
                 attributeValueId: valueId,
+                priceModifier: modifier,
               });
             }
           }
@@ -240,7 +248,10 @@ export class ProductService {
             include: { attribute: true },
           });
 
-          const listOfValueGroups = attributes.map((attr) => attr.valueIds);
+          const variantGeneratingAttributes = attributes.filter(
+            (attr) => attr.isVariantGenerator !== false
+          );
+          const listOfValueGroups = variantGeneratingAttributes.map((attr) => attr.valueIds);
           const combinations = this.cartesianProduct(listOfValueGroups);
 
           const variantCreates = combinations.map((combination, index) => {
@@ -422,6 +433,10 @@ export class ProductService {
       if (data.isCustom === true) updateData.stock = 0;
     }
 
+    if (data.isMadeByOrder !== undefined) {
+      updateData.isMadeByOrder = data.isMadeByOrder;
+    }
+
     if (data.stock !== undefined) {
       const isCustomStatus = data.isCustom ?? existing.isCustom;
       updateData.stock = isCustomStatus ? 0 : data.stock;
@@ -438,6 +453,15 @@ export class ProductService {
     if (data.width !== undefined) updateData.width = data.width;
     if (data.height !== undefined) updateData.height = data.height;
     if (data.length !== undefined) updateData.length = data.length;
+
+    if (data.mockupAreaX !== undefined) updateData.mockupAreaX = data.mockupAreaX;
+    if (data.mockupAreaY !== undefined) updateData.mockupAreaY = data.mockupAreaY;
+    if (data.mockupAreaWidth !== undefined) updateData.mockupAreaWidth = data.mockupAreaWidth;
+    if (data.mockupAreaHeight !== undefined) updateData.mockupAreaHeight = data.mockupAreaHeight;
+
+    if (data.isMultiFace !== undefined) updateData.isMultiFace = data.isMultiFace;
+    if (data.mockupFrontImageId !== undefined) updateData.mockupFrontImageId = data.mockupFrontImageId;
+    if (data.mockupBackImageId !== undefined) updateData.mockupBackImageId = data.mockupBackImageId;
 
     // Sync Tags
     if (tagIds !== undefined) {
@@ -912,41 +936,62 @@ export class ProductService {
 
   // === UPDATE PRODUCT ATTRIBUTES (CREATE/DELETE) ===
   async updateProductAttributes(dto: UpdateProductAttributesDTO) {
-    const { productId, attributeValueIds } = dto;
+    const {
+      productId,
+      attributeValueIds,
+      priceModifiers = {},
+      orderedAttributeIds,
+      orderedAttributeValueIds,
+    } = dto;
 
-    // Ambil attributeValue yang sudah terassign ke produk
-    const existing = await this.prisma.productAttributeValue.findMany({
+    // 1. Delete all existing attribute associations for this product
+    await this.prisma.productAttributeValue.deleteMany({
       where: { productId },
-      select: { id: true, attributeValueId: true },
     });
 
-    const existingIds = existing.map((v) => v.attributeValueId);
+    // 2. Re-create all attribute associations with price modifiers
+    if (attributeValueIds.length > 0) {
+      const attributeValues = await this.prisma.attributeValue.findMany({
+        where: { id: { in: attributeValueIds } },
+        select: { id: true, attributeId: true },
+      });
 
-    // Tentukan mana yang harus dihapus
-    const toDelete = existingIds.filter(
-      (id) => !attributeValueIds.includes(id),
-    );
-
-    if (toDelete.length > 0) {
-      await this.prisma.productAttributeValue.deleteMany({
-        where: {
+      const insertData = attributeValues.map((av) => {
+        const modifier = priceModifiers[av.id] !== undefined ? Number(priceModifiers[av.id]) : 0;
+        return {
           productId,
-          attributeValueId: { in: toDelete },
-        },
+          attributeValueId: av.id,
+          attributeId: av.attributeId,
+          priceModifier: modifier,
+        };
+      });
+
+      await this.prisma.productAttributeValue.createMany({
+        data: insertData,
+        skipDuplicates: true,
       });
     }
 
-    // Tentukan mana yang harus ditambahkan
-    const toAdd = attributeValueIds.filter((id) => !existingIds.includes(id));
+    // 3. Update position of attributes based on order in payload
+    if (orderedAttributeIds && orderedAttributeIds.length > 0) {
+      for (let i = 0; i < orderedAttributeIds.length; i++) {
+        const attrId = orderedAttributeIds[i];
+        await this.prisma.attribute.updateMany({
+          where: { id: attrId },
+          data: { position: i },
+        });
+      }
+    }
 
-    if (toAdd.length > 0) {
-      await this.prisma.productAttributeValue.createMany({
-        data: toAdd.map((id) => ({
-          productId,
-          attributeValueId: id,
-        })),
-        skipDuplicates: true,
-      });
+    // 4. Update position of attribute values based on order in payload
+    if (orderedAttributeValueIds && orderedAttributeValueIds.length > 0) {
+      for (let i = 0; i < orderedAttributeValueIds.length; i++) {
+        const valId = orderedAttributeValueIds[i];
+        await this.prisma.attributeValue.updateMany({
+          where: { id: valId },
+          data: { position: i },
+        });
+      }
     }
 
     return { message: "Product attributes updated successfully." };
@@ -1107,7 +1152,11 @@ export class ProductService {
           orderBy: { minQuantity: "asc" },
         },
 
-        images: true,
+        images: {
+          include: {
+            mockupAreas: true,
+          },
+        },
         videos: true,
         tags: true,
         materialType: true,
@@ -1148,7 +1197,38 @@ export class ProductService {
     });
 
     if (!product) throw new ApiError("Product not found", 404);
-    return product;
+
+    // Sort product-level attributeValues in memory by attribute position and value position
+    if (product.attributeValues) {
+      product.attributeValues.sort((a: any, b: any) => {
+        const aAttrPos = a.attributeValue?.attribute?.position ?? 0;
+        const bAttrPos = b.attributeValue?.attribute?.position ?? 0;
+        if (aAttrPos !== bAttrPos) return aAttrPos - bAttrPos;
+
+        const aValPos = a.attributeValue?.position ?? 0;
+        const bValPos = b.attributeValue?.position ?? 0;
+        return aValPos - bValPos;
+      });
+    }
+
+    // Sort variant-level attributeValues in memory by attribute position and value position
+    if (product.productVariants) {
+      product.productVariants.forEach((v: any) => {
+        if (v.attributeValues) {
+          v.attributeValues.sort((a: any, b: any) => {
+            const aAttrPos = a.attributeValue?.attribute?.position ?? 0;
+            const bAttrPos = b.attributeValue?.attribute?.position ?? 0;
+            if (aAttrPos !== bAttrPos) return aAttrPos - bAttrPos;
+
+            const aValPos = a.attributeValue?.position ?? 0;
+            const bValPos = b.attributeValue?.position ?? 0;
+            return aValPos - bValPos;
+          });
+        }
+      });
+    }
+
+    return this.injectLegacyMockupArea(product);
   }
 
   // === GET ALL PRODUCTS (WITH PAGINATION, SEARCH, FILTER, & DATE RANGE) ===
@@ -1208,7 +1288,14 @@ export class ProductService {
       skip: (Number(query.page || 1) - 1) * Number(query.take || 10),
       take: Number(query.take || 10),
       orderBy: { createdAt: "desc" },
-      include: { category: true, images: true },
+      include: {
+        category: true,
+        images: {
+          include: {
+            mockupAreas: true,
+          },
+        },
+      },
     });
 
     const meta = this.pagination.generateMeta({
@@ -1511,7 +1598,10 @@ export class ProductService {
       where: { id: imageId },
       data: {
         altText: data.altText ?? undefined,
+        mockupSideName: data.mockupSideName !== undefined ? data.mockupSideName : undefined,
         isFeatured: data.isFeatured ?? undefined,
+        attributeValueId: data.attributeValueId !== undefined ? data.attributeValueId : undefined,
+        printPositionValueId: data.printPositionValueId !== undefined ? data.printPositionValueId : undefined,
       },
     });
 
@@ -2156,6 +2246,9 @@ export class ProductService {
           category: true,
           images: {
             orderBy: { isFeatured: "desc" },
+            include: {
+              mockupAreas: true,
+            },
           },
           videos: {
             orderBy: { isFeatured: "desc" },
@@ -2193,22 +2286,38 @@ export class ProductService {
         throw new Error("Product not found");
       }
 
+      // Inject legacy mockup area if needed
+      this.injectLegacyMockupArea(product);
+
       // Hitung total terjual
       const totalSold = product.orderProducts.reduce(
         (sum, order) => sum + (order.quantity || 1),
         0,
       );
 
-      // Gabungkan Media
       const combinedMedia: {
         id: string;
         type: "image" | "video";
         url: string;
+        mockupAreas?: any[];
+        altText?: string | null;
+        mockupSideName?: string | null;
+        printPositionValueId?: string | null;
+        attributeValueId?: string | null;
       }[] = [];
 
       if (product.images && product.images.length > 0) {
         product.images.forEach((img) => {
-          combinedMedia.push({ id: img.id, type: "image", url: img.url });
+          combinedMedia.push({
+            id: img.id,
+            type: "image",
+            url: img.url,
+            mockupAreas: img.mockupAreas || [],
+            altText: img.altText,
+            mockupSideName: img.mockupSideName,
+            printPositionValueId: img.printPositionValueId,
+            attributeValueId: img.attributeValueId,
+          });
         });
       }
 
@@ -2223,6 +2332,7 @@ export class ProductService {
           id: "placeholder",
           type: "image",
           url: "/images/placeholder.jpg",
+          mockupAreas: [],
         });
       }
 
@@ -2243,10 +2353,31 @@ export class ProductService {
             : "-";
 
         // Ambil atribut (contoh: Warna: Merah)
-        const attributes = v.attributeValues.map((av) => ({
-          name: av.attributeValue.attribute?.name,
-          value: av.attributeValue.value,
-        }));
+        const attributes = v.attributeValues
+          .map((av) => ({
+            name: av.attributeValue.attribute?.name || "",
+            value: av.attributeValue.value || "",
+            attributeValueId: av.attributeValueId,
+            attributePosition: av.attributeValue.attribute?.position ?? 0,
+            valuePosition: av.attributeValue.position ?? 0,
+            type: av.attributeValue.attribute?.type || "TEXT",
+            parentValueId: av.attributeValue.attribute?.parentValueId || null,
+          }))
+          .sort((a, b) => {
+            if (a.attributePosition !== b.attributePosition) {
+              return a.attributePosition - b.attributePosition;
+            }
+            return a.valuePosition - b.valuePosition;
+          })
+          .map(({ name, value, attributeValueId, attributePosition, valuePosition, type, parentValueId }) => ({
+            name,
+            value,
+            attributeValueId,
+            attributePosition,
+            valuePosition,
+            type,
+            parentValueId,
+          }));
 
         return {
           id: v.id,
@@ -2270,6 +2401,7 @@ export class ProductService {
             id: img.id,
             type: "image" as const,
             url: img.url,
+            mockupAreas: [],
           })),
         };
       });
@@ -2313,6 +2445,7 @@ export class ProductService {
         name: product.name,
         sku: product.sku,
         slug: product.slug,
+        basePrice: Number(product.basePrice),
         category: product.category?.name_id || "Uncategorized",
         sold: totalSold,
         media: combinedMedia,
@@ -2333,8 +2466,39 @@ export class ProductService {
           ? formattedVariants.reduce((a, b) => a + b.stock, 0)
           : product.stock,
         isCustom: product.isCustom,
+        isMadeByOrder: product.isMadeByOrder,
         whatsappNumber: "6281234567890",
         accessories: [],
+
+        // Legacy coordinate fallback fields
+        mockupAreaX: product.mockupAreaX,
+        mockupAreaY: product.mockupAreaY,
+        mockupAreaWidth: product.mockupAreaWidth,
+        mockupAreaHeight: product.mockupAreaHeight,
+
+        isMultiFace: product.isMultiFace,
+        mockupFrontImageId: product.mockupFrontImageId,
+        mockupBackImageId: product.mockupBackImageId,
+        attributeValues: product.attributeValues
+          .map((av) => ({
+            id: av.id,
+            attributeId: av.attributeId,
+            attributeValueId: av.attributeValueId,
+            priceModifier: av.priceModifier ? Number(av.priceModifier) : 0,
+            value: av.attributeValue?.value || "",
+            attributeName: av.attribute?.name || "",
+            attributeType: av.attribute?.type || "TEXT",
+            attributePosition: av.attribute?.position ?? 0,
+            valuePosition: av.attributeValue?.position ?? 0,
+            parentValueId: av.attribute?.parentValueId || null,
+          }))
+          .sort((a, b) => {
+            if (a.attributePosition !== b.attributePosition) {
+              return a.attributePosition - b.attributePosition;
+            }
+            return a.valuePosition - b.valuePosition;
+          })
+          .map(({ attributePosition, valuePosition, ...rest }) => rest),
       };
     } catch (error) {
       console.error(`❌ Error fetching product by slug (${slug}):`, error);
@@ -2454,5 +2618,109 @@ export class ProductService {
         options: attr.values.map((v) => ({ label: v.value, value: v.value })),
       })),
     };
+  }
+
+  async syncMockupAreas(imageId: string, data: { mockupAreas: any[] }) {
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Verify that the image exists
+      const image = await tx.productImage.findUnique({
+        where: { id: imageId },
+        include: {
+          product: {
+            include: {
+              images: {
+                orderBy: { isFeatured: "desc" },
+              },
+            },
+          },
+        },
+      });
+
+      if (!image) {
+        throw new ApiError("Product image not found", 404);
+      }
+
+      // 2. Delete existing mockup areas for this image
+      await tx.productImageMockupArea.deleteMany({
+        where: { productImageId: imageId },
+      });
+
+      // 3. Create new mockup areas
+      if (data.mockupAreas && data.mockupAreas.length > 0) {
+        await tx.productImageMockupArea.createMany({
+          data: data.mockupAreas.map((area: any) => ({
+            productImageId: imageId,
+            x: area.x,
+            y: area.y,
+            width: area.width,
+            height: area.height,
+            label: area.label,
+            description: area.description || null,
+            physicalWidth: area.physicalWidth ?? null,
+            physicalHeight: area.physicalHeight ?? null,
+            unit: area.unit ?? "cm",
+          })),
+        });
+      }
+
+      // 4. Retrieve updated mockup areas of all product images to find the featured one
+      const productImages = await tx.productImage.findMany({
+        where: { productId: image.productId },
+        include: { mockupAreas: true },
+        orderBy: { isFeatured: "desc" },
+      });
+
+      // Find the first image with mockup areas (preferring featured image)
+      const featuredImg =
+        productImages.find((img) => img.isFeatured && img.mockupAreas.length > 0) ||
+        productImages.find((img) => img.mockupAreas.length > 0);
+
+      const firstArea = featuredImg?.mockupAreas?.[0];
+
+      // 5. Update legacy fields on Product
+      await tx.product.update({
+        where: { id: image.productId },
+        data: {
+          mockupAreaX: firstArea ? firstArea.x : null,
+          mockupAreaY: firstArea ? firstArea.y : null,
+          mockupAreaWidth: firstArea ? firstArea.width : null,
+          mockupAreaHeight: firstArea ? firstArea.height : null,
+        },
+      });
+
+      // Return the updated list of mockup areas for this image
+      return tx.productImageMockupArea.findMany({
+        where: { productImageId: imageId },
+        orderBy: { createdAt: "asc" },
+      });
+    });
+  }
+
+  private injectLegacyMockupArea(product: any) {
+    if (!product) return product;
+
+    if (
+      product.mockupAreaX === null ||
+      product.mockupAreaX === undefined
+    ) {
+      if (product.images && product.images.length > 0) {
+        const featuredImg =
+          product.images.find((img: any) => img.isFeatured) ||
+          product.images[0];
+
+        if (
+          featuredImg &&
+          featuredImg.mockupAreas &&
+          featuredImg.mockupAreas.length > 0
+        ) {
+          const firstArea = featuredImg.mockupAreas[0];
+          product.mockupAreaX = firstArea.x;
+          product.mockupAreaY = firstArea.y;
+          product.mockupAreaWidth = firstArea.width;
+          product.mockupAreaHeight = firstArea.height;
+        }
+      }
+    }
+    return product;
   }
 }
