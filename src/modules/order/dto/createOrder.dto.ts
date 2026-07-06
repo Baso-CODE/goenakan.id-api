@@ -122,6 +122,10 @@ export class CreateOrderDTO {
   @IsString()
   createdById?: string;
 
+  @IsOptional()
+  @IsString()
+  updatedById?: string;
+
   @IsString()
   @IsNotEmpty()
   clientId!: string;

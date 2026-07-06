@@ -65,6 +65,12 @@ export class QuotationController {
     try {
       const body = req.body as CreateQuotationDTO;
 
+      // Ambil ID dari user yang sedang login
+      const userId = (req as any).user?.id;
+      if (userId) {
+        body.userId = userId;
+      }
+
       const files = (req.files as Express.Multer.File[]) ?? [];
       const result = await this.quotationService.createQuotation(body, files);
 

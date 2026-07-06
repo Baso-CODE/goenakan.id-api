@@ -27,17 +27,17 @@ export class ArticleController {
   // 1. CREATE ARTICLE
   // =========================================================================
   createArticle = async (req: Request, res: Response, next: NextFunction) => {
+    console.log("========== CREATE ARTICLE ==========");
+
     try {
       const data: CreateArticleDTO = req.body;
 
-      // ✨ TAMBAHAN 1: Menangkap multiple files dari Multer
-      // Kita menggunakan req.files untuk menangkap lebih dari satu input file
       const files = req.files as
         | { [fieldname: string]: Express.Multer.File[] }
         | undefined;
 
-      const coverFile = files?.coverFile?.[0]; // Ambil file pertama dari array coverFile
-      const coverMobileFile = files?.coverMobileFile?.[0]; // Ambil file pertama dari array coverMobileFile
+      const coverFile = files?.coverFile?.[0];
+      const coverMobileFile = files?.coverMobileFile?.[0];
 
       if (typeof data.published === "string") {
         data.published = data.published === "true";
@@ -46,7 +46,7 @@ export class ArticleController {
       if (typeof data.productIds === "string") {
         data.productIds = (data.productIds as string)
           .split(",")
-          .filter(Boolean); // filter(Boolean) untuk membuang string kosong
+          .filter(Boolean);
       }
 
       if (typeof data.tagIds === "string") {
@@ -212,6 +212,20 @@ export class ArticleController {
         data: result.data,
         meta: result.meta,
       });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === GET ARTICLE SIMPLE LIST ===
+  getArticleSimpleList = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const result = await this.articleService.getArticleSimpleList();
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

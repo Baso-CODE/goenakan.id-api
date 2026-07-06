@@ -88,7 +88,6 @@ export class VendorService {
 
       return vendorWithRelations;
     } catch (error: any) {
-      // Fallback unknown error
       throw new ApiError("Failed to create vendor", 500);
     }
   }

@@ -1,5 +1,6 @@
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import "dotenv/config";
 import express, { json } from "express";
 import helmet from "helmet";
 import "reflect-metadata";
@@ -49,16 +50,19 @@ import { ArticleTagRouter } from "./modules/web-clients/article/tag-article/tag-
 import { BannerProductRouter } from "./modules/web-clients/banner-product/banner-product.router";
 import { CartRouter } from "./modules/web-clients/cart/cart.router";
 import { PopupBannerRouter } from "./modules/web-clients/content/banner/banner.router";
+import { BestPriceGuaranteeRouter } from "./modules/web-clients/content/bestPriceGuarantee/bestPriceGuarantee.router";
 import { BrandClientRouter } from "./modules/web-clients/content/brandClient/brandClient.router";
 import { ClientLogoRouter } from "./modules/web-clients/content/clientLogo/clientLogo.router";
 import { FaqRouter } from "./modules/web-clients/content/faq/faq.router";
 import { HeroRouter } from "./modules/web-clients/content/hero/hero.router";
+import { PolicyRouter } from "./modules/web-clients/content/policy/policy.router";
 import { PortfolioRouter } from "./modules/web-clients/content/portfolio/portfolio.router";
 import { AppSettingRouter } from "./modules/web-clients/content/setting/setting.router";
 import { CustomerProfileRouter } from "./modules/web-clients/customer-profile/customer-profile.router";
 import { EventCategoryRouter } from "./modules/web-clients/event-category/event-category.router";
 import { AuthWebClientRouter } from "./modules/web-clients/register-user/register-user.router";
 import { WebOrderRouter } from "./modules/web-clients/web-order/web-order.router";
+import { WilayahRouter } from "./modules/wilayah/wilayah.router";
 import { initializeCronJobs } from "./utils/cron";
 export default class App {
   public app;
@@ -122,6 +126,10 @@ export default class App {
       ShipmentNoteCategoryRouter,
     );
     const faqsRouter = container.resolve(FaqRouter);
+    const policyRouter = container.resolve(PolicyRouter);
+    const bestPriceGuaranteeRouter = container.resolve(
+      BestPriceGuaranteeRouter,
+    );
     const heroRouter = container.resolve(HeroRouter);
     const quotationRouter = container.resolve(QuotationRouter);
     const bannerRouter = container.resolve(PopupBannerRouter);
@@ -151,6 +159,7 @@ export default class App {
     const purchaseOrderRouter = container.resolve(PurchaseOrderRouter);
     const userRouter = container.resolve(UserRouter);
     const roleRouter = container.resolve(RoleRouter);
+    const wilayahRouter = container.resolve(WilayahRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -180,6 +189,11 @@ export default class App {
     this.app.use("/quotations", quotationRouter.getRouter());
     this.app.use("/content/popup-banners", bannerRouter.getRouter());
     this.app.use("/content/faqs", faqsRouter.getRouter());
+    this.app.use("/content/policies", policyRouter.getRouter());
+    this.app.use(
+      "/content/best-price-guarantee",
+      bestPriceGuaranteeRouter.getRouter(),
+    );
     this.app.use("/content/heros", heroRouter.getRouter());
     this.app.use("/content/client-logos", clientLogoRouter.getRouter());
     this.app.use("/app-settings", appSettingRouter.getRouter());
@@ -200,7 +214,6 @@ export default class App {
     this.app.use("/brand-clients", brandClientRouter.getRouter());
     this.app.use("/portfolios", portfolioRouter.getRouter());
     this.app.use("/contact-messages", contactMessageRouter.getRouter());
-    this.app.use("/contact-messages", contactMessageRouter.getRouter());
     this.app.use("/cart", cartRouter.getRouter());
     this.app.use("/auth-web-client", authWebClientRouter.getRouter());
     this.app.use("/addresses", customAddressRouter.getRouter());
@@ -213,6 +226,7 @@ export default class App {
     this.app.use("/purchase-orders", purchaseOrderRouter.getRouter());
     this.app.use("/users", userRouter.getRouter());
     this.app.use("/roles", roleRouter.getRouter());
+    this.app.use("/wilayah", wilayahRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

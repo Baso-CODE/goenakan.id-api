@@ -5,6 +5,7 @@ import { ApiError } from "../../utils/api-error";
 import { PaginationService } from "../pagination/pagination.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateOrderDTO } from "./dto/createOrder.dto";
+import { UpdateOrderDTO } from "./dto/upadateOrder.dto";
 
 export interface OrderExportQuery {
   startDate?: string;
@@ -268,7 +269,7 @@ export class OrderService {
     return newOrder;
   }
 
-  async updateOrder(id: string, data: CreateOrderDTO) {
+  async updateOrder(id: string, data: UpdateOrderDTO) {
     const {
       products,
       clientB2BPICId,
@@ -277,6 +278,7 @@ export class OrderService {
       referenceSampleId,
       warrantyDays,
       sampleFollowUps,
+      updatedById,
       ...orderCore
     } = data;
 
@@ -376,7 +378,6 @@ export class OrderService {
         : [];
 
     const updatedOrder = await this.prisma.$transaction(async (tx) => {
-      // Rebuild products hanya jika PENDING
       if (isPending) {
         await tx.orderProduct.deleteMany({ where: { orderId: id } });
       }
@@ -400,7 +401,9 @@ export class OrderService {
       updateRelations.referenceSample = referenceSampleId
         ? { connect: { id: referenceSampleId } }
         : { disconnect: true };
-
+      if (updatedById) {
+        updateRelations.updatedBy = { connect: { id: updatedById } };
+      }
       const order = await tx.order.update({
         where: { id },
         data: {
@@ -408,12 +411,9 @@ export class OrderService {
           warrantyDays: warrantyDays ?? null,
           clientPoNumber: orderCore.clientPoNumber || null,
           remark: orderCore.remark || null,
-          currencyCode: orderCore.currencyCode || "IDR",
+          currency: { connect: { code: orderCore.currencyCode || "IDR" } },
           shippingAddress: orderCore.shippingAddress,
           totalAmount,
-
-          // sales: { connect: { id: orderCore.salesId } },
-
           ...updateRelations,
 
           sampleFollowUps: followUpsData.length
@@ -427,7 +427,6 @@ export class OrderService {
         },
         include: {
           products: true,
-          // ✨ HAPUS: 'vendors: true' telah dihilangkan agar tidak error
           pic: true,
           purchaseChannel: true,
           sampleFollowUps: true,
@@ -750,11 +749,9 @@ export class OrderService {
   }) {
     const where: any = {};
 
-    // 1. Filter Pencarian Cerdas
     if (query.search) {
       const searchTerm = query.search.trim();
       where.OR = [
-        // Menggunakan orderNumber sebagai primary filter
         { orderNumber: { contains: searchTerm } },
         { clientPoNumber: { contains: searchTerm } },
         {
@@ -767,10 +764,15 @@ export class OrderService {
             b2c: { is: { name: { contains: searchTerm } } },
           },
         },
+        {
+          pic: { is: { name: { contains: searchTerm } } },
+        },
+        {
+          createdBy: { is: { name: { contains: searchTerm } } },
+        },
       ];
     }
 
-    // 2. Filter Kategori Sales
     if (query.salesCategory) {
       where.salesCategory = query.salesCategory;
     }
@@ -804,11 +806,15 @@ export class OrderService {
       orderBy: { createdAt: "desc" },
       include: {
         client: {
-          include: { b2b: true, b2c: true },
+          include: {
+            b2c: true,
+            b2b: {
+              include: { pics: { select: { name: true } } },
+            },
+          },
         },
-        pic: { select: { name: true } },
-        sales: { select: { name: true } },
-        createdBy: { select: { name: true } },
+        pic: { select: { name: true } }, // PIC Customer
+        createdBy: { select: { name: true } }, // ✨ User yang login (PIC Sales)
         updatedBy: { select: { name: true } },
         referenceQuotation: { select: { quotationNumber: true } },
         referenceSample: { select: { orderNumber: true } },
@@ -837,10 +843,19 @@ export class OrderService {
     // === Format Ulang Data (Data Mapping) ===
     const formattedData = orders.map((order) => {
       let clientName = "-";
+      let picCustomer: string | null = null;
+
+      // Logika PIC Customer (Pihak Klien)
       if (order.client?.b2b) {
         clientName = order.client.b2b.companyName;
+        picCustomer =
+          order.pic?.name ||
+          (order.client.b2b.pics && order.client.b2b.pics.length > 0
+            ? order.client.b2b.pics[0].name
+            : "-");
       } else if (order.client?.b2c) {
         clientName = order.client.b2c.name;
+        picCustomer = null;
       }
 
       const lastShipment =
@@ -855,16 +870,11 @@ export class OrderService {
       return {
         id: order.id,
         orderDate: order.dateOrder,
-
-        // Menggunakan orderNumber sebagai kunci utama
         orderNumber: order.orderNumber || "-",
-
         customerName: clientName,
         shippingAddress: order.shippingAddress,
-        picCustomer: order.pic?.name || "-",
+        picCustomer: picCustomer,
         clientPoNumber: order.clientPoNumber || "-",
-
-        // Dokumen Referensi
         sampleReference: order.referenceSample?.orderNumber || "-",
         quotationReference: order.referenceQuotation?.quotationNumber || "-",
 
@@ -878,8 +888,7 @@ export class OrderService {
         arrivalInCustDate: lastShipment?.arrivalDate || null,
 
         lastFollowUpDate: lastFollowUp?.date || null,
-        lastFollowUpRemark: lastFollowUp?.notes || "-",
-
+        lastFollowUpNotes: lastFollowUp?.notes || "-",
         createdBy: order.createdBy?.name || "System",
         createdTime: order.createdAt,
         updatedBy: order.updatedBy?.name || "-",
@@ -888,7 +897,9 @@ export class OrderService {
         totalAmount: Number(order.totalAmount),
         currencyCode: order.currencyCode,
         salesCategory: order.salesCategory,
-        salesName: order.sales?.name || "-",
+
+        salesName: order.createdBy?.name || "-",
+
         totalItems: order._count.products,
       };
     });

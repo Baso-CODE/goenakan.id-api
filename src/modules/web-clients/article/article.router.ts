@@ -6,8 +6,12 @@ import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
 import { verifyRole } from "../../../middleware/role.middleware";
 import { ArticleController } from "./article.controller";
 
-const upload = multer({ storage: multer.memoryStorage() });
-
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10 MB
+  },
+});
 @autoInjectable()
 export class ArticleRouter {
   private readonly router: Router = Router();
@@ -24,19 +28,20 @@ export class ArticleRouter {
     const auth = this.nextAuthMiddleware.verifyNextAuthToken;
     const requiredRole = ["SUPER_ADMIN", "ADMIN_ARTICLE"];
 
-    // ====================================================================
-    // 1. PUBLIC / LIST ROUTES
-    // ====================================================================
-
-    // GET ARTICLE LIST (Tanpa Autentikasi, untuk tampilan publik seperti homepage) --- IGNORE ---
     this.router.get("/list", this.articleController.getArticleList);
 
-    // GET ALL ARTICLES (Pagination & Filter)
     this.router.get(
       "/",
       auth,
       verifyRole(requiredRole),
       this.articleController.getAllArticles,
+    );
+
+    this.router.get(
+      "/simple-list",
+      auth,
+      verifyRole(requiredRole),
+      this.articleController.getArticleSimpleList,
     );
 
     // ====================================================================
@@ -65,8 +70,6 @@ export class ArticleRouter {
     );
 
     // GET ARTICLE BY SLUG (Untuk Tampilan User/Frontend Publik)
-    // Note: Pastikan prefix endpoint di frontend berbeda agar tidak bentrok dengan /:id
-    // Contoh di frontend: fetch(`/api/articles/slug/cara-membuat-baju`)
     this.router.get("/slug/:slug", this.articleController.getArticleBySlug);
 
     // =========================================================================
@@ -76,10 +79,9 @@ export class ArticleRouter {
       "/",
       auth,
       verifyRole(requiredRole),
-      // ✨ PERBAIKAN DI SINI: Menggunakan upload.fields untuk menerima banyak jenis file
       upload.fields([
-        { name: "coverFile", maxCount: 1 }, // Mengizinkan 1 file untuk desktop
-        { name: "coverMobileFile", maxCount: 1 }, // Mengizinkan 1 file untuk mobile
+        { name: "coverFile", maxCount: 1 },
+        { name: "coverMobileFile", maxCount: 1 },
       ]),
       this.articleController.createArticle,
     );
@@ -91,7 +93,6 @@ export class ArticleRouter {
       "/:id",
       auth,
       verifyRole(requiredRole),
-      // ✨ PERBAIKAN DI SINI JUGA
       upload.fields([
         { name: "coverFile", maxCount: 1 },
         { name: "coverMobileFile", maxCount: 1 },

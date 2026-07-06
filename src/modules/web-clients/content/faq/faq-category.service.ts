@@ -38,9 +38,11 @@ export class FaqCategoryService {
       const where: any = {};
 
       if (query.search) {
-        where.name = {
-          contains: query.search,
-        };
+        // ✨ Pembaruan: Mencari di kedua bahasa (Bilingual Search)
+        where.OR = [
+          { nameId: { contains: query.search } },
+          { nameEn: { contains: query.search } },
+        ];
       }
 
       const count = await this.prisma.faqCategory.count({ where });
@@ -50,7 +52,7 @@ export class FaqCategoryService {
         skip,
         take,
         orderBy: {
-          displayOrder: "asc", // Urutkan berdasarkan displayOrder, bukan createdAt
+          displayOrder: "asc",
         },
       });
 
@@ -69,10 +71,8 @@ export class FaqCategoryService {
 
   // === CREATE ===
   async createFaqCategory(data: CreateFaqCategoryDTO) {
-    // Gunakan slug dari input jika ada, jika tidak generate dari nama
-    const slug = data.slug
-      ? this.slug.create(data.slug)
-      : this.slug.create(data.name);
+    const baseNameForSlug = data.slug || data.nameEn || data.nameId;
+    const slug = this.slug.create(baseNameForSlug);
 
     // Cek duplikasi slug
     const existing = await this.prisma.faqCategory.findUnique({
@@ -80,14 +80,16 @@ export class FaqCategoryService {
     });
 
     if (existing) {
-      throw new ApiError("Category with this slug/name already exists", 400);
+      throw new ApiError("Category with this slug already exists", 400);
     }
 
     const category = await this.prisma.faqCategory.create({
       data: {
-        name: data.name,
+        nameId: data.nameId,
+        nameEn: data.nameEn,
         slug: slug,
-        description: data.description,
+        descriptionId: data.descriptionId,
+        descriptionEn: data.descriptionEn,
         displayOrder: data.displayOrder ?? 0,
         isActive: data.isActive ?? true,
       },
@@ -115,12 +117,14 @@ export class FaqCategoryService {
 
     if (!existing) throw new ApiError("FAQ Category not found", 404);
 
-    // Logic update slug jika nama berubah atau slug diganti manual
+    // ✨ Pembaruan: Logic update slug jika nama berubah
     let newSlug = existing.slug;
     if (data.slug) {
       newSlug = this.slug.create(data.slug);
-    } else if (data.name && data.name !== existing.name) {
-      newSlug = this.slug.create(data.name);
+    } else if (data.nameEn && data.nameEn !== existing.nameEn) {
+      newSlug = this.slug.create(data.nameEn);
+    } else if (data.nameId && data.nameId !== existing.nameId) {
+      newSlug = this.slug.create(data.nameId);
     }
 
     const updated = await this.prisma.faqCategory.update({
@@ -167,7 +171,8 @@ export class FaqCategoryService {
     try {
       return await this.prisma.faqCategory.findMany({
         where: { isActive: true },
-        select: { id: true, name: true },
+        // ✨ Pembaruan: Mengambil nameId dan nameEn
+        select: { id: true, nameId: true, nameEn: true },
         orderBy: { displayOrder: "asc" },
       });
     } catch (error) {
@@ -206,20 +211,25 @@ export class FaqCategoryService {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("FAQ Categories");
 
+    // ✨ Pembaruan: Menambahkan kolom Bahasa Indonesia dan Inggris
     worksheet.columns = [
-      { header: "Nama Kategori", key: "name", width: 30 },
+      { header: "Nama Kategori (ID)", key: "nameId", width: 30 },
+      { header: "Category Name (EN)", key: "nameEn", width: 30 },
       { header: "Slug", key: "slug", width: 25 },
-      { header: "Deskripsi", key: "description", width: 40 },
-      { header: "Urutan", key: "displayOrder", width: 10 },
+      { header: "Deskripsi (ID)", key: "descriptionId", width: 40 },
+      { header: "Description (EN)", key: "descriptionEn", width: 40 },
+      { header: "Urutan / Order", key: "displayOrder", width: 15 },
       { header: "Status", key: "isActive", width: 15 },
       { header: "Tanggal Dibuat", key: "createdAt", width: 25 },
     ];
 
     categories.forEach((cat) => {
       worksheet.addRow({
-        name: cat.name,
+        nameId: cat.nameId,
+        nameEn: cat.nameEn,
         slug: cat.slug,
-        description: cat.description || "-",
+        descriptionId: cat.descriptionId || "-",
+        descriptionEn: cat.descriptionEn || "-",
         displayOrder: cat.displayOrder,
         isActive: cat.isActive ? "Aktif" : "Tidak Aktif",
         createdAt: cat.createdAt.toLocaleString("id-ID"),

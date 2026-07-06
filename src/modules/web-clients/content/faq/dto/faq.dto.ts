@@ -13,15 +13,23 @@ import {
 export class CreateFaqDTO {
   @IsNotEmpty()
   @IsString()
-  question!: string;
+  questionId!: string;
 
   @IsNotEmpty()
   @IsString()
-  answer!: string;
+  questionEn!: string;
 
-  // Penting: Relasi ke Category
   @IsNotEmpty()
-  @IsUUID() // Memastikan formatnya valid UUID
+  @IsString()
+  answerId!: string;
+
+  @IsNotEmpty()
+  @IsString()
+  answerEn!: string;
+
+  // Penting: Relasi ke Category (FaqCategory masih menggunakan UUID)
+  @IsNotEmpty()
+  @IsUUID()
   categoryId!: string;
 
   @IsOptional()
@@ -43,11 +51,19 @@ export class CreateFaqDTO {
 export class UpdateFaqDTO {
   @IsOptional()
   @IsString()
-  question?: string;
+  questionId?: string;
 
   @IsOptional()
   @IsString()
-  answer?: string;
+  questionEn?: string;
+
+  @IsOptional()
+  @IsString()
+  answerId?: string;
+
+  @IsOptional()
+  @IsString()
+  answerEn?: string;
 
   @IsOptional()
   @IsUUID()

@@ -12,13 +12,21 @@ import {
 export class CreateFaqCategoryDTO {
   @IsNotEmpty()
   @IsString()
-  name!: string;
+  nameId!: string;
+
+  @IsNotEmpty()
+  @IsString()
+  nameEn!: string;
 
   @IsOptional()
   @IsString()
-  description?: string;
+  descriptionId?: string;
 
-  // Slug biasanya di-generate otomatis di backend (dari name),
+  @IsOptional()
+  @IsString()
+  descriptionEn?: string;
+
+  // Slug biasanya di-generate otomatis di backend,
   // tapi kita sediakan opsi jika admin ingin custom slug.
   @IsOptional()
   @IsString()
@@ -39,11 +47,19 @@ export class CreateFaqCategoryDTO {
 export class UpdateFaqCategoryDTO {
   @IsOptional()
   @IsString()
-  name?: string;
+  nameId?: string;
 
   @IsOptional()
   @IsString()
-  description?: string;
+  nameEn?: string;
+
+  @IsOptional()
+  @IsString()
+  descriptionId?: string;
+
+  @IsOptional()
+  @IsString()
+  descriptionEn?: string;
 
   @IsOptional()
   @IsString()

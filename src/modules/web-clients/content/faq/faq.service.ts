@@ -38,7 +38,7 @@ export class FaqService {
         take: take,
         include: {
           category: {
-            select: { id: true, name: true, slug: true },
+            select: { id: true, nameId: true, nameEn: true, slug: true },
           },
         },
         orderBy: {
@@ -83,11 +83,11 @@ export class FaqService {
         take,
         include: {
           category: {
-            select: { id: true, name: true, slug: true },
+            select: { id: true, nameId: true, nameEn: true, slug: true },
           },
         },
         orderBy: {
-          displayOrder: "asc", // Urutkan berdasarkan urutan prioritas
+          displayOrder: "asc",
         },
       });
 
@@ -104,7 +104,7 @@ export class FaqService {
     }
   }
 
-  // === GET ALL WITH PAGINATION ===
+  // === GET ALL WITH PAGINATION (Bilingual Support) ===
   async getAllFaqs(query: {
     page?: number;
     take?: number;
@@ -119,9 +119,12 @@ export class FaqService {
       const where: any = {};
 
       if (query.search) {
+        // ✨ Search in both Indonesian and English fields
         where.OR = [
-          { question: { contains: query.search } },
-          { answer: { contains: query.search } },
+          { questionId: { contains: query.search } },
+          { questionEn: { contains: query.search } },
+          { answerId: { contains: query.search } },
+          { answerEn: { contains: query.search } },
         ];
       }
 
@@ -137,21 +140,13 @@ export class FaqService {
         take,
         include: {
           category: {
-            select: { id: true, name: true },
+            select: { id: true, nameId: true, nameEn: true },
           },
         },
-        orderBy: [
-          { isFeatured: "desc" }, // Featured dulu
-          { displayOrder: "asc" }, // Lalu sesuai urutan
-        ],
+        orderBy: [{ isFeatured: "desc" }, { displayOrder: "asc" }],
       });
 
-      const meta = this.pagination.generateMeta({
-        count,
-        page,
-        take,
-      });
-
+      const meta = this.pagination.generateMeta({ count, page, take });
       return { data, meta };
     } catch (error) {
       console.error("❌ Error in Get All FAQs:", error);
@@ -161,35 +156,31 @@ export class FaqService {
 
   // === CREATE ===
   async createFaq(data: CreateFaqDTO) {
-    // Validasi Category Existence
     const categoryExists = await this.prisma.faqCategory.findUnique({
       where: { id: data.categoryId },
     });
 
-    if (!categoryExists) {
-      throw new ApiError("Category ID not found", 404);
-    }
+    if (!categoryExists) throw new ApiError("Category ID not found", 404);
 
-    const faq = await this.prisma.faq.create({
+    return await this.prisma.faq.create({
       data: {
-        question: data.question,
-        answer: data.answer,
+        questionId: data.questionId,
+        questionEn: data.questionEn,
+        answerId: data.answerId,
+        answerEn: data.answerEn,
         categoryId: data.categoryId,
         displayOrder: data.displayOrder ?? 0,
         isFeatured: data.isFeatured ?? false,
         isActive: data.isActive ?? true,
       },
     });
-
-    return faq;
   }
-
   // === GET BY ID ===
   async getFaqById(id: string) {
     const faq = await this.prisma.faq.findUnique({
       where: { id },
       include: {
-        category: true, // Include category details
+        category: true,
       },
     });
 
@@ -236,10 +227,9 @@ export class FaqService {
     return deleted;
   }
 
-  // === EXCEL EXPORT ===
+  // === EXCEL EXPORT (Bilingual) ===
   async exportFaqToExcel(query: FaqExportQuery): Promise<Buffer> {
     const { startDate, endDate, isActive, categoryId } = query;
-
     const where: any = {};
 
     if (startDate || endDate) {
@@ -257,9 +247,7 @@ export class FaqService {
 
     const faqs = await this.prisma.faq.findMany({
       where,
-      include: {
-        category: { select: { name: true } },
-      },
+      include: { category: { select: { nameId: true, nameEn: true } } },
       orderBy: { createdAt: "asc" },
     });
 
@@ -267,28 +255,26 @@ export class FaqService {
     const worksheet = workbook.addWorksheet("FAQ Data");
 
     worksheet.columns = [
-      { header: "Kategori", key: "category", width: 20 },
-      { header: "Pertanyaan", key: "question", width: 40 },
-      { header: "Jawaban", key: "answer", width: 50 },
-      { header: "Urutan", key: "displayOrder", width: 10 },
-      { header: "Featured", key: "isFeatured", width: 15 },
-      { header: "Status", key: "isActive", width: 15 },
-      { header: "Dibuat", key: "createdAt", width: 25 },
+      { header: "Kategori (ID)", key: "catId", width: 20 },
+      { header: "Category (EN)", key: "catEn", width: 20 },
+      { header: "Pertanyaan (ID)", key: "qId", width: 30 },
+      { header: "Question (EN)", key: "qEn", width: 30 },
+      { header: "Jawaban (ID)", key: "aId", width: 40 },
+      { header: "Answer (EN)", key: "aEn", width: 40 },
     ];
 
-    faqs.forEach((faq) => {
+    faqs.forEach((f) => {
       worksheet.addRow({
-        category: faq.category.name,
-        question: faq.question,
-        answer: faq.answer.replace(/<[^>]*>?/gm, ""), // Optional: Strip HTML tags if using Rich Text
-        displayOrder: faq.displayOrder,
-        isFeatured: faq.isFeatured ? "Ya" : "Tidak",
-        isActive: faq.isActive ? "Aktif" : "Tidak Aktif",
-        createdAt: faq.createdAt.toLocaleString("id-ID"),
+        catId: f.category.nameId,
+        catEn: f.category.nameEn,
+        qId: f.questionId,
+        qEn: f.questionEn,
+        aId: f.answerId.replace(/<[^>]*>?/gm, ""),
+        aEn: f.answerEn.replace(/<[^>]*>?/gm, ""),
       });
     });
 
-    // Styling Header
+    // Styling Header...
     worksheet.getRow(1).eachCell((cell) => {
       cell.font = { bold: true, color: { argb: "FFFFFF" } };
       cell.fill = {
@@ -299,7 +285,6 @@ export class FaqService {
       cell.alignment = { vertical: "middle", horizontal: "center" };
     });
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    return buffer as unknown as Buffer;
+    return (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
   }
 }

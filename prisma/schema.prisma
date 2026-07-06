@@ -168,6 +168,11 @@ enum PaymentTerm {
   NET_60 // 60 Days
 }
 
+enum ClientStatus {
+  POTENTIAL
+  OFFICIAL
+}
+
 enum PurchaseOrderStatus {
   DRAFT
   APPROVED
@@ -203,6 +208,9 @@ model User {
   approvedPOs         PurchaseOrder[]      @relation("POApprovedBy")
   orders              Order[]
   role                Role                 @relation(fields: [roleId], references: [id])
+  createdQuotations   Quotation[]          @relation("QuotationCreatedBy")
+  updatedQuotations   Quotation[]          @relation("QuotationUpdatedBy")
+  approvedQuotations  Quotation[]          @relation("QuotationApprovedBy")
 
   @@map("users")
 }
@@ -274,14 +282,14 @@ model PurchaseChannel {
 }
 
 model Client {
-  id        String     @id @default(uuid())
-  custCode  String     @unique
-  type      ClientType
-  userId    String?    @unique
-  user      User?      @relation(fields: [userId], references: [id])
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-
+  id         String       @id @default(uuid())
+  custCode   String       @unique
+  type       ClientType
+  userId     String?      @unique
+  user       User?        @relation(fields: [userId], references: [id])
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  status     ClientStatus @default(OFFICIAL)
   b2b        ClientB2B?
   b2c        ClientB2C?
   orders     Order[]
@@ -417,6 +425,7 @@ model Product {
   sku             String                  @unique
   slug            String                  @unique
   description     String?                 @db.Text
+  uom             String                  @default("pcs")
   basePrice       Decimal
   isCustom        Boolean                 @default(false)
   isMadeByOrder   Boolean                 @default(false)
@@ -918,7 +927,6 @@ model Sales {
   orders              Order[]
   bankAccounts        SalesBank[]
   financeTransactions FinanceTransaction[]
-  quotations          Quotation[]
 
   @@map("sales")
 }
@@ -1067,14 +1075,11 @@ model PurchaseOrder {
   purchaseType    PurchaseType
   expenseCategory ExpenseCategory
   paymentTerms    PaymentTerm
-  // Relasi Vendor
   vendorId        String
   vendor          Vendor              @relation(fields: [vendorId], references: [id])
   vendorAddress   String              @db.Text
-  // Relasi Mata Uang
   currencyCode    String              @default("IDR")
   currency        Currency            @relation(fields: [currencyCode], references: [code])
-  // Total Keseluruhan
   totalAmount     Decimal             @default(0)
   status          PurchaseOrderStatus @default(DRAFT)
   notes           String?             @db.Text
@@ -1275,33 +1280,42 @@ model Quotation {
   validUntil      DateTime?
   status          QuotationStatus @default(DRAFT)
 
+  // === CLIENT RELATION ===
   clientId String?
   client   Client?       @relation(fields: [clientId], references: [id])
   picId    String?
   pic      ClientB2BPIC? @relation(fields: [picId], references: [id])
 
-  manualClientName    String?
-  manualClientCompany String?
-  manualClientEmail   String?
-  manualClientPhone   String?
-  manualClientAddress String? @db.Text
+  // === FINANCIALS, CURRENCY & TERMS ===
+  currencyCode String   @default("IDR")
+  currency     Currency @relation(fields: [currencyCode], references: [code])
+  paymentTerms String?  @db.Text
 
-  // === FINANCIALS ===
   subTotal       Decimal         @default(0)
   taxAmount      Decimal?        @default(0)
   discountAmount Decimal?        @default(0)
   totalAmount    Decimal         @default(0)
   notes          QuotationNote[]
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // === RELATIONS ===
   orderId         String?
   order           Order?  @relation("OrderQuotations", fields: [orderId], references: [id])
   resultingOrders Order[] @relation("OrderSourcedFromQuotation")
 
-  salesId   String?
-  sales     Sales?              @relation(fields: [salesId], references: [id])
+  // === CREATED BY (INTERNAL SALES / USER) ===
+  userId String?
+  user   User?   @relation("QuotationCreatedBy", fields: [userId], references: [id])
+
+  updatedById String?
+  updatedBy   User?   @relation("QuotationUpdatedBy", fields: [updatedById], references: [id])
+
+  approvedById String?
+  approvedBy   User?     @relation("QuotationApprovedBy", fields: [approvedById], references: [id])
+  approvedAt   DateTime?
+
   items     QuotationItem[]
   followUps QuotationFollowUp[]
 
@@ -1491,6 +1505,7 @@ model Currency {
   cashflowCosts     CashflowCost[]
   orders            Order[]
   purchaseOrders    PurchaseOrder[]
+  quotations        Quotation[]
 
   @@map("currencies")
 }
@@ -1500,10 +1515,13 @@ model Currency {
 // ===============================================
 
 model FaqCategory {
-  id           String   @id @default(uuid())
-  name         String
-  slug         String   @unique
-  description  String?
+  id            String  @id @default(uuid())
+  nameId        String?
+  nameEn        String?
+  slug          String  @unique
+  descriptionId String?
+  descriptionEn String?
+
   displayOrder Int      @default(0)
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
@@ -1515,9 +1533,13 @@ model FaqCategory {
 }
 
 model Faq {
-  id           String   @id @default(uuid())
-  question     String
-  answer       String   @db.Text
+  id String @id @default(uuid())
+
+  questionId String
+  questionEn String
+  answerId   String @db.Text
+  answerEn   String @db.Text
+
   displayOrder Int      @default(0)
   isFeatured   Boolean  @default(false)
   isActive     Boolean  @default(true)
@@ -1529,6 +1551,79 @@ model Faq {
   category   FaqCategory @relation(fields: [categoryId], references: [id])
 
   @@map("faqs")
+}
+
+model PolicyCategory {
+  id Int @id @default(autoincrement())
+
+  nameId        String
+  nameEn        String
+  slug          String  @unique
+  descriptionId String?
+  descriptionEn String?
+
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  policies Policy[]
+
+  @@map("policy_categories")
+}
+
+model Policy {
+  id Int @id @default(autoincrement())
+
+  titleId   String
+  titleEn   String
+  contentId String @db.Text
+  contentEn String @db.Text
+
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relasi ke Kategori
+  categoryId Int
+  category   PolicyCategory @relation(fields: [categoryId], references: [id])
+
+  @@map("policies")
+}
+
+model BestPriceGuaranteeCategory {
+  id            Int     @id @default(autoincrement())
+  nameId        String
+  nameEn        String
+  slug          String  @unique
+  descriptionId String?
+  descriptionEn String?
+
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  guarantees BestPriceGuarantee[]
+
+  @@map("best_price_guarantee_categories")
+}
+
+model BestPriceGuarantee {
+  id           Int                        @id @default(autoincrement())
+  titleId      String
+  titleEn      String
+  contentId    String                     @db.Text
+  contentEn    String                     @db.Text
+  displayOrder Int                        @default(0)
+  isActive     Boolean                    @default(true)
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
+  categoryId   Int
+  category     BestPriceGuaranteeCategory @relation(fields: [categoryId], references: [id])
+
+  @@map("best_price_guarantees")
 }
 
 model HeroSlide {
@@ -1802,11 +1897,10 @@ model Article {
   focusKeywords_id String? @db.Text
 
   // === KONTEN BAHASA INGGRIS (HASIL AUTO-TRANSLATE) ===
-  title_en         String? @db.VarChar(255)
-  content_en       String? @db.LongText
-  focusKeywords_en String? @db.Text
-
-  // === DATA GLOBAL (Sama untuk semua bahasa) ===
+  title_en           String?   @db.VarChar(255)
+  content_en         String?   @db.LongText
+  focusKeywords_en   String?   @db.Text
+  isTranslated       Boolean   @default(false)
   coverImage         String
   coverImageId       String?
   coverImageAlt      String?

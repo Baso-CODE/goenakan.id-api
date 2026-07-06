@@ -3,6 +3,7 @@ import {
   UploadApiErrorResponse,
   UploadApiResponse,
 } from "cloudinary";
+import sharp from "sharp";
 import { Readable } from "stream";
 import { env } from "../../config";
 
@@ -25,8 +26,6 @@ export class CloudinaryService {
     return readable;
   };
 
-  // ⚠️ Peringatan: Fungsi ini akan memotong nama folder.
-  // Hanya gunakan jika file Cloudinary Anda ada di root folder.
   private extractPublicIdFromUrl = (url: string): string => {
     const urlParts = url.split("/");
     const publicIdWithExtension = urlParts[urlParts.length - 1];
@@ -34,15 +33,35 @@ export class CloudinaryService {
     return publicId;
   };
 
-  public upload = (
+  public upload = async (
     file: Express.Multer.File,
     options: Record<string, any> = {},
   ): Promise<UploadApiResponse> => {
+    let bufferToUpload = file.buffer;
+
+    const isImage = file.mimetype.startsWith("image/");
+
+    const shouldOptimize = options.optimize !== false;
+
+    if (isImage && shouldOptimize) {
+      try {
+        bufferToUpload = await sharp(file.buffer)
+          .webp({
+            quality: options.quality || 80,
+          })
+          .toBuffer();
+
+        options.format = "webp";
+      } catch (error) {
+        console.error("❌ Sharp image compression failed:", error);
+        throw new Error("Gagal mengompresi gambar sebelum diupload");
+      }
+    }
+
     return new Promise((resolve, reject) => {
-      const readableStream = this.bufferToStream(file.buffer);
+      const readableStream = this.bufferToStream(bufferToUpload);
 
       const isLargeVideo = options.resource_type === "video";
-
       if (isLargeVideo) {
         options.chunk_size = 6000000;
       }
@@ -61,7 +80,6 @@ export class CloudinaryService {
     });
   };
 
-  // === METHOD LAMA: Hapus berdasarkan URL ===
   public remove = async (secureUrl: string): Promise<any> => {
     try {
       const publicId = this.extractPublicIdFromUrl(secureUrl);
@@ -71,7 +89,6 @@ export class CloudinaryService {
     }
   };
 
-  // === METHOD BARU: Hapus berdasarkan Public ID ===
   public delete = async (publicId: string): Promise<any> => {
     try {
       return await cloudinary.uploader.destroy(publicId);

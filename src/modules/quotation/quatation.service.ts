@@ -34,32 +34,6 @@ export class QuotationService {
     ];
     return months[date.getMonth()];
   }
-
-  // Helper: Generate Kode Singkatan Nama Manual
-  private generateManualClientCode(name: string): string {
-    // 1. Bersihkan Title (PT, CV, Mr, Mrs, dll) dan spasi berlebih
-    const cleanName = name
-      .replace(/^(PT\.?|CV\.?|UD\.?|Mr\.?|Mrs\.?|Ms\.?|Bpk\.?|Ibu\.?)\s*/i, "")
-      .replace(/[^a-zA-Z\s]/g, "") // Hapus karakter aneh
-      .trim();
-
-    const words = cleanName.split(/\s+/);
-    let code = "";
-
-    if (words.length >= 3) {
-      // Kasus: PT. ALUNA MUSIK INDONESIA -> (A)LUNA (M)USIK (I)NDONESIA -> AMI
-      code = words[0][0] + words[1][0] + words[2][0];
-    } else if (words.length === 2) {
-      // Kasus: Nadya Yuniar -> (N)adya (Y)unia(r) -> NYR
-      code = words[0][0] + words[1][0] + words[1].slice(-1);
-    } else if (words.length === 1) {
-      // Kasus: Google -> GOO
-      code = words[0].substring(0, 3);
-    }
-
-    return code.toUpperCase();
-  }
-
   // ==========================================
   // 1. GET ALL (PAGINATION & SEARCH)
   // ==========================================
@@ -85,8 +59,6 @@ export class QuotationService {
         { quotationNumber: { contains: query.search } },
         { client: { b2c: { name: { contains: query.search } } } },
         { client: { b2b: { companyName: { contains: query.search } } } },
-        { manualClientName: { contains: query.search } },
-        { manualClientCompany: { contains: query.search } },
       ];
     }
 
@@ -97,13 +69,28 @@ export class QuotationService {
       take,
       orderBy: { createdAt: "desc" },
       include: {
+        // 1. Data Klien Utama
         client: {
           include: {
             b2c: { select: { name: true, prefix: true } },
             b2b: { select: { companyName: true } },
           },
         },
-
+        // 2. PIC Klien (Khusus B2B)
+        pic: {
+          select: { name: true, phone: true },
+        },
+        // 3. Jejak Audit Pengguna Sistem
+        user: {
+          select: { name: true }, // Created By
+        },
+        updatedBy: {
+          select: { name: true }, // Updated By
+        },
+        approvedBy: {
+          select: { name: true }, // Approved By
+        },
+        // 4. Riwayat Tindak Lanjut
         followUps: {
           orderBy: { date: "asc" },
           take: 3,
@@ -120,9 +107,9 @@ export class QuotationService {
       take: Number(query.take || 10),
       count,
     });
+
     return { data, meta };
   }
-
   // ==========================================
   // 2. GET BY ID (DETAIL)
   // ==========================================
@@ -138,6 +125,10 @@ export class QuotationService {
             b2c: true,
           },
         },
+        user: {
+          // Menambahkan relasi ke User (Sales Internal)
+          select: { id: true, name: true, email: true },
+        },
         items: {
           include: {
             tiers: true,
@@ -150,7 +141,6 @@ export class QuotationService {
             },
           },
         },
-
         followUps: {
           orderBy: { date: "desc" },
         },
@@ -163,15 +153,20 @@ export class QuotationService {
     });
 
     if (!quotation) throw new ApiError("Quotation not found", 404);
+
+    // Mengambil status dari klien
+    const clientStatus = quotation.client?.status || "OFFICIAL";
+
     let clientDetail = null;
 
-    if (quotation.clientId && quotation.client) {
+    if (quotation.client) {
       if (quotation.client.type === "B2B" && quotation.client.b2b) {
         const b2b = quotation.client.b2b;
         clientDetail = {
-          source: "DATABASE",
           type: "B2B",
+          status: clientStatus, // Menampilkan POTENTIAL atau OFFICIAL
           id: quotation.client.id,
+          custCode: quotation.client.custCode,
           name: b2b.companyName,
           email: b2b.email || "",
           phone: b2b.phone || "",
@@ -182,9 +177,10 @@ export class QuotationService {
       } else if (quotation.client.type === "B2C" && quotation.client.b2c) {
         const b2c = quotation.client.b2c;
         clientDetail = {
-          source: "DATABASE",
           type: "B2C",
+          status: clientStatus, // Menampilkan POTENTIAL atau OFFICIAL
           id: quotation.client.id,
+          custCode: quotation.client.custCode,
           name: b2c.name,
           email: "-",
           phone: b2c.phone || "",
@@ -193,23 +189,13 @@ export class QuotationService {
           picName: b2c.name,
         };
       }
-    } else {
-      clientDetail = {
-        source: "MANUAL",
-        type: "MANUAL",
-        id: null,
-        name: quotation.manualClientName || "Unknown",
-        email: quotation.manualClientEmail || "",
-        phone: quotation.manualClientPhone || "",
-        address: quotation.manualClientAddress || "",
-        city: "-",
-        picName: quotation.manualClientName,
-      };
     }
 
     return {
       ...quotation,
       clientInfo: clientDetail,
+      // Menambahkan informasi pembuat quotation
+      createdBy: quotation.user,
     };
   }
 
@@ -220,14 +206,15 @@ export class QuotationService {
     data: CreateQuotationDTO,
     files: Express.Multer.File[],
   ) {
-    if (!data.clientId && !data.manualClientName) {
+    // 1. Validasi: clientId sekarang WAJIB ada
+    if (!data.clientId) {
       throw new ApiError(
-        "Client information is required. Select a client from DB or input manually.",
+        "Client information is required. Please select a client.",
         400,
       );
     }
 
-    // 1. Group file per item index
+    // 2. Group file per item index
     const fileByItemIndex: Record<number, Express.Multer.File> = {};
     if (files && files.length > 0) {
       for (const file of files) {
@@ -239,7 +226,7 @@ export class QuotationService {
       }
     }
 
-    // 2. Upload image per item
+    // 3. Upload image per item
     const uploadedImages: Record<number, { url: string; publicId: string }> =
       {};
     for (const [idxStr, file] of Object.entries(fileByItemIndex)) {
@@ -259,19 +246,17 @@ export class QuotationService {
 
     let subTotal = 0;
 
-    // 3. Prepare Items & Tiers
+    // 4. Prepare Items & Tiers
     const itemsToCreate = await Promise.all(
       data.items.map(async (item: any, index) => {
         let variantPrice: number | null = null;
 
-        // A. Validasi Produk & Variant
         if (item.productId) {
           const product = await this.prisma.product.findUnique({
             where: { id: item.productId },
             include: { productVariants: true },
           });
 
-          // 🔥 Jika product custom, wajib ada variantId
           if (product?.isCustom) {
             if (!item.variantId) {
               throw new ApiError(
@@ -288,7 +273,6 @@ export class QuotationService {
                 400,
               );
             }
-            // Simpan harga variant jika sewaktu-waktu tier tidak mengirimkan harga
             if (variant.price) {
               variantPrice = Number(variant.price);
             }
@@ -297,9 +281,6 @@ export class QuotationService {
 
         const img = uploadedImages[index];
 
-        // 🟢 B. FORMAT DATA TIERS
-        // Gunakan item.tiers jika ada.
-        // Fallback ditambahkan untuk berjaga-jaga jika payload lama masih mengirimkan `quantity`
         const tiersData =
           item.tiers && item.tiers.length > 0
             ? item.tiers
@@ -315,12 +296,9 @@ export class QuotationService {
         const tiersToCreate = tiersData.map((tier: any) => {
           let finalUnitPrice = tier.unitPrice;
 
-          // Jika harga tier 0/kosong tapi variant memiliki harga, gunakan harga variant
           if (!finalUnitPrice && variantPrice !== null) {
             finalUnitPrice = variantPrice;
           }
-
-          // 🟢 Hitung total per baris tier (berdasarkan minQuantity sebagai pengali dasar)
           const baseQtyForCalculation = tier.minQuantity
             ? Number(tier.minQuantity)
             : 1;
@@ -333,12 +311,9 @@ export class QuotationService {
             maxQuantity: tier.maxQuantity ? Number(tier.maxQuantity) : null,
             quantityLabel: tier.quantityLabel || null,
             unitPrice: finalUnitPrice,
-            totalPrice: lineTotal < 0 ? 0 : lineTotal, // Mencegah minus
+            totalPrice: lineTotal < 0 ? 0 : lineTotal,
           };
         });
-
-        // 🟢 C. HITUNG SUBTOTAL QUOTATION
-        // Karena ada multi-opsi, kita ambil opsi tier pertama (index 0) sebagai estimasi default SubTotal
         if (tiersToCreate.length > 0) {
           subTotal += tiersToCreate[0].totalPrice;
         }
@@ -354,7 +329,6 @@ export class QuotationService {
           imageUrl: img?.url ?? null,
           imagePublicId: img?.publicId ?? null,
 
-          // 🟢 RELASIKAN TIERS KE ITEM
           tiers: {
             create: tiersToCreate,
           },
@@ -364,23 +338,26 @@ export class QuotationService {
 
     const totalAmount = subTotal;
 
-    // 4. Client Code
+    // 5. Client Code (Hanya menggunakan clientId)
     let clientCode = "NOC";
-    if (data.clientId) {
-      const client = await this.prisma.client.findUnique({
-        where: { id: data.clientId },
-        select: { custCode: true },
-      });
-      if (client?.custCode) clientCode = client.custCode;
-    } else if (data.manualClientName) {
-      clientCode = this.generateManualClientCode(data.manualClientName);
+    const client = await this.prisma.client.findUnique({
+      where: { id: data.clientId },
+      select: { custCode: true },
+    });
+
+    if (!client) {
+      throw new ApiError("Client not found in database.", 404);
+    }
+
+    if (client.custCode) {
+      clientCode = client.custCode;
     }
 
     const now = new Date();
     const romanMonth = this.getRomanMonth(now);
     const year = now.getFullYear();
 
-    // 5. Cari sequence tertinggi
+    // 6. Cari sequence tertinggi
     const allQuotations = await this.prisma.quotation.findMany({
       select: { quotationNumber: true },
     });
@@ -398,11 +375,12 @@ export class QuotationService {
       }
     }
 
-    // 6. Retry loop
+    // 7. Retry loop
     const MAX_RETRIES = 5;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       const nextSequence = maxSequence + 1 + attempt;
       const sequence = String(nextSequence).padStart(4, "0");
+
       const quotationNumber = `QTN_${sequence}_${clientCode}_${romanMonth}_${year}`;
 
       try {
@@ -412,13 +390,18 @@ export class QuotationService {
             date: data.date || new Date(),
             validUntil: data.validUntil,
             status: "DRAFT",
-            salesId: data.salesId || null,
-            clientId: data.clientId || null,
-            manualClientName: data.manualClientName,
-            manualClientCompany: data.manualClientCompany,
-            manualClientEmail: data.manualClientEmail,
-            manualClientPhone: data.manualClientPhone,
-            manualClientAddress: data.manualClientAddress,
+
+            // Relasi ke User pembuat
+            userId: data.userId || null,
+
+            // Relasi murni menggunakan ID Database
+            clientId: data.clientId,
+            picId: (data as any).picId || null, // Menangkap picId jika B2B
+
+            // Currency & Payment Terms
+            currencyCode: data.currencyCode || "IDR",
+            paymentTerms: data.paymentTerms || null,
+
             subTotal,
             totalAmount,
             notes:
@@ -439,7 +422,7 @@ export class QuotationService {
           include: {
             items: {
               include: {
-                tiers: true, // 🟢 INCLUDE TIERS agar otomatis dikembalikan dalam response
+                tiers: true,
                 variant: {
                   select: {
                     id: true,
@@ -451,7 +434,7 @@ export class QuotationService {
             },
             notes: { include: { category: true } },
             client: { select: { id: true, custCode: true, type: true } },
-            sales: true,
+            user: { select: { id: true, name: true, email: true } }, // Mengembalikan data user pembuat
           },
         });
 
@@ -477,9 +460,6 @@ export class QuotationService {
   // 4. UPDATE QUOTATION
   // ==========================================
   async updateQuotation(id: string, data: UpdateQuotationDTO) {
-    console.log("=== PAYLOAD MASUK DARI FRONTEND ===");
-    console.log(JSON.stringify(data.items, null, 2));
-    console.log("===================================");
     const existing = await this.prisma.quotation.findUnique({
       where: { id },
     });
@@ -493,19 +473,17 @@ export class QuotationService {
       let newTotalAmount = existing.totalAmount;
 
       if (items && items.length > 0) {
-        // Hapus item lama, akan diganti dengan yang baru dari payload
         await tx.quotationItem.deleteMany({ where: { quotationId: id } });
 
         let calculatedSubTotal = 0;
 
         for (const item of items) {
-          // 🟢 FORMAT DATA TIERS (Sesuai dengan skema baru)
           const tiersData =
             item.tiers && item.tiers.length > 0
               ? item.tiers
               : [
                   {
-                    minQuantity: item.quantity ? Number(item.quantity) : 1, // Fallback jika format lama
+                    minQuantity: item.quantity ? Number(item.quantity) : 1,
                     maxQuantity: undefined,
                     quantityLabel: item.quantityLabel || null,
                     unitPrice: item.unitPrice || 0,
@@ -528,11 +506,9 @@ export class QuotationService {
               maxQuantity: tier.maxQuantity ? Number(tier.maxQuantity) : null,
               quantityLabel: tier.quantityLabel || null,
               unitPrice: finalUnitPrice,
-              totalPrice: lineTotal < 0 ? 0 : lineTotal, // Mencegah minus
+              totalPrice: lineTotal < 0 ? 0 : lineTotal,
             };
           });
-
-          // Ambil tier pertama untuk perhitungan subtotal default
           if (tiersToCreate.length > 0) {
             calculatedSubTotal += tiersToCreate[0].totalPrice;
           }
@@ -586,26 +562,26 @@ export class QuotationService {
             : null,
         }),
         ...(headerData.status && { status: headerData.status as any }),
+
+        // ✨ TAMBAHAN: Relasi ke User pembuat/penanggung jawab
+        ...(headerData.userId !== undefined && {
+          userId: headerData.userId || null,
+        }),
+
+        // Relasi ke tabel Client terpusat
         ...(headerData.clientId !== undefined && {
           clientId: headerData.clientId || null,
         }),
         ...(headerData.picId !== undefined && {
           picId: headerData.picId || null,
         }),
-        ...(headerData.manualClientName !== undefined && {
-          manualClientName: headerData.manualClientName,
+
+        // ✨ TAMBAHAN: Currency & Payment Terms
+        ...(headerData.currencyCode !== undefined && {
+          currencyCode: headerData.currencyCode,
         }),
-        ...(headerData.manualClientCompany !== undefined && {
-          manualClientCompany: headerData.manualClientCompany,
-        }),
-        ...(headerData.manualClientEmail !== undefined && {
-          manualClientEmail: headerData.manualClientEmail || null,
-        }),
-        ...(headerData.manualClientPhone !== undefined && {
-          manualClientPhone: headerData.manualClientPhone,
-        }),
-        ...(headerData.manualClientAddress !== undefined && {
-          manualClientAddress: headerData.manualClientAddress,
+        ...(headerData.paymentTerms !== undefined && {
+          paymentTerms: headerData.paymentTerms || null,
         }),
 
         // Financials
@@ -632,10 +608,14 @@ export class QuotationService {
           notes: {
             include: { category: true },
           },
+          // ✨ TAMBAHAN: Mengembalikan data Client dan User agar frontend mendapatkan data lengkap
+          client: { select: { id: true, custCode: true, type: true } },
+          user: { select: { id: true, name: true, email: true } },
         },
       });
     });
   }
+
   // ==========================================
   // 5. DELETE QUOTATION
   // ==========================================
@@ -709,7 +689,6 @@ export class QuotationService {
             b2c: true,
           },
         },
-
         // 2. PIC
         pic: {
           select: {
@@ -720,8 +699,11 @@ export class QuotationService {
             email: true,
           },
         },
-
-        // 3. Items
+        // 3. User (Sales Internal)
+        user: {
+          select: { name: true, email: true },
+        },
+        // 4. Items
         items: {
           include: {
             tiers: true,
@@ -738,7 +720,6 @@ export class QuotationService {
                 images: {
                   select: {
                     url: true,
-                    isFeatured: true,
                   },
                   take: 1,
                 },
@@ -746,17 +727,12 @@ export class QuotationService {
             },
           },
         },
-
-        // 4. Notes
         notes: {
           include: {
             category: true,
           },
           orderBy: { createdAt: "asc" },
         },
-
-        // 5. Sales
-        sales: true,
       },
     });
 
@@ -764,7 +740,8 @@ export class QuotationService {
       throw new ApiError("Quotation not found", 404);
     }
 
-    const normalizedItems = quotation.items.map((item) => {
+    // Gunakan 'as any' jika TS masih kesulitan mengenali relasi items setelah perubahan schema
+    const normalizedItems = (quotation.items as any[]).map((item) => {
       let imageUrl: string | null = null;
 
       if (item.product?.images?.[0]?.url) {
@@ -772,8 +749,10 @@ export class QuotationService {
       } else if (item.imageUrl) {
         imageUrl = item.imageUrl;
       }
+
       const finalDescription =
         item.description || item.product?.description || null;
+
       return {
         ...item,
         imageUrl,
@@ -787,6 +766,7 @@ export class QuotationService {
       ...quotation,
       validUntil: quotation.validUntil ?? null,
       items: normalizedItems,
+      createdBy: quotation.user, // Mengirim info pembuat
     };
   }
 
@@ -797,7 +777,7 @@ export class QuotationService {
     try {
       return await this.prisma.quotation.findMany({
         where: {
-          status: "ACCEPTED",
+          // status: "ACCEPTED",
           orderId: null,
           resultingOrders: {
             none: {},

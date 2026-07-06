@@ -24,10 +24,15 @@ export class OrderController {
   updateOrder = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;
-      const body = req.body as CreateOrderDTO;
-      const result = await this.orderService.updateOrder(id, body);
+      const body = req.body as any;
 
-      res.status(201).send(result);
+      const authorId = (req as any).user?.id;
+      if (authorId) {
+        body.updatedById = authorId;
+      }
+
+      const result = await this.orderService.updateOrder(id, body);
+      res.status(200).send(result);
     } catch (error) {
       next(error);
     }

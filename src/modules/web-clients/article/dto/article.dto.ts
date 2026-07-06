@@ -46,20 +46,20 @@ export class CreateArticleDTO {
 
   @IsString()
   @IsOptional()
-  coverImageId?: string;
+  coverImageId?: string | null; // Tambahkan | null
 
   @IsString()
   @IsOptional()
-  coverImageAlt?: string;
+  coverImageAlt?: string | null; // Tambahkan | null
 
   // ✨ TAMBAHAN: Gambar Mobile
   @IsString()
   @IsOptional()
-  coverImageMobile?: string;
+  coverImageMobile?: string | null; // Tambahkan | null
 
   @IsString()
   @IsOptional()
-  coverImageMobileId?: string;
+  coverImageMobileId?: string | null; // Tambahkan | null
 
   @IsString()
   @IsOptional()
@@ -121,36 +121,34 @@ export class UpdateArticleDTO {
   @IsOptional()
   content?: string;
 
-  // ✨ TAMBAHAN: Translasi Konten
   @IsString()
   @IsOptional()
   content_en?: string;
 
-  // ✨ TAMBAHAN: Trigger Auto Translate
   @IsBoolean()
   @IsOptional()
   autoTranslate?: boolean;
 
   @IsString()
   @IsOptional()
-  coverImage?: string;
+  coverImage?: string | null; // Tambahkan | null
 
   @IsString()
   @IsOptional()
-  coverImageId?: string;
+  coverImageId?: string | null; // Tambahkan | null
 
   @IsString()
   @IsOptional()
-  coverImageAlt?: string;
+  coverImageAlt?: string | null; // Tambahkan | null
 
   // ✨ TAMBAHAN: Gambar Mobile
   @IsString()
   @IsOptional()
-  coverImageMobile?: string;
+  coverImageMobile?: string | null; // Tambahkan | null
 
   @IsString()
   @IsOptional()
-  coverImageMobileId?: string;
+  coverImageMobileId?: string | null; // Tambahkan | null
 
   // ✅ PERBAIKAN: Disesuaikan dengan logic service menjadi _id dan _en
   @IsString()
