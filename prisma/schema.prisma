@@ -556,6 +556,12 @@ model ProductAttributeValue {
   attributeId      String?
   priceModifier    Float?         @default(0)
 
+  // New fields
+  weight           Float?
+  width            Float?
+  height           Float?
+  length           Float?
+
   @@unique([productId, attributeValueId])
   @@map("product_attribute_values")
 }

@@ -247,6 +247,10 @@ export class ProductController {
         productId: req.params.id,
         attributeValueIds: req.body.attributeValueIds,
         priceModifiers: req.body.priceModifiers,
+        weights: req.body.weights,
+        widths: req.body.widths,
+        heights: req.body.heights,
+        lengths: req.body.lengths,
         orderedAttributeIds: req.body.orderedAttributeIds,
         orderedAttributeValueIds: req.body.orderedAttributeValueIds,
       };
