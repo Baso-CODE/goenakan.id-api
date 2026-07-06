@@ -39,24 +39,6 @@ export class ArticleController {
       const coverFile = files?.coverFile?.[0];
       const coverMobileFile = files?.coverMobileFile?.[0];
 
-      console.log("User:", (req as any).user?.email);
-
-      console.log("Cover Desktop:", {
-        exists: !!coverFile,
-        name: coverFile?.originalname,
-        mime: coverFile?.mimetype,
-        size: coverFile?.size,
-      });
-
-      console.log("Cover Mobile:", {
-        exists: !!coverMobileFile,
-        name: coverMobileFile?.originalname,
-        mime: coverMobileFile?.mimetype,
-        size: coverMobileFile?.size,
-      });
-
-      console.log("===================================");
-
       if (typeof data.published === "string") {
         data.published = data.published === "true";
       }
@@ -64,7 +46,7 @@ export class ArticleController {
       if (typeof data.productIds === "string") {
         data.productIds = (data.productIds as string)
           .split(",")
-          .filter(Boolean); // filter(Boolean) untuk membuang string kosong
+          .filter(Boolean);
       }
 
       if (typeof data.tagIds === "string") {
