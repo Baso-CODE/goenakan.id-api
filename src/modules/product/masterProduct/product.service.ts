@@ -940,6 +940,10 @@ export class ProductService {
       productId,
       attributeValueIds,
       priceModifiers = {},
+      weights = {},
+      widths = {},
+      heights = {},
+      lengths = {},
       orderedAttributeIds,
       orderedAttributeValueIds,
     } = dto;
@@ -958,11 +962,20 @@ export class ProductService {
 
       const insertData = attributeValues.map((av) => {
         const modifier = priceModifiers[av.id] !== undefined ? Number(priceModifiers[av.id]) : 0;
+        const weightVal = weights[av.id] !== undefined && weights[av.id] !== null ? Number(weights[av.id]) : null;
+        const widthVal = widths[av.id] !== undefined && widths[av.id] !== null ? Number(widths[av.id]) : null;
+        const heightVal = heights[av.id] !== undefined && heights[av.id] !== null ? Number(heights[av.id]) : null;
+        const lengthVal = lengths[av.id] !== undefined && lengths[av.id] !== null ? Number(lengths[av.id]) : null;
+
         return {
           productId,
           attributeValueId: av.id,
           attributeId: av.attributeId,
           priceModifier: modifier,
+          weight: weightVal,
+          width: widthVal,
+          height: heightVal,
+          length: lengthVal,
         };
       });
 
@@ -2483,6 +2496,10 @@ export class ProductService {
             attributeId: av.attributeId,
             attributeValueId: av.attributeValueId,
             priceModifier: av.priceModifier ? Number(av.priceModifier) : 0,
+            weight: av.weight ? Number(av.weight) : null,
+            width: av.width ? Number(av.width) : null,
+            height: av.height ? Number(av.height) : null,
+            length: av.length ? Number(av.length) : null,
             value: av.attributeValue?.value || "",
             attributeName: av.attribute?.name || "",
             attributeType: av.attribute?.type || "TEXT",
