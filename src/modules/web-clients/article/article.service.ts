@@ -792,4 +792,26 @@ export class ArticleService {
 
     return { data, meta };
   }
+
+  // === GET ARTICLE SIMPLE LIST (ID & TITLES ONLY) ===
+  async getArticleSimpleList() {
+    try {
+      const data = await this.prisma.article.findMany({
+        select: {
+          id: true,
+          title_id: true,
+          title_en: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 20,
+      });
+
+      return { data };
+    } catch (error) {
+      console.error("❌ Error in getArticleSimpleList:", error);
+      throw new Error("Failed to fetch article simple list");
+    }
+  }
 }

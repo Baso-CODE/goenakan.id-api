@@ -84,6 +84,7 @@ export class ClientService {
             websiteUrl: data.brandWebsiteUrl || data.website || null,
             logo: uploadResult.secure_url,
             logoId: uploadResult.public_id,
+            isActive: clientStatus === "OFFICIAL",
           },
         };
       }

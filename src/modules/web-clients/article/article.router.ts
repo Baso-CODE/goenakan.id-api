@@ -28,19 +28,20 @@ export class ArticleRouter {
     const auth = this.nextAuthMiddleware.verifyNextAuthToken;
     const requiredRole = ["SUPER_ADMIN", "ADMIN_ARTICLE"];
 
-    // ====================================================================
-    // 1. PUBLIC / LIST ROUTES
-    // ====================================================================
-
-    // GET ARTICLE LIST (Tanpa Autentikasi, untuk tampilan publik seperti homepage) --- IGNORE ---
     this.router.get("/list", this.articleController.getArticleList);
 
-    // GET ALL ARTICLES (Pagination & Filter)
     this.router.get(
       "/",
       auth,
       verifyRole(requiredRole),
       this.articleController.getAllArticles,
+    );
+
+    this.router.get(
+      "/simple-list",
+      auth,
+      verifyRole(requiredRole),
+      this.articleController.getArticleSimpleList,
     );
 
     // ====================================================================

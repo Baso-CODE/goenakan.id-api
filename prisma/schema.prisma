@@ -1069,14 +1069,11 @@ model PurchaseOrder {
   purchaseType    PurchaseType
   expenseCategory ExpenseCategory
   paymentTerms    PaymentTerm
-  // Relasi Vendor
   vendorId        String
   vendor          Vendor              @relation(fields: [vendorId], references: [id])
   vendorAddress   String              @db.Text
-  // Relasi Mata Uang
   currencyCode    String              @default("IDR")
   currency        Currency            @relation(fields: [currencyCode], references: [code])
-  // Total Keseluruhan
   totalAmount     Decimal             @default(0)
   status          PurchaseOrderStatus @default(DRAFT)
   notes           String?             @db.Text

@@ -234,4 +234,18 @@ export class ArticleController {
       next(error);
     }
   };
+
+  // === GET ARTICLE SIMPLE LIST ===
+  getArticleSimpleList = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const result = await this.articleService.getArticleSimpleList();
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
 }
