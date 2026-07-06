@@ -220,15 +220,28 @@ export class ProductService {
             productId: string;
             attributeValueId: string;
             priceModifier: number;
+            weight: number | null;
+            width: number | null;
+            height: number | null;
+            length: number | null;
           }[] = [];
 
           for (const attr of attributes) {
             for (const valueId of attr.valueIds) {
               const modifier = attr.priceModifiers?.[valueId] !== undefined ? Number(attr.priceModifiers[valueId]) : 0;
+              const weightVal = attr.weights?.[valueId] !== undefined && attr.weights[valueId] !== null ? Number(attr.weights[valueId]) : null;
+              const widthVal = attr.widths?.[valueId] !== undefined && attr.widths[valueId] !== null ? Number(attr.widths[valueId]) : null;
+              const heightVal = attr.heights?.[valueId] !== undefined && attr.heights[valueId] !== null ? Number(attr.heights[valueId]) : null;
+              const lengthVal = attr.lengths?.[valueId] !== undefined && attr.lengths[valueId] !== null ? Number(attr.lengths[valueId]) : null;
+
               productAttributeValueData.push({
                 productId: product.id,
                 attributeValueId: valueId,
                 priceModifier: modifier,
+                weight: weightVal,
+                width: widthVal,
+                height: heightVal,
+                length: lengthVal,
               });
             }
           }

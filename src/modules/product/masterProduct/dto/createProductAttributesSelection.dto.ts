@@ -13,5 +13,17 @@ export class CreateProductAttributeSelectionDTO {
   priceModifiers?: Record<string, number>;
 
   @IsOptional()
+  weights?: Record<string, number>;
+
+  @IsOptional()
+  widths?: Record<string, number>;
+
+  @IsOptional()
+  heights?: Record<string, number>;
+
+  @IsOptional()
+  lengths?: Record<string, number>;
+
+  @IsOptional()
   isVariantGenerator?: boolean;
 }
