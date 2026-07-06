@@ -120,6 +120,19 @@ export class OrderService {
               );
             }
             finalPrice = Number(variant.price);
+
+            // Apply nominal discounts from parent product tiers if any
+            if (product.priceTiers && product.priceTiers.length > 0) {
+              const applicableTier = product.priceTiers.find(
+                (t) => item.quantity >= t.minQuantity,
+              );
+              if (applicableTier) {
+                const basePriceVal = Number(product.basePrice);
+                const tierPriceVal = Number(applicableTier.price);
+                const discount = Math.max(0, basePriceVal - tierPriceVal);
+                finalPrice = Math.max(0, finalPrice - discount);
+              }
+            }
           } else {
             finalPrice = Number(product.basePrice);
             if (product.priceTiers && product.priceTiers.length > 0) {
