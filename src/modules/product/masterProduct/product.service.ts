@@ -260,8 +260,47 @@ export class ProductService {
           });
         }
 
-        // 3. AUTO GENERATE VARIANTS
-        if (attributes.length > 0) {
+        // 3. GENERATE OR CREATE VARIANTS
+        if (data.variants && data.variants.length > 0) {
+          let vIdx = 1;
+          for (const customVar of data.variants) {
+            const variantSku = customVar.sku || `${data.sku}-VAR-${vIdx++}`;
+            await tx.productVariant.create({
+              data: {
+                sku: variantSku,
+                variantName: customVar.variantName,
+                productId: product.id,
+                price: customVar.price.toString(),
+                stock: data.isCustom ? customVar.stock || 0 : 0,
+                description: customVar.description ?? null,
+                weight: customVar.weight ?? null,
+                width: customVar.width ?? null,
+                height: customVar.height ?? null,
+                length: customVar.length ?? null,
+                attributeValues: customVar.attributeValueIds && customVar.attributeValueIds.length > 0
+                  ? {
+                      createMany: {
+                        data: customVar.attributeValueIds.map((valueId) => ({
+                          attributeValueId: valueId,
+                        })),
+                      },
+                    }
+                  : undefined,
+                priceTiers: customVar.priceTiers && customVar.priceTiers.length > 0
+                  ? {
+                      createMany: {
+                        data: customVar.priceTiers.map((tier) => ({
+                          minQuantity: tier.minQuantity,
+                          maxQuantity: tier.maxQuantity ?? null,
+                          price: tier.price.toString(),
+                        })),
+                      },
+                    }
+                  : undefined,
+              },
+            });
+          }
+        } else if (attributes.length > 0) {
           const allAttributeValues = await this.prisma.attributeValue.findMany({
             where: {
               id: { in: attributes.flatMap((attr) => attr.valueIds) },
