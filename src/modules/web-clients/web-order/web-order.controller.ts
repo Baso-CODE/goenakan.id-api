@@ -47,7 +47,6 @@ export class WebOrderController {
       }
 
       // 3. Panggil Service untuk menyimpan pesanan ke database Prisma
-      // Pastikan kamu sudah membuat fungsi createOrder di WebOrderService ya!
       const newOrder = await this.orderService.createOrder(
         orderData,
         profileId,
@@ -57,7 +56,7 @@ export class WebOrderController {
       res.status(201).json({
         success: true,
         message: "Pesanan berhasil dibuat",
-        data: newOrder, // Wajib mengembalikan ID pesanan di sini
+        data: newOrder,
       });
     } catch (error) {
       next(error);
@@ -85,11 +84,29 @@ export class WebOrderController {
   // === 2. GET ORDER DETAIL ===
   getOrderDetail = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const userId = (req as any).user.id;
-      const profile = await this.getOrCreateProfile(userId);
       const { orderId } = req.params;
 
-      const order = await this.orderService.getOrderDetail(profile.id, orderId);
+      // Ambil user jika ada (untuk user yang sedang login)
+      const user = (req as any).user;
+      let profileId = null;
+
+      // Cek apakah user mengirimkan token yang valid
+      if (user && user.id) {
+        const profile = await this.getOrCreateProfile(user.id);
+        profileId = profile.id;
+      }
+
+      // ✨ PERBAIKAN: Service harus diubah agar bisa menerima profileId null (untuk guest).
+      // Atau, yang lebih baik, service getOrderDetail HANYA perlu mencari berdasarkan orderId saja.
+      const order = await this.orderService.getOrderDetail(profileId, orderId);
+
+      // Proteksi tambahan:
+      if (!order) {
+        return res.status(404).json({
+          success: false,
+          message: "Pesanan tidak ditemukan",
+        });
+      }
 
       res.status(200).json({
         success: true,
