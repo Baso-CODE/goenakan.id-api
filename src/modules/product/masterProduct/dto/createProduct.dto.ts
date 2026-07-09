@@ -109,6 +109,22 @@ export class CreateProductImageDTO {
   @IsOptional()
   @IsString()
   altText?: string;
+
+  @IsOptional()
+  @IsString()
+  mockupSideName?: string;
+
+  @IsOptional()
+  @IsString()
+  attributeValueId?: string;
+
+  @IsOptional()
+  @IsString()
+  printPositionValueId?: string;
+
+  @IsOptional()
+  @IsArray()
+  mockupAreas?: any[];
 }
 
 export class CreateProductVideoDTO {

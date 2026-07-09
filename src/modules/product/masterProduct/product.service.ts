@@ -136,6 +136,10 @@ export class ProductService {
       publicId: string;
       isFeatured: boolean;
       altText: string;
+      mockupSideName?: string | null;
+      attributeValueId?: string | null;
+      printPositionValueId?: string | null;
+      mockupAreas?: any[];
     }[] = [];
 
     const uploadedVideos = videosMetadata.map((meta) => ({
@@ -163,6 +167,10 @@ export class ProductService {
             publicId: uploadResult.public_id,
             isFeatured: metadata.isFeatured || false,
             altText: metadata.altText || data.name || "Product Image",
+            mockupSideName: metadata.mockupSideName || null,
+            attributeValueId: metadata.attributeValueId || null,
+            printPositionValueId: metadata.printPositionValueId || null,
+            mockupAreas: metadata.mockupAreas || [],
           });
         }
       }
@@ -368,12 +376,33 @@ export class ProductService {
         }
 
         if (uploadedImages.length > 0) {
-          await tx.productImage.createMany({
-            data: uploadedImages.map((img) => ({
-              ...img,
-              productId: product.id,
-            })),
-          });
+          for (const img of uploadedImages) {
+            const createdImg = await tx.productImage.create({
+              data: {
+                url: img.url,
+                publicId: img.publicId,
+                isFeatured: img.isFeatured,
+                altText: img.altText,
+                mockupSideName: img.mockupSideName,
+                attributeValueId: img.attributeValueId,
+                printPositionValueId: img.printPositionValueId,
+                productId: product.id,
+              },
+            });
+
+            if (img.mockupAreas && img.mockupAreas.length > 0) {
+              await tx.productImageMockupArea.createMany({
+                data: img.mockupAreas.map((area: any) => ({
+                  x: Number(area.x),
+                  y: Number(area.y),
+                  width: Number(area.width),
+                  height: Number(area.height),
+                  label: area.label,
+                  productImageId: createdImg.id,
+                })),
+              });
+            }
+          }
         }
 
         if (uploadedVideos.length > 0) {
