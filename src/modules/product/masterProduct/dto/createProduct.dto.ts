@@ -109,6 +109,22 @@ export class CreateProductImageDTO {
   @IsOptional()
   @IsString()
   altText?: string;
+
+  @IsOptional()
+  @IsString()
+  mockupSideName?: string;
+
+  @IsOptional()
+  @IsString()
+  attributeValueId?: string;
+
+  @IsOptional()
+  @IsString()
+  printPositionValueId?: string;
+
+  @IsOptional()
+  @IsArray()
+  mockupAreas?: any[];
 }
 
 export class CreateProductVideoDTO {
@@ -250,6 +266,12 @@ export class CreateProductDTO {
   }[];
 
   @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateProductVariantDTO)
+  variants?: CreateProductVariantDTO[];
+
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   mockupAreaX?: number;
@@ -268,4 +290,65 @@ export class CreateProductDTO {
   @Type(() => Number)
   @IsNumber()
   mockupAreaHeight?: number;
+}
+
+export class CreateProductVariantDTO {
+  @IsNotEmpty()
+  @IsString()
+  variantName!: string;
+
+  @IsOptional()
+  @IsString()
+  sku?: string;
+
+  @IsNotEmpty()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  price!: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  stock?: number;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  weight?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  width?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  height?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  length?: number;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  attributeValueIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreatePriceTierDTO)
+  priceTiers?: CreatePriceTierDTO[];
 }

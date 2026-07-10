@@ -136,6 +136,10 @@ export class ProductService {
       publicId: string;
       isFeatured: boolean;
       altText: string;
+      mockupSideName?: string | null;
+      attributeValueId?: string | null;
+      printPositionValueId?: string | null;
+      mockupAreas?: any[];
     }[] = [];
 
     const uploadedVideos = videosMetadata.map((meta) => ({
@@ -163,6 +167,10 @@ export class ProductService {
             publicId: uploadResult.public_id,
             isFeatured: metadata.isFeatured || false,
             altText: metadata.altText || data.name || "Product Image",
+            mockupSideName: metadata.mockupSideName || null,
+            attributeValueId: metadata.attributeValueId || null,
+            printPositionValueId: metadata.printPositionValueId || null,
+            mockupAreas: metadata.mockupAreas || [],
           });
         }
       }
@@ -252,8 +260,47 @@ export class ProductService {
           });
         }
 
-        // 3. AUTO GENERATE VARIANTS
-        if (attributes.length > 0) {
+        // 3. GENERATE OR CREATE VARIANTS
+        if (data.variants && data.variants.length > 0) {
+          let vIdx = 1;
+          for (const customVar of data.variants) {
+            const variantSku = customVar.sku || `${data.sku}-VAR-${vIdx++}`;
+            await tx.productVariant.create({
+              data: {
+                sku: variantSku,
+                variantName: customVar.variantName,
+                productId: product.id,
+                price: customVar.price.toString(),
+                stock: data.isCustom ? customVar.stock || 0 : 0,
+                description: customVar.description ?? null,
+                weight: customVar.weight ?? null,
+                width: customVar.width ?? null,
+                height: customVar.height ?? null,
+                length: customVar.length ?? null,
+                attributeValues: customVar.attributeValueIds && customVar.attributeValueIds.length > 0
+                  ? {
+                      createMany: {
+                        data: customVar.attributeValueIds.map((valueId) => ({
+                          attributeValueId: valueId,
+                        })),
+                      },
+                    }
+                  : undefined,
+                priceTiers: customVar.priceTiers && customVar.priceTiers.length > 0
+                  ? {
+                      createMany: {
+                        data: customVar.priceTiers.map((tier) => ({
+                          minQuantity: tier.minQuantity,
+                          maxQuantity: tier.maxQuantity ?? null,
+                          price: tier.price.toString(),
+                        })),
+                      },
+                    }
+                  : undefined,
+              },
+            });
+          }
+        } else if (attributes.length > 0) {
           const allAttributeValues = await this.prisma.attributeValue.findMany({
             where: {
               id: { in: attributes.flatMap((attr) => attr.valueIds) },
@@ -368,12 +415,33 @@ export class ProductService {
         }
 
         if (uploadedImages.length > 0) {
-          await tx.productImage.createMany({
-            data: uploadedImages.map((img) => ({
-              ...img,
-              productId: product.id,
-            })),
-          });
+          for (const img of uploadedImages) {
+            const createdImg = await tx.productImage.create({
+              data: {
+                url: img.url,
+                publicId: img.publicId,
+                isFeatured: img.isFeatured,
+                altText: img.altText,
+                mockupSideName: img.mockupSideName,
+                attributeValueId: img.attributeValueId,
+                printPositionValueId: img.printPositionValueId,
+                productId: product.id,
+              },
+            });
+
+            if (img.mockupAreas && img.mockupAreas.length > 0) {
+              await tx.productImageMockupArea.createMany({
+                data: img.mockupAreas.map((area: any) => ({
+                  x: Number(area.x),
+                  y: Number(area.y),
+                  width: Number(area.width),
+                  height: Number(area.height),
+                  label: area.label,
+                  productImageId: createdImg.id,
+                })),
+              });
+            }
+          }
         }
 
         if (uploadedVideos.length > 0) {
