@@ -28,6 +28,7 @@ export class WebOrderRouter {
       }
       next();
     };
+
     // ==========================================================
     // 🌍 ENDPOINT PUBLIK (Bisa Diakses Tanpa Login / Guest)
     // ==========================================================
@@ -39,15 +40,20 @@ export class WebOrderRouter {
       optionalAuth,
       this.orderController.createPayment,
     );
+
     this.router.post("/webhook/midtrans", this.orderController.midtransWebhook);
+
+    // ✨ PERBAIKAN: Pindahkan rute ini ke blok opsional
+    this.router.get(
+      "/:orderId",
+      optionalAuth,
+      this.orderController.getOrderDetail,
+    );
 
     // ==========================================================
     // 🔒 ENDPOINT PRIVAT (Wajib Login)
     // ==========================================================
-
     this.router.get("/", auth, this.orderController.getMyOrders);
-
-    this.router.get("/:orderId", auth, this.orderController.getOrderDetail);
 
     this.router.patch(
       "/:orderId/cancel",

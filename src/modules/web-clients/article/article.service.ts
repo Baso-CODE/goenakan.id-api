@@ -677,7 +677,6 @@ export class ArticleService {
     const where: any = {};
 
     if (query.search) {
-      // ✨ Menggunakan OR agar sistem mencari di judul bahasa Indonesia ATAU bahasa Inggris
       where.OR = [
         { title_id: { contains: query.search } },
         { title_en: { contains: query.search } },

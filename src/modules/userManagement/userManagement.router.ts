@@ -36,9 +36,9 @@ export class UserRouter {
     this.router.post(
       "/",
       this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]), // 🔒 Hanya Super Admin yang bisa create
-      upload.single("image"), // Tangkap file foto profil dengan field "image"
-      parseFormData, // Konversi string dari form-data jika diperlukan
+      verifyRole(["SUPER_ADMIN"]),
+      upload.single("image"),
+      parseFormData,
       validateBody(CreateUserDTO),
       this.userController.createUser,
     );

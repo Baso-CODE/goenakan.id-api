@@ -61,11 +61,10 @@ export class WebOrderService {
     });
   }
 
-  async getOrderDetail(profileId: string, orderId: string) {
-    const order = await this.prisma.webOrder.findFirst({
+  async getOrderDetail(profileId: string | null, orderId: string) {
+    const order = await this.prisma.webOrder.findUnique({
       where: {
         id: orderId,
-        profileId: profileId,
       },
       include: {
         items: {
@@ -73,7 +72,6 @@ export class WebOrderService {
             product: {
               include: {
                 images: {
-                  // where: { isFeatured: true },
                   take: 1,
                 },
                 materialType: true,
@@ -82,7 +80,6 @@ export class WebOrderService {
             variant: {
               include: {
                 images: {
-                  // where: { isFeatured: true },
                   take: 1,
                 },
                 attributeValues: {
@@ -102,7 +99,11 @@ export class WebOrderService {
     });
 
     if (!order) {
-      throw new ApiError("Order tidak ditemukan atau bukan milik Anda", 404);
+      throw new ApiError("Pesanan tidak ditemukan", 404);
+    }
+
+    if (profileId && order.profileId && order.profileId !== profileId) {
+      throw new ApiError("Anda tidak memiliki akses ke pesanan ini", 403);
     }
 
     return order;

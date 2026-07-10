@@ -14,11 +14,11 @@ datasource db {
 // ===============================================
 // ENUMS & MASTER TABLES
 enum OrderStatus {
-  PENDING // Menunggu pembayaran / konfirmasi
-  PROCESSING // Sedang diproses / diproduksi
-  SHIPPED // Sedang dikirim (jika ada pengiriman fisik)
-  COMPLETED // Selesai
-  CANCELLED // Dibatalkan (baik dari web maupun manual)
+  PENDING
+  PROCESSING
+  SHIPPED
+  COMPLETED
+  CANCELLED
 }
 
 enum WarrantyStatus {
@@ -508,22 +508,22 @@ model ProductSEO {
 }
 
 model Attribute {
-  id            String          @id @default(uuid())
-  name          String
-  slug          String          @unique
-  position      Int             @default(0)
-  type          String          @default("TEXT")
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  position  Int      @default(0)
+  type      String   @default("TEXT")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  productId     String?
-  product       Product?        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   parentValueId String?
   parentValue   AttributeValue? @relation("ValueToSubAttributes", fields: [parentValueId], references: [id], onDelete: Cascade)
 
-  values        AttributeValue[] @relation("AttributeToValues")
-  products      ProductAttributeValue[]
+  values   AttributeValue[]        @relation("AttributeToValues")
+  products ProductAttributeValue[]
 
   @@map("attributes")
 }
@@ -535,11 +535,11 @@ model AttributeValue {
   attributeId String
   attribute   Attribute @relation("AttributeToValues", fields: [attributeId], references: [id], onDelete: Cascade)
 
-  subAttributes                 Attribute[]                     @relation("ValueToSubAttributes")
+  subAttributes                 Attribute[]                    @relation("ValueToSubAttributes")
   products                      ProductAttributeValue[]
   productVariantAttributeValues ProductVariantAttributeValue[]
   productImages                 ProductImage[]
-  productImagesAsPosition       ProductImage[]                  @relation("PrintPositionValue")
+  productImagesAsPosition       ProductImage[]                 @relation("PrintPositionValue")
 
   @@map("attribute_values")
 }
@@ -557,10 +557,10 @@ model ProductAttributeValue {
   priceModifier    Float?         @default(0)
 
   // New fields
-  weight           Float?
-  width            Float?
-  height           Float?
-  length           Float?
+  weight Float?
+  width  Float?
+  height Float?
+  length Float?
 
   @@unique([productId, attributeValueId])
   @@map("product_attribute_values")
@@ -639,11 +639,11 @@ model ProductVariantImage {
 }
 
 model ProductImage {
-  id         String  @id @default(uuid())
-  url        String
-  publicId   String
-  isFeatured Boolean @default(false)
-  altText    String?
+  id             String  @id @default(uuid())
+  url            String
+  publicId       String
+  isFeatured     Boolean @default(false)
+  altText        String?
   mockupSideName String?
 
   productId String
@@ -661,18 +661,18 @@ model ProductImage {
 }
 
 model ProductImageMockupArea {
-  id            String   @id @default(uuid())
-  x             Float
-  y             Float
-  width         Float
-  height        Float
-  label         String
-  description   String?
+  id          String  @id @default(uuid())
+  x           Float
+  y           Float
+  width       Float
+  height      Float
+  label       String
+  description String?
 
   // Real physical print size of this placement area
   physicalWidth  Float?
   physicalHeight Float?
-  unit           String?  @default("cm")  // "cm" | "mm"
+  unit           String? @default("cm") // "cm" | "mm"
 
   productImageId String
   productImage   ProductImage @relation(fields: [productImageId], references: [id], onDelete: Cascade)
@@ -682,7 +682,6 @@ model ProductImageMockupArea {
 
   @@map("product_image_mockup_areas")
 }
-
 
 model ProductVideo {
   id         String  @id @default(uuid())

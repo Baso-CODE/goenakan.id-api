@@ -14,6 +14,11 @@ import { CashflowRouter } from "./modules/cashflow/cashflow.router";
 import { ClientRouter } from "./modules/client/client.router";
 import { ContactMessageRouter } from "./modules/contact-message/contact-message.router";
 
+import {
+  authLimiter,
+  globalLimiter,
+  publicLimiter,
+} from "./middleware/rateLimiter.middleware";
 import { AnalyticsRouter } from "./modules/analytics/analytics.router";
 import { CurrencyRouter } from "./modules/currency/currency.router";
 import { DepartmentRouter } from "./modules/department/department.router";
@@ -77,21 +82,11 @@ export default class App {
   private configure(): void {
     this.app.use(helmet());
 
-    // const allowedOrigins = env().CORS_ORIGIN
-    //   ? env()
-    //       .CORS_ORIGIN.split(",")
-    //       .map((origin) => origin.trim())
-    //   : [
-    //       "http://localhost:3000",
-    //       "http://localhost:3001",
-    //       "https://goenakan.tech",
-    //       "https://goenakan.edumatrixindonesia.cloud",
-    //     ];
-
+    this.app.use(globalLimiter);
     this.app.use(
       cors({
-        origin: true, // Trik ajaib: Otomatis mengizinkan domain siapapun yang me-request
-        credentials: true, // Tetap izinkan cookie/token login
+        origin: true,
+        credentials: true,
         methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
       }),
@@ -165,7 +160,7 @@ export default class App {
       res.send("Welcome");
     });
 
-    this.app.use("/auth", authRouter.getRouter());
+    this.app.use("/auth", authLimiter, authRouter.getRouter());
     this.app.use("/vendors", vendorRouter.getRouter());
     this.app.use("/vendor-categories", categoryVendorRouter.getRouter());
     this.app.use("/vendor-items", itemVendorRouter.getRouter());
@@ -209,17 +204,25 @@ export default class App {
     this.app.use("/finance", financeRouter.getRouter());
     this.app.use("/article-categories", categoryArticleRouter.getRouter());
     this.app.use("/articles-banners", articleBannerRouter.getRouter());
-    this.app.use("/articles", articleRouter.getRouter());
+    this.app.use("/articles", publicLimiter, articleRouter.getRouter());
     this.app.use("/article-seo", articleSeoRouter.getRouter());
     this.app.use("/brand-clients", brandClientRouter.getRouter());
-    this.app.use("/portfolios", portfolioRouter.getRouter());
+    this.app.use("/portfolios", publicLimiter, portfolioRouter.getRouter());
     this.app.use("/contact-messages", contactMessageRouter.getRouter());
     this.app.use("/cart", cartRouter.getRouter());
-    this.app.use("/auth-web-client", authWebClientRouter.getRouter());
+    this.app.use(
+      "/auth-web-client",
+      authLimiter,
+      authWebClientRouter.getRouter(),
+    );
     this.app.use("/addresses", customAddressRouter.getRouter());
     this.app.use("/customer-profile", customerProfileRouter.getRouter());
-    this.app.use("/web-orders", webOrderRouter.getRouter());
-    this.app.use("/event-categories", eventCategoryRouter.getRouter());
+    this.app.use("/web-orders", publicLimiter, webOrderRouter.getRouter());
+    this.app.use(
+      "/event-categories",
+      publicLimiter,
+      eventCategoryRouter.getRouter(),
+    );
     this.app.use("/article-tags", tagArticleRouter.getRouter());
     this.app.use("/banner-products", bannerProductRouter.getRouter());
     this.app.use("/analytics", analyticsRouter.getRouter());
@@ -232,7 +235,6 @@ export default class App {
     this.app.use(errorMiddleware);
   }
 
-  // 2. ✨ UPDATE METHOD START()
   public start(): void {
     this.app.listen(env().PORT, () => {
       console.log(`  ➜  [API] Local:   http://localhost:${env().PORT}`);
