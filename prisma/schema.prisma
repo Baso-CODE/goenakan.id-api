@@ -408,7 +408,7 @@ model ItemName {
   id             String       @id @default(uuid())
   name           String
   slug           String       @unique
-  code           String       @unique
+  code           String
   description    String?      @db.Text
   itemCategoryId String
   itemCategory   ItemCategory @relation(fields: [itemCategoryId], references: [id])
