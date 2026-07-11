@@ -10,7 +10,6 @@ export interface VendorExportQuery {
   startDate?: string;
   endDate?: string;
   isActive?: "true" | "false";
-  // Tambahkan filter lain di sini (misalnya, filter berdasarkan province atau itemIds jika diperlukan)
 }
 @injectable()
 export class VendorService {

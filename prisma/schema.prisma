@@ -192,6 +192,7 @@ model User {
   emailVerified       DateTime?
   password            String?
   image               String?
+  phone               String?
   roleId              String
   createdAt           DateTime             @default(now())
   articles            Article[]
@@ -994,6 +995,7 @@ model Order {
   userId               String?
   sales                Sales?                @relation(fields: [salesId], references: [id])
   salesId              String?
+  whatsappMessages     WhatsappMessage[]
 
   @@map("orders")
 }
@@ -1315,8 +1317,9 @@ model Quotation {
   approvedBy   User?     @relation("QuotationApprovedBy", fields: [approvedById], references: [id])
   approvedAt   DateTime?
 
-  items     QuotationItem[]
-  followUps QuotationFollowUp[]
+  items            QuotationItem[]
+  followUps        QuotationFollowUp[]
+  whatsappMessages WhatsappMessage[]
 
   @@map("quotations")
 }
@@ -2077,4 +2080,26 @@ model HeroBannerProduct {
   updatedAt     DateTime @updatedAt
 
   @@map("hero_banners")
+}
+
+model WhatsappMessage {
+  id          String    @id @default(cuid())
+  phoneNumber String
+  message     String    @db.LongText
+  type        String // "order_created", "quotation_sent", "payment_reminder"
+  orderId     String?
+  quotationId String?
+  status      String    @default("pending") // "pending", "sent", "failed"
+  sentAt      DateTime?
+  error       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  order     Order?     @relation(fields: [orderId], references: [id])
+  quotation Quotation? @relation(fields: [quotationId], references: [id])
+
+  @@index([phoneNumber])
+  @@index([status])
+  @@index([type])
+  @@map("whatsapp_messages")
 }

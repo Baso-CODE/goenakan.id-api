@@ -67,6 +67,9 @@ import { CustomerProfileRouter } from "./modules/web-clients/customer-profile/cu
 import { EventCategoryRouter } from "./modules/web-clients/event-category/event-category.router";
 import { AuthWebClientRouter } from "./modules/web-clients/register-user/register-user.router";
 import { WebOrderRouter } from "./modules/web-clients/web-order/web-order.router";
+import { WhatsappCronService } from "./modules/whatsapp/notification/whatsapp-cron.service";
+import { WhatsappRouter } from "./modules/whatsapp/whatsapp.routes";
+import { WhatsappService } from "./modules/whatsapp/whatsapp.service";
 import { WilayahRouter } from "./modules/wilayah/wilayah.router";
 import { initializeCronJobs } from "./utils/cron";
 export default class App {
@@ -74,6 +77,8 @@ export default class App {
 
   constructor() {
     this.app = express();
+    container.registerSingleton(WhatsappService);
+    container.registerSingleton(WhatsappCronService);
     this.configure();
     this.routes();
     this.handleError();
@@ -155,6 +160,7 @@ export default class App {
     const userRouter = container.resolve(UserRouter);
     const roleRouter = container.resolve(RoleRouter);
     const wilayahRouter = container.resolve(WilayahRouter);
+    const whatsappRouter = container.resolve(WhatsappRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -230,12 +236,23 @@ export default class App {
     this.app.use("/users", userRouter.getRouter());
     this.app.use("/roles", roleRouter.getRouter());
     this.app.use("/wilayah", wilayahRouter.getRouter());
+    this.app.use("/whatsapp", whatsappRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);
   }
+  public async start(): Promise<void> {
+    try {
+      const whatsappService = container.resolve(WhatsappService);
+      await whatsappService.initialize();
+      console.log("✅ WhatsApp service ready");
+    } catch (error) {
+      console.error("❌ WhatsApp init error:", error);
+    }
 
-  public start(): void {
+    const whatsappCronService = container.resolve(WhatsappCronService);
+    whatsappCronService.startJobs();
+
     this.app.listen(env().PORT, () => {
       console.log(`  ➜  [API] Local:   http://localhost:${env().PORT}`);
       try {
