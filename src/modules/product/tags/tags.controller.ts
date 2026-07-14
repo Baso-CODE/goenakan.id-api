@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
-import { CreateBulkTagsDTO, CreateTagDTO, UpdateTagDTO } from "./dto/tags.dto";
+import { CreateBulkTagsDTO, CreateTagDTO, UpdateTagDTO, CreateTagCategoryDTO, UpdateTagCategoryDTO } from "./dto/tags.dto";
 import { ProductTagService, TagExportQuery } from "./tags.service";
 
 @injectable()
@@ -109,6 +109,61 @@ export class ProductTagController {
         'attachment; filename="data-tags-product-export.xlsx"',
       );
       res.send(excelBuffer);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === GET ALL TAG CATEGORIES ===
+  getAllTagCategories = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await this.productTagService.getAllTagCategories();
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === GET TAG CATEGORY BY ID ===
+  getTagCategoryById = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const result = await this.productTagService.getTagCategoryById(id);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === CREATE TAG CATEGORY ===
+  createTagCategory = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = req.body as CreateTagCategoryDTO;
+      const result = await this.productTagService.createTagCategory(body);
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === UPDATE TAG CATEGORY ===
+  updateTagCategory = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const body = req.body as UpdateTagCategoryDTO;
+      const result = await this.productTagService.updateTagCategory(id, body);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === DELETE TAG CATEGORY ===
+  deleteTagCategory = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const result = await this.productTagService.deleteTagCategory(id);
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

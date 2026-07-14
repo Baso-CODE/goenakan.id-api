@@ -754,9 +754,22 @@ model Tag {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  products Product[]
+  products   Product[]
+  categories TagCategory[] @relation("TagCategoryToTag")
 
   @@map("tags")
+}
+
+model TagCategory {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tags      Tag[]    @relation("TagCategoryToTag")
+
+  @@map("tag_categories")
 }
 
 // ===============================================
