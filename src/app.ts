@@ -35,6 +35,7 @@ import { ItemNameRouter } from "./modules/product/item-names/item-names.router";
 import { ProductRouter } from "./modules/product/masterProduct/product.router";
 import { MaterialTypeRouter } from "./modules/product/material-type/material-type.router";
 import { ProductTagRouter } from "./modules/product/tags/tags.router";
+import { SupplierCogsRouter } from "./modules/product/supplier-cogs/supplier-cogs.router";
 import { PurchaseChannelRouter } from "./modules/purchaseChannel/purchaseChannel.router";
 import { PurchaseOrderRouter } from "./modules/purchaseOrder/purchaseOrder.router";
 import { QuotationRouter } from "./modules/quotation/quotation.router";
@@ -104,6 +105,7 @@ export default class App {
     const clientRouter = container.resolve(ClientRouter);
     const producCategorytRouter = container.resolve(ProductCategoryRouter);
     const producTagRouter = container.resolve(ProductTagRouter);
+    const supplierCogsRouter = container.resolve(SupplierCogsRouter);
     const producAttributesRouter = container.resolve(AttributeRouter);
     const producRouter = container.resolve(ProductRouter);
     const itemCategoryRouter = container.resolve(ItemCategoryRouter);
@@ -169,6 +171,7 @@ export default class App {
     this.app.use("/product-categories", producCategorytRouter.getRouter());
     this.app.use("/product-attributes", producAttributesRouter.getRouter());
     this.app.use("/product-tags", producTagRouter.getRouter());
+    this.app.use("/supplier-cogs", supplierCogsRouter.getRouter());
     this.app.use("/products", producRouter.getRouter());
     this.app.use("/item-categories", itemCategoryRouter.getRouter());
     this.app.use("/item-names", itemNamesRouter.getRouter());

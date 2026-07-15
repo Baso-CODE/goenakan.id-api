@@ -469,6 +469,7 @@ model Product {
   isMultiFace        Boolean @default(false)
   mockupFrontImageId String?
   mockupBackImageId  String?
+  vendorPrices       VendorPriceRecord[]
 
   @@map("products")
 }
@@ -762,14 +763,52 @@ model Tag {
 
 model TagCategory {
   id        String   @id @default(uuid())
-  name      String   @unique
-  slug      String   @unique
+  name      String
+  slug      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   tags      Tag[]    @relation("TagCategoryToTag")
 
   @@map("tag_categories")
+}
+
+model VendorPriceRecord {
+  id             String   @id @default(uuid())
+  productId      String?
+  tempProductName String?
+  vendorId       String
+  
+  // Supplier Pricing details
+  foreignPrice   Decimal  @db.Decimal(10, 2)
+  currencyCode   String   @default("RMB")
+  exchangeRate   Decimal  @db.Decimal(10, 2)
+  
+  // Packaging details (Overridable from Product default)
+  qtyPerCtn      Int?     @default(1)
+  length         Decimal? @db.Decimal(10, 2)
+  width          Decimal? @db.Decimal(10, 2)
+  height         Decimal? @db.Decimal(10, 2)
+  weight         Decimal? @db.Decimal(10, 2)
+  
+  // Local delivery in Origin & Target
+  gzDeliveryCost Decimal  @default(0) @db.Decimal(10, 2)
+  localFreight   Decimal  @default(0) @db.Decimal(10, 2)
+  
+  // Target selling guides
+  margin         Decimal  @default(0) @db.Decimal(10, 2)
+  sponsorPercent Decimal  @default(0.02) @db.Decimal(5, 4)
+  
+  notes          String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relationships
+  product        Product?  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  vendor         Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  currency       Currency @relation(fields: [currencyCode], references: [code])
+
+  @@map("vendor_price_records")
 }
 
 // ===============================================
@@ -847,6 +886,7 @@ model Vendor {
   productionJobs ProductionTracker[]
   shipments      Shipment[]
   purchaseOrders PurchaseOrder[]
+  vendorPrices   VendorPriceRecord[]
 
   @@map("vendors")
 }
@@ -1518,6 +1558,7 @@ model Currency {
   orders            Order[]
   purchaseOrders    PurchaseOrder[]
   quotations        Quotation[]
+  vendorPrices      VendorPriceRecord[]
 
   @@map("currencies")
 }

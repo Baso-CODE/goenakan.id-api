@@ -345,17 +345,6 @@ export class ProductTagService {
   async createTagCategory(data: CreateTagCategoryDTO) {
     const categorySlug = data.slug ? data.slug : this.slug.create(data.name);
 
-    // Cek apakah category dengan nama atau slug yang sama sudah ada
-    const existing = await this.prisma.tagCategory.findFirst({
-      where: {
-        OR: [{ name: data.name }, { slug: categorySlug }],
-      },
-    });
-
-    if (existing) {
-      throw new ApiError("Tag category name or slug already exists", 400);
-    }
-
     const category = await this.prisma.tagCategory.create({
       data: {
         name: data.name,
@@ -373,6 +362,7 @@ export class ProductTagService {
   }
 
   async updateTagCategory(id: string, data: UpdateTagCategoryDTO) {
+    console.log("updateTagCategory received data:", JSON.stringify(data));
     // Cek keberadaan
     const existingCat = await this.prisma.tagCategory.findUnique({
       where: { id },
@@ -382,19 +372,6 @@ export class ProductTagService {
     }
 
     const tagSlug = data.name ? this.slug.create(data.name) : undefined;
-
-    // Cek duplikasi jika nama diubah
-    if (data.name && data.name !== existingCat.name) {
-      const duplicate = await this.prisma.tagCategory.findFirst({
-        where: {
-          OR: [{ name: data.name }, { slug: tagSlug }],
-          NOT: { id },
-        },
-      });
-      if (duplicate) {
-        throw new ApiError("Tag category name or slug already exists", 400);
-      }
-    }
 
     const category = await this.prisma.tagCategory.update({
       where: { id },
