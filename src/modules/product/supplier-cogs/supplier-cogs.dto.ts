@@ -1,0 +1,163 @@
+import {
+  IsDecimal,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+} from "class-validator";
+
+export class CreateVendorPriceRecordDTO {
+  @IsOptional()
+  @IsString()
+  productId?: string;
+
+  @IsOptional()
+  @IsString()
+  tempProductName?: string;
+
+  @IsNotEmpty({ message: "Vendor ID tidak boleh kosong" })
+  @IsString()
+  vendorId!: string;
+
+  @IsNotEmpty({ message: "Harga supplier tidak boleh kosong" })
+  @IsNumber()
+  @Min(0)
+  foreignPrice!: number;
+
+  @IsOptional()
+  @IsString()
+  currencyCode?: string;
+
+  @IsNotEmpty({ message: "Exchange rate tidak boleh kosong" })
+  @IsNumber()
+  @Min(0)
+  exchangeRate!: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  qtyPerCtn?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  length?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  width?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  height?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  weight?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  gzDeliveryCost?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  localFreight?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  margin?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  sponsorPercent?: number;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+export class UpdateVendorPriceRecordDTO {
+  @IsOptional()
+  @IsString()
+  productId?: string;
+
+  @IsOptional()
+  @IsString()
+  tempProductName?: string;
+
+  @IsOptional()
+  @IsString()
+  vendorId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  foreignPrice?: number;
+
+  @IsOptional()
+  @IsString()
+  currencyCode?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  exchangeRate?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  qtyPerCtn?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  length?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  width?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  height?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  weight?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  gzDeliveryCost?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  localFreight?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  margin?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  sponsorPercent?: number;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}

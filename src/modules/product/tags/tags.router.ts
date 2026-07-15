@@ -4,7 +4,7 @@ import { autoInjectable } from "tsyringe";
 import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
 import { verifyRole } from "../../../middleware/role.middleware";
 import { validateBody } from "../../../middleware/validation.middleware";
-import { CreateBulkTagsDTO, CreateTagDTO, UpdateTagDTO } from "./dto/tags.dto";
+import { CreateBulkTagsDTO, CreateTagDTO, UpdateTagDTO, CreateTagCategoryDTO, UpdateTagCategoryDTO } from "./dto/tags.dto";
 import { ProductTagController } from "./tags.controller";
 
 @autoInjectable()
@@ -40,6 +40,44 @@ export class ProductTagRouter {
       this.nextAuthMiddleware.verifyNextAuthToken,
       verifyRole(["SUPER_ADMIN"]),
       this.productTagController.getTagList,
+    );
+
+    // === TAG CATEGORY ROUTES ===
+    this.router.get(
+      "/categories",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.productTagController.getAllTagCategories,
+    );
+
+    this.router.get(
+      "/categories/:id",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.productTagController.getTagCategoryById,
+    );
+
+    this.router.post(
+      "/categories",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      validateBody(CreateTagCategoryDTO),
+      this.productTagController.createTagCategory,
+    );
+
+    this.router.patch(
+      "/categories/:id",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      validateBody(UpdateTagCategoryDTO),
+      this.productTagController.updateTagCategory,
+    );
+
+    this.router.delete(
+      "/categories/:id",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.productTagController.deleteTagCategory,
     );
 
     // === CRUD ROUTES ===

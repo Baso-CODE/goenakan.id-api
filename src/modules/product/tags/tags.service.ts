@@ -4,7 +4,7 @@ import { ApiError } from "../../../utils/api-error";
 import { SlugService } from "../../../utils/genereateSlug";
 import { PaginationService } from "../../pagination/pagination.service";
 import { PrismaService } from "../../prisma/prisma.service";
-import { CreateTagDTO, UpdateTagDTO } from "./dto/tags.dto";
+import { CreateTagDTO, UpdateTagDTO, CreateTagCategoryDTO, UpdateTagCategoryDTO } from "./dto/tags.dto";
 
 export interface TagExportQuery {
   startDate?: string;
@@ -294,5 +294,114 @@ export class ProductTagService {
 
     const buffer = await workbook.xlsx.writeBuffer();
     return buffer as unknown as Buffer;
+  }
+
+  // ===============================================
+  // TAG CATEGORIES (GROUPS) METHODS
+  // ===============================================
+
+  async getAllTagCategories() {
+    try {
+      const categories = await this.prisma.tagCategory.findMany({
+        include: {
+          tags: {
+            orderBy: {
+              name: "asc",
+            },
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
+      return categories;
+    } catch (error) {
+      console.error("❌ Error in Get All Tag Categories:", error);
+      throw new Error("Failed to fetch tag categories. See server log for details.");
+    }
+  }
+
+  async getTagCategoryById(id: string) {
+    try {
+      const category = await this.prisma.tagCategory.findUnique({
+        where: { id },
+        include: {
+          tags: true,
+        },
+      });
+
+      if (!category) {
+        throw new ApiError("Tag category not found", 404);
+      }
+
+      return category;
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      console.error("❌ Error in Get Tag Category By Id:", error);
+      throw new Error("Failed to fetch tag category.");
+    }
+  }
+
+  async createTagCategory(data: CreateTagCategoryDTO) {
+    const categorySlug = data.slug ? data.slug : this.slug.create(data.name);
+
+    const category = await this.prisma.tagCategory.create({
+      data: {
+        name: data.name,
+        slug: categorySlug,
+        tags: data.tagIds && data.tagIds.length > 0 ? {
+          connect: data.tagIds.map((id) => ({ id })),
+        } : undefined,
+      },
+      include: {
+        tags: true,
+      },
+    });
+
+    return category;
+  }
+
+  async updateTagCategory(id: string, data: UpdateTagCategoryDTO) {
+    console.log("updateTagCategory received data:", JSON.stringify(data));
+    // Cek keberadaan
+    const existingCat = await this.prisma.tagCategory.findUnique({
+      where: { id },
+    });
+    if (!existingCat) {
+      throw new ApiError("Tag category not found", 404);
+    }
+
+    const tagSlug = data.name ? this.slug.create(data.name) : undefined;
+
+    const category = await this.prisma.tagCategory.update({
+      where: { id },
+      data: {
+        name: data.name,
+        slug: tagSlug,
+        tags: data.tagIds ? {
+          set: data.tagIds.map((id) => ({ id })),
+        } : undefined,
+      },
+      include: {
+        tags: true,
+      },
+    });
+
+    return category;
+  }
+
+  async deleteTagCategory(id: string) {
+    const existingCat = await this.prisma.tagCategory.findUnique({
+      where: { id },
+    });
+    if (!existingCat) {
+      throw new ApiError("Tag category not found", 404);
+    }
+
+    await this.prisma.tagCategory.delete({
+      where: { id },
+    });
+
+    return { message: "Tag category deleted successfully" };
   }
 }
