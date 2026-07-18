@@ -542,6 +542,7 @@ model AttributeValue {
   productVariantAttributeValues ProductVariantAttributeValue[]
   productImages                 ProductImage[]
   productImagesAsPosition       ProductImage[]                 @relation("PrintPositionValue")
+  productImagesAsPrintSide       ProductImage[]                 @relation("PrintSideValue")
 
   @@map("attribute_values")
 }
@@ -656,6 +657,9 @@ model ProductImage {
 
   printPositionValueId String?
   printPositionValue   AttributeValue? @relation("PrintPositionValue", fields: [printPositionValueId], references: [id])
+
+  printSideValueId String?
+  printSideValue   AttributeValue? @relation("PrintSideValue", fields: [printSideValueId], references: [id])
 
   mockupAreas ProductImageMockupArea[]
 

@@ -20,4 +20,8 @@ export class UpdateProductImageDTO {
   @IsOptional()
   @IsString()
   printPositionValueId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  printSideValueId?: string | null;
 }

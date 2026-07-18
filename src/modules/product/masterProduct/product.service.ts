@@ -1619,6 +1619,7 @@ export class ProductService {
         isFeatured: data.isFeatured ?? undefined,
         attributeValueId: data.attributeValueId !== undefined ? data.attributeValueId : undefined,
         printPositionValueId: data.printPositionValueId !== undefined ? data.printPositionValueId : undefined,
+        printSideValueId: data.printSideValueId !== undefined ? data.printSideValueId : undefined,
       },
     });
 
@@ -2321,6 +2322,8 @@ export class ProductService {
         mockupSideName?: string | null;
         printPositionValueId?: string | null;
         attributeValueId?: string | null;
+        printSideValueId?: string | null;
+        isFeatured?: boolean;
       }[] = [];
 
       if (product.images && product.images.length > 0) {
@@ -2334,13 +2337,20 @@ export class ProductService {
             mockupSideName: img.mockupSideName,
             printPositionValueId: img.printPositionValueId,
             attributeValueId: img.attributeValueId,
+            printSideValueId: img.printSideValueId,
+            isFeatured: img.isFeatured || false,
           });
         });
       }
 
       if (product.videos && product.videos.length > 0) {
         product.videos.forEach((vid) => {
-          combinedMedia.push({ id: vid.id, type: "video", url: vid.url });
+          combinedMedia.push({ 
+            id: vid.id, 
+            type: "video", 
+            url: vid.url,
+            isFeatured: vid.isFeatured || false,
+          });
         });
       }
 
@@ -2419,6 +2429,7 @@ export class ProductService {
             type: "image" as const,
             url: img.url,
             mockupAreas: [],
+            isFeatured: img.isFeatured || false,
           })),
         };
       });
