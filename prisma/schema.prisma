@@ -802,6 +802,9 @@ model VendorPriceRecord {
   // Local delivery in Origin & Target
   gzDeliveryCost Decimal  @default(0) @db.Decimal(10, 2)
   localFreight   Decimal  @default(0) @db.Decimal(10, 2)
+  seaFreightRate Decimal  @default(10000000) @db.Decimal(12, 2)
+  airFreightRate Decimal  @default(260000) @db.Decimal(12, 2)
+  moqCtn         Int      @default(1)
   
   // Target selling guides
   margin         Decimal  @default(0) @db.Decimal(10, 2)

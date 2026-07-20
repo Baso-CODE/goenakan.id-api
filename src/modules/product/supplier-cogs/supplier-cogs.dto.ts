@@ -88,6 +88,21 @@ export class CreateVendorPriceRecordDTO {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  seaFreightRate?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  airFreightRate?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  moqCtn?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
   margin?: number;
 
   @IsOptional()
@@ -176,6 +191,21 @@ export class UpdateVendorPriceRecordDTO {
   @IsNumber()
   @Min(0)
   localFreight?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  seaFreightRate?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  airFreightRate?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  moqCtn?: number;
 
   @IsOptional()
   @IsNumber()
