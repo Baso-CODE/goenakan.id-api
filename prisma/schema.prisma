@@ -782,6 +782,8 @@ model VendorPriceRecord {
   productId      String?
   tempProductName String?
   status         String   @default("POTENTIAL")
+  calculationMode String  @default("FIXED")
+  tiers          Json?
   vendorId        String?
   serviceVendorId String?
   

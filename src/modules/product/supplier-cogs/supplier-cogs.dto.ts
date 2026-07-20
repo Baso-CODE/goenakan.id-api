@@ -23,6 +23,13 @@ export class CreateVendorPriceRecordDTO {
 
   @IsOptional()
   @IsString()
+  calculationMode?: string;
+
+  @IsOptional()
+  tiers?: any;
+
+  @IsOptional()
+  @IsString()
   vendorId?: string;
 
   @IsOptional()
@@ -105,6 +112,13 @@ export class UpdateVendorPriceRecordDTO {
   @IsOptional()
   @IsString()
   status?: string;
+
+  @IsOptional()
+  @IsString()
+  calculationMode?: string;
+
+  @IsOptional()
+  tiers?: any;
 
   @IsOptional()
   @IsString()
