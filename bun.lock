@@ -8,6 +8,7 @@
         "@lucia-auth/adapter-prisma": "^4.0.1",
         "@prisma/adapter-mariadb": "^7.8.0",
         "@prisma/client": "^7.8.0",
+        "@types/express-rate-limit": "^6.0.2",
         "@types/midtrans-client": "^1.4.0",
         "@types/qrcode-terminal": "^0.12.2",
         "@vitalets/google-translate-api": "^9.2.1",
@@ -580,6 +581,8 @@
     "@types/dotenv": ["@types/dotenv@8.2.3", "", { "dependencies": { "dotenv": "*" } }, "sha512-g2FXjlDX/cYuc5CiQvyU/6kkbP1JtmGzh0obW50zD7OKeILVL0NSpPWLXVfqoAGQjom2/SLLx9zHq0KXvD6mbw=="],
 
     "@types/express": ["@types/express@5.0.6", "", { "dependencies": { "@types/body-parser": "*", "@types/express-serve-static-core": "^5.0.0", "@types/serve-static": "^2" } }, "sha512-sKYVuV7Sv9fbPIt/442koC7+IIwK5olP1KWeD88e/idgoJqDm3JV/YUiPwkoKK92ylff2MGxSz1CSjsXelx0YA=="],
+
+    "@types/express-rate-limit": ["@types/express-rate-limit@6.0.2", "", { "dependencies": { "express-rate-limit": "*" } }, "sha512-e1xZLOOlxCDvplAGq7rDcXtbdBu2CWRsMjaIu1LVqGxWtKvwr884YE5mPs3IvHeG/OMDhf24oTaqG5T1bV3rBQ=="],
 
     "@types/express-serve-static-core": ["@types/express-serve-static-core@5.1.0", "", { "dependencies": { "@types/node": "*", "@types/qs": "*", "@types/range-parser": "*", "@types/send": "*" } }, "sha512-jnHMsrd0Mwa9Cf4IdOzbz543y4XJepXrbia2T4b6+spXC2We3t1y6K44D3mR8XMFSXMCf3/l7rCgddfx7UNVBA=="],
 

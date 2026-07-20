@@ -1,11 +1,19 @@
 import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
+import { CurrencyConversionService } from "./convertionCurrency.service";
 import { CurrencyService } from "./currency.service";
-import { CreateCurrencyDTO, UpdateCurrencyDTO } from "./dto/currency.dto";
+import {
+  ConvertCurrencyDTO,
+  CreateCurrencyDTO,
+  UpdateCurrencyDTO,
+} from "./dto/currency.dto";
 
 @injectable()
 export class CurrencyController {
-  constructor(private readonly currencyService: CurrencyService) {}
+  constructor(
+    private readonly currencyService: CurrencyService,
+    private readonly conversionService: CurrencyConversionService,
+  ) {}
 
   // ==========================================
   // GET ALL (With Optional Search)
@@ -72,6 +80,16 @@ export class CurrencyController {
       await this.currencyService.deleteCurrency(code);
 
       res.status(200).json({ message: "Currency deleted successfully" });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  convert = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = req.body as ConvertCurrencyDTO;
+      const result = await this.conversionService.convertCurrency(body);
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

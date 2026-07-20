@@ -18,6 +18,7 @@
     "@lucia-auth/adapter-prisma": "^4.0.1",
     "@prisma/adapter-mariadb": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "@types/express-rate-limit": "^6.0.2",
     "@types/midtrans-client": "^1.4.0",
     "@types/qrcode-terminal": "^0.12.2",
     "@vitalets/google-translate-api": "^9.2.1",
