@@ -781,6 +781,7 @@ model VendorPriceRecord {
   id             String   @id @default(uuid())
   productId      String?
   tempProductName String?
+  status         String   @default("POTENTIAL")
   vendorId        String?
   serviceVendorId String?
   

@@ -94,6 +94,7 @@ export class SupplierCogsService {
       data: {
         productId: data.productId || null,
         tempProductName: data.tempProductName || null,
+        status: data.status || "POTENTIAL",
         vendorId: data.vendorId || null,
         serviceVendorId: data.serviceVendorId || null,
         foreignPrice: data.foreignPrice,
@@ -150,6 +151,7 @@ export class SupplierCogsService {
       data: {
         productId: data.productId !== undefined ? data.productId : undefined,
         tempProductName: data.tempProductName !== undefined ? data.tempProductName : undefined,
+        status: data.status !== undefined ? data.status : undefined,
         vendorId: data.vendorId !== undefined ? data.vendorId : undefined,
         serviceVendorId: data.serviceVendorId !== undefined ? data.serviceVendorId : undefined,
         foreignPrice: data.foreignPrice !== undefined ? data.foreignPrice : undefined,
