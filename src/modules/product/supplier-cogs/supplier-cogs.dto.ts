@@ -17,9 +17,9 @@ export class CreateVendorPriceRecordDTO {
   @IsString()
   tempProductName?: string;
 
-  @IsNotEmpty({ message: "Vendor ID tidak boleh kosong" })
+  @IsOptional()
   @IsString()
-  vendorId!: string;
+  vendorId?: string;
 
   @IsOptional()
   @IsString()

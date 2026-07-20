@@ -80,19 +80,21 @@ export class SupplierCogsService {
       }
     }
 
-    // Verify vendor exists
-    const vendor = await this.prisma.vendor.findUnique({
-      where: { id: data.vendorId },
-    });
-    if (!vendor) {
-      throw new ApiError("Vendor/Supplier tidak ditemukan", 400);
+    // Verify vendor exists if provided
+    if (data.vendorId) {
+      const vendor = await this.prisma.vendor.findUnique({
+        where: { id: data.vendorId },
+      });
+      if (!vendor) {
+        throw new ApiError("Vendor/Supplier tidak ditemukan", 400);
+      }
     }
 
     return this.prisma.vendorPriceRecord.create({
       data: {
         productId: data.productId || null,
         tempProductName: data.tempProductName || null,
-        vendorId: data.vendorId,
+        vendorId: data.vendorId || null,
         serviceVendorId: data.serviceVendorId || null,
         foreignPrice: data.foreignPrice,
         currencyCode: data.currencyCode || "RMB",

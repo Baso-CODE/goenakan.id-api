@@ -781,7 +781,7 @@ model VendorPriceRecord {
   id             String   @id @default(uuid())
   productId      String?
   tempProductName String?
-  vendorId        String
+  vendorId        String?
   serviceVendorId String?
   
   // Supplier Pricing details
@@ -810,7 +810,7 @@ model VendorPriceRecord {
 
   // Relationships
   product        Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
-  vendor         Vendor   @relation("ProductVendorPrices", fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor         Vendor?  @relation("ProductVendorPrices", fields: [vendorId], references: [id], onDelete: SetNull)
   serviceVendor  Vendor?  @relation("ServiceVendorPrices", fields: [serviceVendorId], references: [id], onDelete: SetNull)
   currency       Currency @relation(fields: [currencyCode], references: [code])
 
