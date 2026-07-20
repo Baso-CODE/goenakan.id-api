@@ -36,6 +36,18 @@ export class CreateVendorPriceRecordDTO {
   @IsString()
   serviceVendorId?: string;
 
+  @IsOptional()
+  @IsString()
+  supplierPlatform?: string;
+
+  @IsOptional()
+  @IsString()
+  supplierContactName?: string;
+
+  @IsOptional()
+  @IsString()
+  supplierContactLink?: string;
+
   @IsNotEmpty({ message: "Harga supplier tidak boleh kosong" })
   @IsNumber()
   @Min(0)
@@ -142,6 +154,18 @@ export class UpdateVendorPriceRecordDTO {
   @IsOptional()
   @IsString()
   serviceVendorId?: string;
+
+  @IsOptional()
+  @IsString()
+  supplierPlatform?: string;
+
+  @IsOptional()
+  @IsString()
+  supplierContactName?: string;
+
+  @IsOptional()
+  @IsString()
+  supplierContactLink?: string;
 
   @IsOptional()
   @IsNumber()

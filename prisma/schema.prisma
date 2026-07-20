@@ -787,6 +787,11 @@ model VendorPriceRecord {
   vendorId        String?
   serviceVendorId String?
   
+  // Potential Supplier Sourcing Details
+  supplierPlatform    String?
+  supplierContactName String?
+  supplierContactLink String?
+  
   // Supplier Pricing details
   foreignPrice   Decimal  @db.Decimal(10, 2)
   currencyCode   String   @default("RMB")
