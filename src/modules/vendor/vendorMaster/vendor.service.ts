@@ -175,7 +175,7 @@ export class VendorService {
       throw new Error("Failed to fetch vendors.");
     }
   }
-  // === GET ALL VENDORS FOR ORDER (simplified, only id & name) ===
+  // === GET ALL VENDORS FOR ORDER & CALCULATOR (with category types) ===
   async getAllVendorsForOrder() {
     try {
       const vendors = await this.prisma.vendor.findMany({
@@ -184,10 +184,47 @@ export class VendorService {
         select: {
           id: true,
           companyName: true,
+          vendorItems: {
+            select: {
+              item: {
+                select: {
+                  category: {
+                    select: {
+                      id: true,
+                      name: true,
+                      type: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       });
 
-      return vendors;
+      return vendors.map((v) => {
+        const typesSet = new Set<string>();
+        const categoryNamesSet = new Set<string>();
+
+        v.vendorItems?.forEach((vi) => {
+          if (vi.item?.category?.type) {
+            typesSet.add(vi.item.category.type);
+          }
+          if (vi.item?.category?.name) {
+            categoryNamesSet.add(vi.item.category.name);
+          }
+        });
+
+        const types = Array.from(typesSet);
+        const categoryNames = Array.from(categoryNamesSet);
+
+        return {
+          id: v.id,
+          companyName: v.companyName,
+          types: types.length > 0 ? types : ["PRODUCT", "SERVICE"],
+          categoryNames,
+        };
+      });
     } catch (error) {
       console.error("❌ Error in getAllVendorsForOrder:", error);
       throw new Error("Failed to fetch vendors for order.");
