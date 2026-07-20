@@ -37,6 +37,12 @@ export class SupplierCogsService {
             companyName: true,
           },
         },
+        serviceVendor: {
+          select: {
+            id: true,
+            companyName: true,
+          },
+        },
       },
       orderBy: {
         createdAt: "desc",
@@ -51,6 +57,7 @@ export class SupplierCogsService {
       include: {
         product: true,
         vendor: true,
+        serviceVendor: true,
       },
     });
 
@@ -86,6 +93,7 @@ export class SupplierCogsService {
         productId: data.productId || null,
         tempProductName: data.tempProductName || null,
         vendorId: data.vendorId,
+        serviceVendorId: data.serviceVendorId || null,
         foreignPrice: data.foreignPrice,
         currencyCode: data.currencyCode || "RMB",
         exchangeRate: data.exchangeRate,
@@ -103,6 +111,7 @@ export class SupplierCogsService {
       include: {
         product: true,
         vendor: true,
+        serviceVendor: true,
       },
     });
   }
@@ -140,6 +149,7 @@ export class SupplierCogsService {
         productId: data.productId !== undefined ? data.productId : undefined,
         tempProductName: data.tempProductName !== undefined ? data.tempProductName : undefined,
         vendorId: data.vendorId !== undefined ? data.vendorId : undefined,
+        serviceVendorId: data.serviceVendorId !== undefined ? data.serviceVendorId : undefined,
         foreignPrice: data.foreignPrice !== undefined ? data.foreignPrice : undefined,
         currencyCode: data.currencyCode !== undefined ? data.currencyCode : undefined,
         exchangeRate: data.exchangeRate !== undefined ? data.exchangeRate : undefined,
@@ -157,6 +167,7 @@ export class SupplierCogsService {
       include: {
         product: true,
         vendor: true,
+        serviceVendor: true,
       },
     });
   }
