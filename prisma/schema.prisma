@@ -782,7 +782,11 @@ model VendorPriceRecord {
   id             String   @id @default(uuid())
   productId      String?
   tempProductName String?
-  vendorId       String
+  status         String   @default("POTENTIAL")
+  calculationMode String  @default("FIXED")
+  tiers          Json?
+  vendorId        String?
+  serviceVendorId String?
   
   // Supplier Pricing details
   foreignPrice   Decimal  @db.Decimal(10, 2)
@@ -799,6 +803,9 @@ model VendorPriceRecord {
   // Local delivery in Origin & Target
   gzDeliveryCost Decimal  @default(0) @db.Decimal(10, 2)
   localFreight   Decimal  @default(0) @db.Decimal(10, 2)
+  seaFreightRate Decimal  @default(10000000) @db.Decimal(12, 2)
+  airFreightRate Decimal  @default(260000) @db.Decimal(12, 2)
+  moqCtn         Int      @default(1)
   
   // Target selling guides
   margin         Decimal  @default(0) @db.Decimal(10, 2)
@@ -809,8 +816,9 @@ model VendorPriceRecord {
   updatedAt      DateTime @updatedAt
 
   // Relationships
-  product        Product?  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  vendor         Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  product        Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+  vendor         Vendor?  @relation("ProductVendorPrices", fields: [vendorId], references: [id], onDelete: SetNull)
+  serviceVendor  Vendor?  @relation("ServiceVendorPrices", fields: [serviceVendorId], references: [id], onDelete: SetNull)
   currency       Currency @relation(fields: [currencyCode], references: [code])
 
   @@map("vendor_price_records")
@@ -891,7 +899,8 @@ model Vendor {
   productionJobs ProductionTracker[]
   shipments      Shipment[]
   purchaseOrders PurchaseOrder[]
-  vendorPrices   VendorPriceRecord[]
+  vendorPrices        VendorPriceRecord[] @relation("ProductVendorPrices")
+  serviceVendorPrices VendorPriceRecord[] @relation("ServiceVendorPrices")
 
   @@map("vendors")
 }

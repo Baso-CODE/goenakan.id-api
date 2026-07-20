@@ -37,6 +37,12 @@ export class SupplierCogsService {
             companyName: true,
           },
         },
+        serviceVendor: {
+          select: {
+            id: true,
+            companyName: true,
+          },
+        },
       },
       orderBy: {
         createdAt: "desc",
@@ -51,6 +57,7 @@ export class SupplierCogsService {
       include: {
         product: true,
         vendor: true,
+        serviceVendor: true,
       },
     });
 
@@ -73,19 +80,25 @@ export class SupplierCogsService {
       }
     }
 
-    // Verify vendor exists
-    const vendor = await this.prisma.vendor.findUnique({
-      where: { id: data.vendorId },
-    });
-    if (!vendor) {
-      throw new ApiError("Vendor/Supplier tidak ditemukan", 400);
+    // Verify vendor exists if provided
+    if (data.vendorId) {
+      const vendor = await this.prisma.vendor.findUnique({
+        where: { id: data.vendorId },
+      });
+      if (!vendor) {
+        throw new ApiError("Vendor/Supplier tidak ditemukan", 400);
+      }
     }
 
     return this.prisma.vendorPriceRecord.create({
       data: {
         productId: data.productId || null,
         tempProductName: data.tempProductName || null,
-        vendorId: data.vendorId,
+        status: data.status || "POTENTIAL",
+        calculationMode: data.calculationMode || "FIXED",
+        tiers: data.tiers || null,
+        vendorId: data.vendorId || null,
+        serviceVendorId: data.serviceVendorId || null,
         foreignPrice: data.foreignPrice,
         currencyCode: data.currencyCode || "RMB",
         exchangeRate: data.exchangeRate,
@@ -96,6 +109,9 @@ export class SupplierCogsService {
         weight: data.weight ?? null,
         gzDeliveryCost: data.gzDeliveryCost ?? 0,
         localFreight: data.localFreight ?? 0,
+        seaFreightRate: data.seaFreightRate ?? 10000000,
+        airFreightRate: data.airFreightRate ?? 260000,
+        moqCtn: data.moqCtn ?? 1,
         margin: data.margin ?? 0,
         sponsorPercent: data.sponsorPercent ?? 0.02,
         notes: data.notes ?? null,
@@ -103,6 +119,7 @@ export class SupplierCogsService {
       include: {
         product: true,
         vendor: true,
+        serviceVendor: true,
       },
     });
   }
@@ -139,7 +156,11 @@ export class SupplierCogsService {
       data: {
         productId: data.productId !== undefined ? data.productId : undefined,
         tempProductName: data.tempProductName !== undefined ? data.tempProductName : undefined,
+        status: data.status !== undefined ? data.status : undefined,
+        calculationMode: data.calculationMode !== undefined ? data.calculationMode : undefined,
+        tiers: data.tiers !== undefined ? data.tiers : undefined,
         vendorId: data.vendorId !== undefined ? data.vendorId : undefined,
+        serviceVendorId: data.serviceVendorId !== undefined ? data.serviceVendorId : undefined,
         foreignPrice: data.foreignPrice !== undefined ? data.foreignPrice : undefined,
         currencyCode: data.currencyCode !== undefined ? data.currencyCode : undefined,
         exchangeRate: data.exchangeRate !== undefined ? data.exchangeRate : undefined,
@@ -150,6 +171,9 @@ export class SupplierCogsService {
         weight: data.weight !== undefined ? data.weight : undefined,
         gzDeliveryCost: data.gzDeliveryCost !== undefined ? data.gzDeliveryCost : undefined,
         localFreight: data.localFreight !== undefined ? data.localFreight : undefined,
+        seaFreightRate: data.seaFreightRate !== undefined ? data.seaFreightRate : undefined,
+        airFreightRate: data.airFreightRate !== undefined ? data.airFreightRate : undefined,
+        moqCtn: data.moqCtn !== undefined ? data.moqCtn : undefined,
         margin: data.margin !== undefined ? data.margin : undefined,
         sponsorPercent: data.sponsorPercent !== undefined ? data.sponsorPercent : undefined,
         notes: data.notes !== undefined ? data.notes : undefined,
@@ -157,6 +181,7 @@ export class SupplierCogsService {
       include: {
         product: true,
         vendor: true,
+        serviceVendor: true,
       },
     });
   }

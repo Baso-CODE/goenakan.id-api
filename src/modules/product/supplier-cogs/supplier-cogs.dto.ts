@@ -17,9 +17,24 @@ export class CreateVendorPriceRecordDTO {
   @IsString()
   tempProductName?: string;
 
-  @IsNotEmpty({ message: "Vendor ID tidak boleh kosong" })
+  @IsOptional()
   @IsString()
-  vendorId!: string;
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  calculationMode?: string;
+
+  @IsOptional()
+  tiers?: any;
+
+  @IsOptional()
+  @IsString()
+  vendorId?: string;
+
+  @IsOptional()
+  @IsString()
+  serviceVendorId?: string;
 
   @IsNotEmpty({ message: "Harga supplier tidak boleh kosong" })
   @IsNumber()
@@ -73,6 +88,21 @@ export class CreateVendorPriceRecordDTO {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  seaFreightRate?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  airFreightRate?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  moqCtn?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
   margin?: number;
 
   @IsOptional()
@@ -96,7 +126,22 @@ export class UpdateVendorPriceRecordDTO {
 
   @IsOptional()
   @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  calculationMode?: string;
+
+  @IsOptional()
+  tiers?: any;
+
+  @IsOptional()
+  @IsString()
   vendorId?: string;
+
+  @IsOptional()
+  @IsString()
+  serviceVendorId?: string;
 
   @IsOptional()
   @IsNumber()
@@ -146,6 +191,21 @@ export class UpdateVendorPriceRecordDTO {
   @IsNumber()
   @Min(0)
   localFreight?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  seaFreightRate?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  airFreightRate?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  moqCtn?: number;
 
   @IsOptional()
   @IsNumber()
