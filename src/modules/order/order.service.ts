@@ -153,12 +153,18 @@ export class OrderService {
       const subtotal = finalPrice * item.quantity;
       totalAmount += subtotal;
 
+      // --- PERUBAHAN ADA DI BLOK INI ---
       const productData: any = {
         product: { connect: { id: item.productId } },
         quantity: item.quantity,
         unitPrice: finalPrice,
         variant: item.variantId
           ? { connect: { id: item.variantId } }
+          : undefined,
+        // ALASAN: Prisma mendukung penyimpanan objek langsung ke field berjenis Json.
+        // Jika dari frontend ada data selectedAttributes, kita simpan. Jika tidak, abaikan.
+        selectedAttributes: item.selectedAttributes
+          ? item.selectedAttributes
           : undefined,
       };
 

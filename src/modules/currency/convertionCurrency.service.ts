@@ -11,7 +11,8 @@ interface RatesCache {
 
 @injectable()
 export class CurrencyConversionService {
-  private readonly EXCHANGERATE_API = "https://api.exchangerate.host";
+  // Pastikan URL API dasar benar (terkadang versi berbayar/baru menggunakan endpoint yang berbeda, tapi kita ikuti error log kamu)
+  private readonly EXCHANGERATE_API = "https://api.exchangerate.host/";
   private readonly CACHE_DURATION = 30 * 60 * 1000; // 30 menit
   private readonly ratesCache: RatesCache = {};
 
@@ -62,8 +63,6 @@ export class CurrencyConversionService {
       }
 
       // 5. Hitung conversion
-      // Formula: amount * rate_to
-      // (Rate dari API sudah normalized terhadap base currency)
       const rateToTarget = rates[to];
       const convertedAmount = amount * rateToTarget;
 
@@ -78,12 +77,10 @@ export class CurrencyConversionService {
         source: "exchangerate.host",
       };
     } catch (error: any) {
-      // Jika error dari ApiError, throw as-is
       if (error instanceof ApiError) {
         throw error;
       }
 
-      // Jika error lain, wrap as API error
       console.error("Currency conversion error:", error);
       throw new ApiError(
         error.message || "Gagal mengkonversi currency. Silakan coba lagi.",
@@ -98,57 +95,81 @@ export class CurrencyConversionService {
     const now = Date.now();
     const cached = this.ratesCache[baseCurrency];
 
-    // Cek cache apakah masih valid
+    // Cek cache apakah masih valid (kurang dari 30 menit)
     if (cached && now - cached.timestamp < this.CACHE_DURATION) {
       console.log(`[✅ Cache Hit] Using cached rates for ${baseCurrency}`);
       return cached.rates;
     }
 
-    // Cache miss - fetch baru dari API
     console.log(
       `[🔄 Cache Miss] Fetching fresh rates for ${baseCurrency} from exchangerate.host`,
     );
 
     try {
-      const response = await fetch(
-        `${this.EXCHANGERATE_API}/latest?base=${baseCurrency}`,
-      );
+      const apiKey = process.env.EXCHANGE_RATE_API_KEY;
+
+      if (!apiKey) {
+        throw new Error(
+          "API Key tidak ditemukan. Pastikan EXCHANGE_RATE_API_KEY sudah ditambahkan di file .env",
+        );
+      }
+
+      // Menerapkan URL persis seperti di dokumentasi: /live?access_key=YOUR_KEY
+      // Kita tambahkan parameter &source= untuk menentukan mata uang dasar (misal: IDR)
+      const url = `${this.EXCHANGERATE_API}/live?access_key=${apiKey}&source=${baseCurrency}`;
+      const response = await fetch(url);
 
       if (!response.ok) {
         throw new Error(
-          `exchangerate.host API error: ${response.status} ${response.statusText}`,
+          `API error: ${response.status} ${response.statusText} saat mengakses ${url}`,
         );
       }
 
       const data = await response.json();
 
-      // Validasi response dari API
+      // Menangkap pesan error spesifik dari API jika format atau kunci salah
       if (!data.success) {
         throw new Error(
-          data.error?.info || `Invalid base currency: ${baseCurrency}`,
+          data.error?.info ||
+            `Gagal mengambil data dari API: Kode Error ${data.error?.code}`,
         );
       }
 
-      if (!data.rates || typeof data.rates !== "object") {
-        throw new Error("Invalid rates response from exchangerate.host");
+      let formattedRates: Record<string, number> = {};
+
+      // Menyesuaikan format JSON yang dikembalikan oleh API
+      if (data.quotes) {
+        // Format baru: { "USDIDR": 15000, "USDEUR": 0.85 }
+        for (const key in data.quotes) {
+          // Menghapus nama mata uang dasar agar "IDRUSD" hanya menjadi "USD"
+          const targetCurrency = key.replace(baseCurrency, "");
+          formattedRates[targetCurrency] = data.quotes[key];
+        }
+      } else if (data.rates) {
+        // Format lama: { "IDR": 15000, "EUR": 0.85 }
+        formattedRates = data.rates;
+      } else {
+        throw new Error(
+          "Format respons API tidak dikenali (tidak ada objek 'rates' atau 'quotes').",
+        );
       }
 
-      // Simpan ke cache
+      // Simpan ke memori (cache) agar tidak boros kuota API
       this.ratesCache[baseCurrency] = {
-        rates: data.rates,
+        rates: formattedRates,
         timestamp: now,
       };
 
       console.log(
-        `[💾 Cache Set] Rates for ${baseCurrency} cached for 30 minutes`,
+        `[💾 Cache Set] Rates for ${baseCurrency} berhasil disimpan.`,
       );
 
-      return data.rates;
+      return formattedRates;
     } catch (error: any) {
-      console.error("Failed to fetch rates from exchangerate.host:", error);
+      console.error("Failed to fetch rates:", error);
       throw new Error(
         error.message ||
-          "Gagal fetch rates dari exchangerate.host. Silakan coba lagi.",
+          "Gagal mengambil data dari exchangerate.host. Silakan coba lagi.",
       );
     }
   }

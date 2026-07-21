@@ -184,10 +184,16 @@ export class ProductService {
             itemCategoryId: data.itemCategoryId,
             itemNameId: data.itemNameId,
             slug,
-            mockupAreaX: data.mockupAreaX !== undefined ? data.mockupAreaX : null,
-            mockupAreaY: data.mockupAreaY !== undefined ? data.mockupAreaY : null,
-            mockupAreaWidth: data.mockupAreaWidth !== undefined ? data.mockupAreaWidth : null,
-            mockupAreaHeight: data.mockupAreaHeight !== undefined ? data.mockupAreaHeight : null,
+            mockupAreaX:
+              data.mockupAreaX !== undefined ? data.mockupAreaX : null,
+            mockupAreaY:
+              data.mockupAreaY !== undefined ? data.mockupAreaY : null,
+            mockupAreaWidth:
+              data.mockupAreaWidth !== undefined ? data.mockupAreaWidth : null,
+            mockupAreaHeight:
+              data.mockupAreaHeight !== undefined
+                ? data.mockupAreaHeight
+                : null,
             tags:
               tagIds.length > 0
                 ? { connect: tagIds.map((id) => ({ id })) }
@@ -221,11 +227,30 @@ export class ProductService {
 
           for (const attr of attributes) {
             for (const valueId of attr.valueIds) {
-              const modifier = attr.priceModifiers?.[valueId] !== undefined ? Number(attr.priceModifiers[valueId]) : 0;
-              const weightVal = attr.weights?.[valueId] !== undefined && attr.weights[valueId] !== null ? Number(attr.weights[valueId]) : null;
-              const widthVal = attr.widths?.[valueId] !== undefined && attr.widths[valueId] !== null ? Number(attr.widths[valueId]) : null;
-              const heightVal = attr.heights?.[valueId] !== undefined && attr.heights[valueId] !== null ? Number(attr.heights[valueId]) : null;
-              const lengthVal = attr.lengths?.[valueId] !== undefined && attr.lengths[valueId] !== null ? Number(attr.lengths[valueId]) : null;
+              const modifier =
+                attr.priceModifiers?.[valueId] !== undefined
+                  ? Number(attr.priceModifiers[valueId])
+                  : 0;
+              const weightVal =
+                attr.weights?.[valueId] !== undefined &&
+                attr.weights[valueId] !== null
+                  ? Number(attr.weights[valueId])
+                  : null;
+              const widthVal =
+                attr.widths?.[valueId] !== undefined &&
+                attr.widths[valueId] !== null
+                  ? Number(attr.widths[valueId])
+                  : null;
+              const heightVal =
+                attr.heights?.[valueId] !== undefined &&
+                attr.heights[valueId] !== null
+                  ? Number(attr.heights[valueId])
+                  : null;
+              const lengthVal =
+                attr.lengths?.[valueId] !== undefined &&
+                attr.lengths[valueId] !== null
+                  ? Number(attr.lengths[valueId])
+                  : null;
 
               productAttributeValueData.push({
                 productId: product.id,
@@ -255,9 +280,11 @@ export class ProductService {
           });
 
           const variantGeneratingAttributes = attributes.filter(
-            (attr) => attr.isVariantGenerator !== false
+            (attr) => attr.isVariantGenerator !== false,
           );
-          const listOfValueGroups = variantGeneratingAttributes.map((attr) => attr.valueIds);
+          const listOfValueGroups = variantGeneratingAttributes.map(
+            (attr) => attr.valueIds,
+          );
           const combinations = this.cartesianProduct(listOfValueGroups);
 
           const variantCreates = combinations.map((combination, index) => {
@@ -460,14 +487,21 @@ export class ProductService {
     if (data.height !== undefined) updateData.height = data.height;
     if (data.length !== undefined) updateData.length = data.length;
 
-    if (data.mockupAreaX !== undefined) updateData.mockupAreaX = data.mockupAreaX;
-    if (data.mockupAreaY !== undefined) updateData.mockupAreaY = data.mockupAreaY;
-    if (data.mockupAreaWidth !== undefined) updateData.mockupAreaWidth = data.mockupAreaWidth;
-    if (data.mockupAreaHeight !== undefined) updateData.mockupAreaHeight = data.mockupAreaHeight;
+    if (data.mockupAreaX !== undefined)
+      updateData.mockupAreaX = data.mockupAreaX;
+    if (data.mockupAreaY !== undefined)
+      updateData.mockupAreaY = data.mockupAreaY;
+    if (data.mockupAreaWidth !== undefined)
+      updateData.mockupAreaWidth = data.mockupAreaWidth;
+    if (data.mockupAreaHeight !== undefined)
+      updateData.mockupAreaHeight = data.mockupAreaHeight;
 
-    if (data.isMultiFace !== undefined) updateData.isMultiFace = data.isMultiFace;
-    if (data.mockupFrontImageId !== undefined) updateData.mockupFrontImageId = data.mockupFrontImageId;
-    if (data.mockupBackImageId !== undefined) updateData.mockupBackImageId = data.mockupBackImageId;
+    if (data.isMultiFace !== undefined)
+      updateData.isMultiFace = data.isMultiFace;
+    if (data.mockupFrontImageId !== undefined)
+      updateData.mockupFrontImageId = data.mockupFrontImageId;
+    if (data.mockupBackImageId !== undefined)
+      updateData.mockupBackImageId = data.mockupBackImageId;
 
     // Sync Tags
     if (tagIds !== undefined) {
@@ -967,11 +1001,26 @@ export class ProductService {
       });
 
       const insertData = attributeValues.map((av) => {
-        const modifier = priceModifiers[av.id] !== undefined ? Number(priceModifiers[av.id]) : 0;
-        const weightVal = weights[av.id] !== undefined && weights[av.id] !== null ? Number(weights[av.id]) : null;
-        const widthVal = widths[av.id] !== undefined && widths[av.id] !== null ? Number(widths[av.id]) : null;
-        const heightVal = heights[av.id] !== undefined && heights[av.id] !== null ? Number(heights[av.id]) : null;
-        const lengthVal = lengths[av.id] !== undefined && lengths[av.id] !== null ? Number(lengths[av.id]) : null;
+        const modifier =
+          priceModifiers[av.id] !== undefined
+            ? Number(priceModifiers[av.id])
+            : 0;
+        const weightVal =
+          weights[av.id] !== undefined && weights[av.id] !== null
+            ? Number(weights[av.id])
+            : null;
+        const widthVal =
+          widths[av.id] !== undefined && widths[av.id] !== null
+            ? Number(widths[av.id])
+            : null;
+        const heightVal =
+          heights[av.id] !== undefined && heights[av.id] !== null
+            ? Number(heights[av.id])
+            : null;
+        const lengthVal =
+          lengths[av.id] !== undefined && lengths[av.id] !== null
+            ? Number(lengths[av.id])
+            : null;
 
         return {
           productId,
@@ -1334,7 +1383,6 @@ export class ProductService {
     try {
       const where: any = {};
 
-      // Filter by category (optional)
       if (query?.categoryId) {
         where.categoryId = query.categoryId;
       }
@@ -1370,49 +1418,119 @@ export class ProductService {
             },
             orderBy: { minQuantity: "asc" },
           },
-          // --- TAMBAHAN 2: Ambil Product Variants ---
+
+          // --- TAMBAHAN BARU 1: Ambil Opsi Atribut yang tersedia untuk produk ini ---
+          attributeValues: {
+            select: {
+              id: true,
+              priceModifier: true,
+              attributeValue: {
+                select: {
+                  id: true,
+                  value: true,
+                  attribute: {
+                    select: {
+                      id: true,
+                      name: true,
+                      type: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+
+          // --- TAMBAHAN 2: Ambil Product Variants beserta komposisi atributnya ---
           productVariants: {
             select: {
               id: true,
               variantName: true,
               price: true,
               sku: true,
+              stock: true,
+              attributeValues: {
+                select: {
+                  attributeValue: {
+                    select: {
+                      id: true,
+                      value: true,
+                      attribute: {
+                        select: {
+                          id: true,
+                          name: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
             },
-            // Opsional: urutkan varian
             orderBy: { variantName: "asc" },
           },
         },
       });
 
       // === Map Response untuk Frontend ===
-      return products.map((p) => ({
-        id: p.id,
-        name: p.name,
-        sku: p.sku,
-        basePrice: p.basePrice,
-        isCustom: p.isCustom,
-        category: p.category
-          ? { id: p.category.id, name: p.category.name_id }
-          : null,
-        priceTiers: p.priceTiers.map((tier) => ({
-          id: tier.id,
-          minQuantity: tier.minQuantity,
-          price: Number(tier.price),
-        })),
+      return products.map((p) => {
+        const groupedAttributes: Record<string, any> = {};
+        p.attributeValues.forEach((pav) => {
+          const attrName = pav.attributeValue.attribute.name;
+          if (!groupedAttributes[attrName]) {
+            groupedAttributes[attrName] = {
+              attributeId: pav.attributeValue.attribute.id,
+              attributeName: attrName,
+              attributeType: pav.attributeValue.attribute.type,
+              values: [],
+            };
+          }
+          groupedAttributes[attrName].values.push({
+            valueId: pav.attributeValue.id,
+            value: pav.attributeValue.value,
+            priceModifier: pav.priceModifier ? Number(pav.priceModifier) : 0,
+            productAttributeValueId: pav.id,
+          });
+        });
 
-        productVariants: p.productVariants.map((v) => ({
-          id: v.id,
-          variantName: v.variantName || "Unnamed Variant",
-          sku: v.sku,
-          price: v.price ? Number(v.price) : 0,
-        })),
-      }));
+        return {
+          id: p.id,
+          name: p.name,
+          sku: p.sku,
+          basePrice: p.basePrice,
+          isCustom: p.isCustom,
+          category: p.category
+            ? { id: p.category.id, name: p.category.name_id }
+            : null,
+          priceTiers: p.priceTiers.map((tier) => ({
+            id: tier.id,
+            minQuantity: tier.minQuantity,
+            price: Number(tier.price),
+          })),
+
+          availableAttributes: Object.values(groupedAttributes),
+
+          productVariants: p.productVariants.map((v) => ({
+            id: v.id,
+            variantName: v.variantName || "Unnamed Variant",
+            sku: v.sku,
+            price: v.price ? Number(v.price) : 0,
+            stock: v.stock,
+            combinationIds: v.attributeValues.map(
+              (vav) => vav.attributeValue.id,
+            ),
+            attributesDescription: v.attributeValues
+              .map(
+                (vav) =>
+                  `${vav.attributeValue.attribute.name}: ${vav.attributeValue.value}`,
+              )
+              .join(", "),
+          })),
+        };
+      });
     } catch (error) {
       console.error("❌ Error in getAllProductsForOrder:", error);
       throw new Error("Failed to fetch products for order.");
     }
   }
-
   // === EXPORT PRODUCTS TO EXCEL (DENGAN FILTERING) ===
   async exportProductsToExcel(query: ProductExportQuery): Promise<Buffer> {
     const { startDate, endDate, search, categoryId, isCustom } = query;
@@ -1615,11 +1733,21 @@ export class ProductService {
       where: { id: imageId },
       data: {
         altText: data.altText ?? undefined,
-        mockupSideName: data.mockupSideName !== undefined ? data.mockupSideName : undefined,
+        mockupSideName:
+          data.mockupSideName !== undefined ? data.mockupSideName : undefined,
         isFeatured: data.isFeatured ?? undefined,
-        attributeValueId: data.attributeValueId !== undefined ? data.attributeValueId : undefined,
-        printPositionValueId: data.printPositionValueId !== undefined ? data.printPositionValueId : undefined,
-        printSideValueId: data.printSideValueId !== undefined ? data.printSideValueId : undefined,
+        attributeValueId:
+          data.attributeValueId !== undefined
+            ? data.attributeValueId
+            : undefined,
+        printPositionValueId:
+          data.printPositionValueId !== undefined
+            ? data.printPositionValueId
+            : undefined,
+        printSideValueId:
+          data.printSideValueId !== undefined
+            ? data.printSideValueId
+            : undefined,
       },
     });
 
@@ -2345,9 +2473,9 @@ export class ProductService {
 
       if (product.videos && product.videos.length > 0) {
         product.videos.forEach((vid) => {
-          combinedMedia.push({ 
-            id: vid.id, 
-            type: "video", 
+          combinedMedia.push({
+            id: vid.id,
+            type: "video",
             url: vid.url,
             isFeatured: vid.isFeatured || false,
           });
@@ -2396,15 +2524,25 @@ export class ProductService {
             }
             return a.valuePosition - b.valuePosition;
           })
-          .map(({ name, value, attributeValueId, attributePosition, valuePosition, type, parentValueId }) => ({
-            name,
-            value,
-            attributeValueId,
-            attributePosition,
-            valuePosition,
-            type,
-            parentValueId,
-          }));
+          .map(
+            ({
+              name,
+              value,
+              attributeValueId,
+              attributePosition,
+              valuePosition,
+              type,
+              parentValueId,
+            }) => ({
+              name,
+              value,
+              attributeValueId,
+              attributePosition,
+              valuePosition,
+              type,
+              parentValueId,
+            }),
+          );
 
         return {
           id: v.id,
@@ -2705,8 +2843,9 @@ export class ProductService {
 
       // Find the first image with mockup areas (preferring featured image)
       const featuredImg =
-        productImages.find((img) => img.isFeatured && img.mockupAreas.length > 0) ||
-        productImages.find((img) => img.mockupAreas.length > 0);
+        productImages.find(
+          (img) => img.isFeatured && img.mockupAreas.length > 0,
+        ) || productImages.find((img) => img.mockupAreas.length > 0);
 
       const firstArea = featuredImg?.mockupAreas?.[0];
 
@@ -2732,10 +2871,7 @@ export class ProductService {
   private injectLegacyMockupArea(product: any) {
     if (!product) return product;
 
-    if (
-      product.mockupAreaX === null ||
-      product.mockupAreaX === undefined
-    ) {
+    if (product.mockupAreaX === null || product.mockupAreaX === undefined) {
       if (product.images && product.images.length > 0) {
         const featuredImg =
           product.images.find((img: any) => img.isFeatured) ||

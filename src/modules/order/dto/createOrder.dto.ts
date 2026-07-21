@@ -7,6 +7,7 @@ import {
   IsEnum,
   IsNotEmpty,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Validate,
@@ -82,6 +83,11 @@ class OrderProductDTO {
   })
   price?: number;
 
+  @IsOptional()
+  @IsObject({
+    message: "selectedAttributes harus berupa objek JSON yang valid",
+  })
+  selectedAttributes?: Record<string, any>;
   @IsOptional()
   @IsString()
   customization?: string;
