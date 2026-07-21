@@ -611,6 +611,7 @@ export class OrderService {
       include: {
         purchaseChannel: true,
         pic: true,
+        currency: true,
         client: {
           include: {
             b2b: { include: { department: true } },
@@ -801,6 +802,7 @@ export class OrderService {
       salesCategory: order.salesCategory,
       shippingAddress: order.shippingAddress,
       totalAmount: Number(order.totalAmount),
+      currencyCode: order.currency?.code || "IDR",
       createdAt: order.createdAt,
       purchaseChannelName: order.purchaseChannel
         ? order.purchaseChannel.name
