@@ -275,87 +275,82 @@ export class OrderService {
       return order;
     });
 
-    try {
-      const getClientPhone = () => {
-        if (newOrder.client?.b2c?.phone) {
-          return newOrder.client.b2c.phone;
-        }
-        if (newOrder.client?.b2b?.phone) {
-          return newOrder.client.b2b.phone;
-        }
-        return null;
-      };
-
-      const getClientName = () => {
-        if (newOrder.client?.b2c?.name) {
-          return newOrder.client.b2c.name;
-        }
-        if (newOrder.client?.b2b?.companyName) {
-          return newOrder.client.b2b.companyName;
-        }
-        return newOrder.client?.custCode || "Client";
-      };
-
-      // Notify Client
-      const clientPhone = getClientPhone();
-      if (clientPhone) {
-        await this.whatsappNotification.sendNotification(
-          {
-            phoneNumber: clientPhone,
-            clientName: getClientName(),
-            messageType: "order_created",
-            data: {
-              orderId: newOrder.orderNumber,
-              createdAt: newOrder.dateOrder,
-              totalPrice: newOrder.totalAmount,
-              productCount: newOrder.products.length,
-            },
-          },
-          newOrder.id,
-        );
-      }
-
-      // Notify Sales Person (createdBy)
-      if (newOrder.createdBy?.id) {
-        const sales = await this.prisma.user.findUnique({
-          where: { id: newOrder.createdBy.id },
-          select: { phone: true, name: true },
-        });
-
-        if (sales?.phone) {
-          await this.whatsappNotification.notifyPic(
-            sales.phone,
-            sales.name || "Sales",
-            "new_order_assigned",
-            {
-              orderId: newOrder.orderNumber,
-              clientName: getClientName(),
-              productCount: newOrder.products.length,
-            },
-            newOrder.id,
-          );
-        }
-      }
-
-      if (newOrder.pic?.phone) {
-        await this.whatsappNotification.sendNotification(
-          {
-            phoneNumber: newOrder.pic.phone,
-            clientName: newOrder.pic.name,
-            messageType: "order_created",
-            data: {
-              orderId: newOrder.orderNumber,
-              createdAt: newOrder.dateOrder,
-              totalPrice: newOrder.totalAmount,
-              productCount: newOrder.products.length,
-            },
-          },
-          newOrder.id,
-        );
-      }
-    } catch (error) {
-      console.error("❌ Error sending WhatsApp notifications:", error);
-    }
+    // try {
+    //   // const getClientPhone = () => {
+    //   //   if (newOrder.client?.b2c?.phone) {
+    //   //     return newOrder.client.b2c.phone;
+    //   //   }
+    //   //   if (newOrder.client?.b2b?.phone) {
+    //   //     return newOrder.client.b2b.phone;
+    //   //   }
+    //   //   return null;
+    //   // };
+    //   // const getClientName = () => {
+    //   //   if (newOrder.client?.b2c?.name) {
+    //   //     return newOrder.client.b2c.name;
+    //   //   }
+    //   //   if (newOrder.client?.b2b?.companyName) {
+    //   //     return newOrder.client.b2b.companyName;
+    //   //   }
+    //   //   return newOrder.client?.custCode || "Client";
+    //   // };
+    //   // Notify Client
+    //   // const clientPhone = getClientPhone();
+    //   // if (clientPhone) {
+    //   //   await this.whatsappNotification.sendNotification(
+    //   //     {
+    //   //       phoneNumber: clientPhone,
+    //   //       clientName: getClientName(),
+    //   //       messageType: "order_created",
+    //   //       data: {
+    //   //         orderId: newOrder.orderNumber,
+    //   //         createdAt: newOrder.dateOrder,
+    //   //         totalPrice: newOrder.totalAmount,
+    //   //         productCount: newOrder.products.length,
+    //   //       },
+    //   //     },
+    //   //     newOrder.id,
+    //   //   );
+    //   // }
+    //   // Notify Sales Person (createdBy)
+    //   // if (newOrder.createdBy?.id) {
+    //   //   const sales = await this.prisma.user.findUnique({
+    //   //     where: { id: newOrder.createdBy.id },
+    //   //     select: { phone: true, name: true },
+    //   //   });
+    //   //   if (sales?.phone) {
+    //   //     await this.whatsappNotification.notifyPic(
+    //   //       sales.phone,
+    //   //       sales.name || "Sales",
+    //   //       "new_order_assigned",
+    //   //       {
+    //   //         orderId: newOrder.orderNumber,
+    //   //         clientName: getClientName(),
+    //   //         productCount: newOrder.products.length,
+    //   //       },
+    //   //       newOrder.id,
+    //   //     );
+    //   //   }
+    //   // }
+    //   // if (newOrder.pic?.phone) {
+    //   //   await this.whatsappNotification.sendNotification(
+    //   //     {
+    //   //       phoneNumber: newOrder.pic.phone,
+    //   //       clientName: newOrder.pic.name,
+    //   //       messageType: "order_created",
+    //   //       data: {
+    //   //         orderId: newOrder.orderNumber,
+    //   //         createdAt: newOrder.dateOrder,
+    //   //         totalPrice: newOrder.totalAmount,
+    //   //         productCount: newOrder.products.length,
+    //   //       },
+    //   //     },
+    //   //     newOrder.id,
+    //   //   );
+    //   // }
+    // } catch (error) {
+    //   console.error("❌ Error sending WhatsApp notifications:", error);
+    // }
 
     return newOrder;
   }
