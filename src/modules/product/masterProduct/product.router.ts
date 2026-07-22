@@ -95,7 +95,6 @@ export class ProductRouter {
       productUploadFields,
       parseFormData,
       transformVariantFiles,
-      // validateBody(CreateProductDTO), // Anda dapat mengaktifkan ini setelah validasi data berhasil
       this.productController.createProduct,
     );
 

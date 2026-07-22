@@ -54,7 +54,8 @@ export class VendorController {
   // === GET ALL VENDORS ===
   getAllVendors = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { page, take, search, isActive, startDate, endDate } = req.query;
+      const { page, take, search, isActive, startDate, endDate, type } =
+        req.query;
 
       const vendors = await this.vendorService.getAllVendors({
         page: Number(page),
@@ -63,6 +64,7 @@ export class VendorController {
         isActive: isActive as string,
         startDate: startDate as string,
         endDate: endDate as string,
+        type: type as string,
       });
 
       res.status(200).json(vendors);

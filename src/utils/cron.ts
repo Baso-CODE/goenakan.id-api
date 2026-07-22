@@ -8,8 +8,6 @@ export function initializeCronJobs() {
 
   const orderService = container.resolve(OrderService);
 
-  // Jadwal: Berjalan setiap jam 00:01 malam setiap hari
-  // Format: Menit Jam Tanggal Bulan Hari-dalam-minggu
   cron.schedule("1 0 * * *", async () => {
     console.log(
       "🕒 [CRON EXECUTING] Menjalankan pengecekan garansi expired...",

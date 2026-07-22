@@ -5,7 +5,11 @@ import { NextAuthMiddleware } from "../../middleware/nextAuth.middleware";
 import { verifyRole } from "../../middleware/role.middleware";
 import { validateBody } from "../../middleware/validation.middleware";
 import { CurrencyController } from "./currency.controller";
-import { CreateCurrencyDTO, UpdateCurrencyDTO } from "./dto/currency.dto";
+import {
+  ConvertCurrencyDTO,
+  CreateCurrencyDTO,
+  UpdateCurrencyDTO,
+} from "./dto/currency.dto";
 
 @autoInjectable()
 export class CurrencyRouter {
@@ -33,6 +37,13 @@ export class CurrencyRouter {
       "/:code",
       this.nextAuthMiddleware.verifyNextAuthToken,
       this.currencyController.getOne,
+    );
+
+    this.router.post(
+      "/convert/rate",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      validateBody(ConvertCurrencyDTO),
+      this.currencyController.convert,
     );
 
     // ==========================================

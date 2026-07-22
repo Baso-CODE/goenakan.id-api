@@ -137,6 +137,7 @@ export class ProductCategoryService {
       throw new ApiError("Failed to create product category in database", 500);
     }
   }
+
   // === GET CATEGORY BY ID ===
   async getCategoryById(id: string) {
     const category = await this.prisma.productCategory.findUnique({
@@ -237,6 +238,7 @@ export class ProductCategoryService {
     return deleted;
   }
 
+  // === GET ALL CATEGORIES LIST WITH ITEMS ===
   async getAllCategoriesList() {
     try {
       const categories = await this.prisma.productCategory.findMany({
@@ -252,6 +254,12 @@ export class ProductCategoryService {
             select: {
               id: true,
               name: true,
+              itemNames: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
             },
             orderBy: {
               name: "asc",

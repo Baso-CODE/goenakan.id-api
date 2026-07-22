@@ -1,46 +1,50 @@
+import { Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 
 export const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 menit
-  max: 100, // 100 requests per 15 min
+  max: 1000, // ⬆️ Dinaikkan dari 100 menjadi 1000 request per 15 menit
   message: "Terlalu banyak request, coba lagi nanti",
-  standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
-  legacyHeaders: false, // Disable `X-RateLimit-*` headers
-  skip: (req) => {
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req: Request) => {
     return req.ip === "127.0.0.1" || req.ip === "::1";
   },
 });
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 menit
-  max: 5, // Hanya 5 kali login per 15 min
+  max: 20, // ⬆️ Dinaikkan dari 5 menjadi 20 (Memberi ruang jika user salah ketik password beberapa kali)
   message: "Terlalu banyak percobaan login, coba lagi dalam 15 menit",
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    // Rate limit berdasarkan IP + email untuk tracking lebih akurat
-    return `${req.ip}-${req.body?.email || "unknown"}`;
+
+  keyGenerator: (req: Request, res: Response): string => {
+    const ip = req.ip || "unknown";
+    const email = (req.body as any)?.email || "unknown";
+    return `${ip}-${email}`;
   },
-  skip: (req) => {
-    // Skip untuk localhost dev
-    return req.ip === "127.0.0.1" || req.ip === "::1";
+
+  skip: (req: Request) => {
+    const ip = req.ip;
+    return ip === "127.0.0.1" || ip === "::1" || !ip;
   },
 });
 
 export const strictLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
+  windowMs: 15 * 60 * 1000, // 15 menit
+  max: 100, // ⬆️ Dinaikkan dari 20 menjadi 100 request
   message: "Terlalu banyak request sensitif, coba lagi nanti",
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.ip === "127.0.0.1" || req.ip === "::1",
+  skip: (req: Request) => req.ip === "127.0.0.1" || req.ip === "::1",
 });
 
 export const publicLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 500,
+  windowMs: 15 * 60 * 1000, // 15 menit
+  max: 3000, // ⬆️ Dinaikkan dari 500 menjadi 3000 request (Sangat longgar untuk API publik)
   message: "Terlalu banyak request, coba lagi nanti",
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.ip === "127.0.0.1" || req.ip === "::1",
+  skip: (req: Request) => req.ip === "127.0.0.1" || req.ip === "::1",
 });
