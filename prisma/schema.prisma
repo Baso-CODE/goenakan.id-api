@@ -47,13 +47,6 @@ enum WebOrderStatus {
   CANCELLED
 }
 
-// enum Role {
-//   SUPER_ADMIN
-//   ADMIN_ARTICLE
-//   ADMIN_INVOICE
-//   CUSTOMER
-// }
-
 enum AccountType {
   INDIVIDUAL
   CORPORATE
@@ -385,6 +378,7 @@ model ProductCategory {
   updatedAt      DateTime       @updatedAt
   products       Product[]
   itemCategories ItemCategory[]
+  vendors        Vendor[]
 
   @@map("product_categories")
 }
@@ -892,18 +886,21 @@ model Vendor {
   subDistrict         String?
   postalCode          String?
   address             String?
+  type                VendorType?
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
   isActive            Boolean             @default(true)
   trackingUrl         String?             @db.Text
-  // === RELATIONS ===
   vendorItems         VendorVendorItem[]
   cashflowCost        CashflowCost[]
-  // orderVendors   OrderVendor[]
   contacts            VendorContact[]
   productionJobs      ProductionTracker[]
   shipments           Shipment[]
   purchaseOrders      PurchaseOrder[]
+  serviceCategoryId   String?
+  serviceCategory     VendorCategory?     @relation(fields: [serviceCategoryId], references: [id])
+  productCategoryId   String?
+  productCategory     ProductCategory?    @relation(fields: [productCategoryId], references: [id])
   vendorPrices        VendorPriceRecord[] @relation("ProductVendorPrices")
   serviceVendorPrices VendorPriceRecord[] @relation("ServiceVendorPrices")
 
@@ -920,6 +917,7 @@ model VendorCategory {
   updatedAt   DateTime     @updatedAt
   isActive    Boolean      @default(true)
   items       VendorItem[]
+  vendors     Vendor[]
 
   @@map("vendor_categories")
 }
