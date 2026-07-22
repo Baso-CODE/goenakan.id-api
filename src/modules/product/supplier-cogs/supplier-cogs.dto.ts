@@ -132,6 +132,49 @@ export class CreateVendorPriceRecordDTO {
 
   @IsOptional()
   @IsString()
+  importType?: string;
+
+  @IsOptional()
+  @IsString()
+  hsCode?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  beaMasukPercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  ppnPercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  pphPercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  formECost?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  insurancePercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  handlingCost?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  otherCost?: number;
+
+  @IsOptional()
+  @IsString()
   notes?: string;
 }
 
@@ -256,6 +299,49 @@ export class UpdateVendorPriceRecordDTO {
   @IsNumber()
   @Min(0)
   sponsorPercent?: number;
+
+  @IsOptional()
+  @IsString()
+  importType?: string;
+
+  @IsOptional()
+  @IsString()
+  hsCode?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  beaMasukPercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  ppnPercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  pphPercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  formECost?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  insurancePercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  handlingCost?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  otherCost?: number;
 
   @IsOptional()
   @IsString()
