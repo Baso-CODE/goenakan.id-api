@@ -791,6 +791,9 @@ model VendorPriceRecord {
   supplierPlatform    String?
   supplierContactName String?
   supplierContactLink String?
+  imageUrl            String?
+  imagePublicId       String?
+  
   
   // Supplier Pricing details
   foreignPrice   Decimal  @db.Decimal(10, 2)

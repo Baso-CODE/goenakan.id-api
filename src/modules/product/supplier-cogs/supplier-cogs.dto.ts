@@ -48,6 +48,14 @@ export class CreateVendorPriceRecordDTO {
   @IsString()
   supplierContactLink?: string;
 
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  imagePublicId?: string;
+
   @IsNotEmpty({ message: "Harga supplier tidak boleh kosong" })
   @IsNumber()
   @Min(0)
@@ -166,6 +174,14 @@ export class UpdateVendorPriceRecordDTO {
   @IsOptional()
   @IsString()
   supplierContactLink?: string;
+
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  imagePublicId?: string;
 
   @IsOptional()
   @IsNumber()
