@@ -786,6 +786,19 @@ model VendorPriceRecord {
   supplierPlatform    String?
   supplierContactName String?
   supplierContactLink String?
+  imageUrl            String?
+  imagePublicId       String?
+
+  // Import Mode
+  importType          String   @default("BORONGAN") // "BORONGAN" | "RESMI"
+  hsCode              String?
+  beaMasukPercent     Decimal  @default(0.00) @db.Decimal(5, 2)
+  ppnPercent          Decimal  @default(11.00) @db.Decimal(5, 2)
+  pphPercent          Decimal  @default(2.50) @db.Decimal(5, 2)
+  formECost           Decimal  @default(0.00) @db.Decimal(10, 2)
+  insurancePercent    Decimal  @default(0.00) @db.Decimal(5, 2)
+  handlingCost        Decimal  @default(0.00) @db.Decimal(10, 2)
+  otherCost           Decimal  @default(0.00) @db.Decimal(10, 2)
 
   // Supplier Pricing details
   foreignPrice Decimal @db.Decimal(10, 2)
