@@ -47,6 +47,13 @@ enum WebOrderStatus {
   CANCELLED
 }
 
+// enum Role {
+//   SUPER_ADMIN
+//   ADMIN_ARTICLE
+//   ADMIN_INVOICE
+//   CUSTOMER
+// }
+
 enum AccountType {
   INDIVIDUAL
   CORPORATE
@@ -185,7 +192,6 @@ model User {
   emailVerified       DateTime?
   password            String?
   image               String?
-  phone               String?
   roleId              String
   createdAt           DateTime             @default(now())
   articles            Article[]
@@ -378,7 +384,6 @@ model ProductCategory {
   updatedAt      DateTime       @updatedAt
   products       Product[]
   itemCategories ItemCategory[]
-  vendors        Vendor[]
 
   @@map("product_categories")
 }
@@ -461,7 +466,7 @@ model Product {
   mockupAreaWidth  Float?
   mockupAreaHeight Float?
 
-  isMultiFace        Boolean             @default(false)
+  isMultiFace        Boolean @default(false)
   mockupFrontImageId String?
   mockupBackImageId  String?
   vendorPrices       VendorPriceRecord[]
@@ -536,7 +541,7 @@ model AttributeValue {
   productVariantAttributeValues ProductVariantAttributeValue[]
   productImages                 ProductImage[]
   productImagesAsPosition       ProductImage[]                 @relation("PrintPositionValue")
-  productImagesAsPrintSide      ProductImage[]                 @relation("PrintSideValue")
+  productImagesAsPrintSide       ProductImage[]                 @relation("PrintSideValue")
 
   @@map("attribute_values")
 }
@@ -767,58 +772,72 @@ model TagCategory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tags Tag[] @relation("TagCategoryToTag")
+  tags      Tag[]    @relation("TagCategoryToTag")
 
   @@map("tag_categories")
 }
 
 model VendorPriceRecord {
-  id              String  @id @default(uuid())
-  productId       String?
+  id             String   @id @default(uuid())
+  productId      String?
   tempProductName String?
-  status          String  @default("POTENTIAL")
+  status         String   @default("POTENTIAL")
   calculationMode String  @default("FIXED")
-  tiers           Json?
+  tiers          Json?
   vendorId        String?
   serviceVendorId String?
-
+  
   // Potential Supplier Sourcing Details
   supplierPlatform    String?
   supplierContactName String?
   supplierContactLink String?
+  imageUrl            String?
+  imagePublicId       String?
 
+  // Import Mode
+  importType       String   @default("BORONGAN") // "BORONGAN" | "RESMI"
+  hsCode           String?
+  beaMasukPercent  Decimal  @default(0.00) @db.Decimal(5, 2)
+  ppnPercent       Decimal  @default(11.00) @db.Decimal(5, 2)
+  pphPercent       Decimal  @default(2.50) @db.Decimal(5, 2)
+  formECost        Decimal  @default(0.00) @db.Decimal(10, 2)
+  insurancePercent Decimal  @default(0.00) @db.Decimal(5, 2)
+  handlingCost     Decimal  @default(0.00) @db.Decimal(10, 2)
+  otherCost        Decimal  @default(0.00) @db.Decimal(10, 2)
+  
+  
   // Supplier Pricing details
-  foreignPrice Decimal @db.Decimal(10, 2)
-  currencyCode String  @default("RMB")
-  exchangeRate Decimal @db.Decimal(10, 2)
-
+  foreignPrice   Decimal  @db.Decimal(10, 2)
+  currencyCode   String   @default("RMB")
+  exchangeRate   Decimal  @db.Decimal(10, 2)
+  
   // Packaging details (Overridable from Product default)
-  qtyPerCtn Int?     @default(1)
-  length    Decimal? @db.Decimal(10, 2)
-  width     Decimal? @db.Decimal(10, 2)
-  height    Decimal? @db.Decimal(10, 2)
-  weight    Decimal? @db.Decimal(10, 2)
-
+  qtyPerCtn      Int?     @default(1)
+  length         Decimal? @db.Decimal(10, 2)
+  width          Decimal? @db.Decimal(10, 2)
+  height         Decimal? @db.Decimal(10, 2)
+  weight         Decimal? @db.Decimal(10, 2)
+  
   // Local delivery in Origin & Target
-  gzDeliveryCost Decimal @default(0) @db.Decimal(10, 2)
-  localFreight   Decimal @default(0) @db.Decimal(10, 2)
-  seaFreightRate Decimal @default(10000000) @db.Decimal(12, 2)
-  airFreightRate Decimal @default(260000) @db.Decimal(12, 2)
-  moqCtn         Int     @default(1)
-
+  gzDeliveryCost Decimal  @default(0) @db.Decimal(10, 2)
+  localFreight   Decimal  @default(0) @db.Decimal(10, 2)
+  seaFreightRate Decimal  @default(10000000) @db.Decimal(12, 2)
+  airFreightRate Decimal  @default(260000) @db.Decimal(12, 2)
+  moqCtn         Int      @default(1)
+  
   // Target selling guides
-  margin         Decimal @default(0) @db.Decimal(10, 2)
-  sponsorPercent Decimal @default(0.02) @db.Decimal(5, 4)
-
-  notes     String?  @db.Text
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  margin         Decimal  @default(0) @db.Decimal(10, 2)
+  sponsorPercent Decimal  @default(0.02) @db.Decimal(5, 4)
+  
+  notes          String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   // Relationships
-  product       Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
-  vendor        Vendor?  @relation("ProductVendorPrices", fields: [vendorId], references: [id], onDelete: SetNull)
-  serviceVendor Vendor?  @relation("ServiceVendorPrices", fields: [serviceVendorId], references: [id], onDelete: SetNull)
-  currency      Currency @relation(fields: [currencyCode], references: [code])
+  product        Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+  vendor         Vendor?  @relation("ProductVendorPrices", fields: [vendorId], references: [id], onDelete: SetNull)
+  serviceVendor  Vendor?  @relation("ServiceVendorPrices", fields: [serviceVendorId], references: [id], onDelete: SetNull)
+  currency       Currency @relation(fields: [currencyCode], references: [code])
 
   @@map("vendor_price_records")
 }
@@ -875,32 +894,29 @@ model InvoiceNote {
 // ===============================================
 
 model Vendor {
-  id                  String              @id @default(uuid())
-  companyName         String
-  slug                String              @unique
-  picName             String
-  country             String?
-  province            String?
-  city                String?
-  district            String?
-  subDistrict         String?
-  postalCode          String?
-  address             String?
-  type                VendorType?
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
-  isActive            Boolean             @default(true)
-  trackingUrl         String?             @db.Text
-  vendorItems         VendorVendorItem[]
-  cashflowCost        CashflowCost[]
-  contacts            VendorContact[]
-  productionJobs      ProductionTracker[]
-  shipments           Shipment[]
-  purchaseOrders      PurchaseOrder[]
-  serviceCategoryId   String?
-  serviceCategory     VendorCategory?     @relation(fields: [serviceCategoryId], references: [id])
-  productCategoryId   String?
-  productCategory     ProductCategory?    @relation(fields: [productCategoryId], references: [id])
+  id             String              @id @default(uuid())
+  companyName    String
+  slug           String              @unique
+  picName        String
+  country        String?
+  province       String?
+  city           String?
+  district       String?
+  subDistrict    String?
+  postalCode     String?
+  address        String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  isActive       Boolean             @default(true)
+  trackingUrl    String?             @db.Text
+  // === RELATIONS ===
+  vendorItems    VendorVendorItem[]
+  cashflowCost   CashflowCost[]
+  // orderVendors   OrderVendor[]
+  contacts       VendorContact[]
+  productionJobs ProductionTracker[]
+  shipments      Shipment[]
+  purchaseOrders PurchaseOrder[]
   vendorPrices        VendorPriceRecord[] @relation("ProductVendorPrices")
   serviceVendorPrices VendorPriceRecord[] @relation("ServiceVendorPrices")
 
@@ -917,7 +933,6 @@ model VendorCategory {
   updatedAt   DateTime     @updatedAt
   isActive    Boolean      @default(true)
   items       VendorItem[]
-  vendors     Vendor[]
 
   @@map("vendor_categories")
 }
@@ -1064,7 +1079,6 @@ model Order {
   userId               String?
   sales                Sales?                @relation(fields: [salesId], references: [id])
   salesId              String?
-  whatsappMessages     WhatsappMessage[]
 
   @@map("orders")
 }
@@ -1093,7 +1107,6 @@ model OrderProduct {
   productId          String
   quantity           Int
   unitPrice          Decimal
-  selectedAttributes Json?
   customization      Json?
   remarks            String?
   order              Order               @relation(fields: [orderId], references: [id])
@@ -1105,6 +1118,19 @@ model OrderProduct {
 
   @@map("order_products")
 }
+
+// model OrderVendor {
+//   id             String @id @default(uuid())
+//   orderId        String
+//   vendorId       String
+//   vendorPicName  String
+//   vendorPicPhone String
+//   roleInOrder    String
+//   order          Order  @relation(fields: [orderId], references: [id])
+//   vendor         Vendor @relation(fields: [vendorId], references: [id])
+
+//   @@map("order_vendors")
+// }
 
 model OrderSampleFollowUp {
   id         String   @id @default(uuid())
@@ -1374,9 +1400,8 @@ model Quotation {
   approvedBy   User?     @relation("QuotationApprovedBy", fields: [approvedById], references: [id])
   approvedAt   DateTime?
 
-  items            QuotationItem[]
-  followUps        QuotationFollowUp[]
-  whatsappMessages WhatsappMessage[]
+  items     QuotationItem[]
+  followUps QuotationFollowUp[]
 
   @@map("quotations")
 }
@@ -1556,7 +1581,7 @@ model CashflowCost {
 // ===============================================
 
 model Currency {
-  code              String              @id
+  code              String            @id
   symbol            String
   name              String
   cashflowSummaries CashflowSummary[]
@@ -2139,26 +2164,4 @@ model HeroBannerProduct {
 
 
   @@map("hero_banners")
-}
-
-model WhatsappMessage {
-  id          String    @id @default(cuid())
-  phoneNumber String
-  message     String    @db.LongText
-  type        String // "order_created", "quotation_sent", "payment_reminder"
-  orderId     String?
-  quotationId String?
-  status      String    @default("pending") // "pending", "sent", "failed"
-  sentAt      DateTime?
-  error       String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  order     Order?     @relation(fields: [orderId], references: [id])
-  quotation Quotation? @relation(fields: [quotationId], references: [id])
-
-  @@index([phoneNumber])
-  @@index([status])
-  @@index([type])
-  @@map("whatsapp_messages")
 }
