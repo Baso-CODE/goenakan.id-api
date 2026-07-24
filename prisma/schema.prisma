@@ -384,17 +384,18 @@ model ProductCategory {
 }
 
 model ItemCategory {
-  id                String          @id @default(uuid())
+  id                String               @id @default(uuid())
   name              String
-  slug              String          @unique
-  code              String          @unique
-  description       String?         @db.Text
+  slug              String               @unique
+  code              String               @unique
+  description       String?              @db.Text
   productCategoryId String
-  productCategory   ProductCategory @relation(fields: [productCategoryId], references: [id])
+  productCategory   ProductCategory      @relation(fields: [productCategoryId], references: [id])
   itemNames         ItemName[]
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
   products          Product[]
+  vendors           VendorItemCategory[]
 
   @@map("item_categories")
 }
@@ -875,34 +876,35 @@ model InvoiceNote {
 // ===============================================
 
 model Vendor {
-  id                  String              @id @default(uuid())
-  companyName         String
-  slug                String              @unique
-  picName             String
-  country             String?
-  province            String?
-  city                String?
-  district            String?
-  subDistrict         String?
-  postalCode          String?
-  address             String?
-  type                VendorType?
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
-  isActive            Boolean             @default(true)
-  trackingUrl         String?             @db.Text
-  vendorItems         VendorVendorItem[]
-  cashflowCost        CashflowCost[]
-  contacts            VendorContact[]
-  productionJobs      ProductionTracker[]
-  shipments           Shipment[]
-  purchaseOrders      PurchaseOrder[]
-  serviceCategoryId   String?
-  serviceCategory     VendorCategory?     @relation(fields: [serviceCategoryId], references: [id])
-  productCategoryId   String?
-  productCategory     ProductCategory?    @relation(fields: [productCategoryId], references: [id])
-  vendorPrices        VendorPriceRecord[] @relation("ProductVendorPrices")
-  serviceVendorPrices VendorPriceRecord[] @relation("ServiceVendorPrices")
+  id                    String               @id @default(uuid())
+  companyName           String
+  slug                  String               @unique
+  picName               String
+  country               String?
+  province              String?
+  city                  String?
+  district              String?
+  subDistrict           String?
+  postalCode            String?
+  address               String?
+  type                  VendorType?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  isActive              Boolean              @default(true)
+  trackingUrl           String?              @db.Text
+  vendorItems           VendorVendorItem[]
+  productItemCategories VendorItemCategory[]
+  cashflowCost          CashflowCost[]
+  contacts              VendorContact[]
+  productionJobs        ProductionTracker[]
+  shipments             Shipment[]
+  purchaseOrders        PurchaseOrder[]
+  serviceCategoryId     String?
+  serviceCategory       VendorCategory?      @relation(fields: [serviceCategoryId], references: [id])
+  productCategoryId     String?
+  productCategory       ProductCategory?     @relation(fields: [productCategoryId], references: [id])
+  vendorPrices          VendorPriceRecord[]  @relation("ProductVendorPrices")
+  serviceVendorPrices   VendorPriceRecord[]  @relation("ServiceVendorPrices")
 
   @@map("vendors")
 }
@@ -945,6 +947,16 @@ model VendorVendorItem {
 
   @@id([vendorId, itemId])
   @@map("vendor_vendor_items")
+}
+
+model VendorItemCategory {
+  vendorId       String
+  itemCategoryId String
+  vendor         Vendor       @relation(fields: [vendorId], references: [id])
+  itemCategory   ItemCategory @relation(fields: [itemCategoryId], references: [id])
+
+  @@id([vendorId, itemCategoryId])
+  @@map("vendor_item_categories")
 }
 
 // ===============================================

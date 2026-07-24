@@ -11,7 +11,6 @@ interface RatesCache {
 
 @injectable()
 export class CurrencyConversionService {
-  // Pastikan URL API dasar benar (terkadang versi berbayar/baru menggunakan endpoint yang berbeda, tapi kita ikuti error log kamu)
   private readonly EXCHANGERATE_API = "https://api.exchangerate.host/";
   private readonly CACHE_DURATION = 30 * 60 * 1000; // 30 menit
   private readonly ratesCache: RatesCache = {};

@@ -301,74 +301,92 @@ export class VendorService {
 
   // === GET BY ID ===
   async getVendorById(id: string) {
-    const vendor = await this.prisma.vendor.findUnique({
-      where: { id },
-      include: {
-        vendorItems: {
-          include: {
-            item: {
-              include: {
-                category: true,
-              },
+    try {
+      const vendor = await this.prisma.vendor.findUnique({
+        where: { id },
+        include: {
+          serviceCategory: true,
+          productCategory: true,
+          vendorItems: {
+            include: {
+              item: true,
+            },
+          },
+          productItemCategories: {
+            include: {
+              itemCategory: true,
+            },
+          },
+          contacts: {
+            include: {
+              platform: true,
             },
           },
         },
-        contacts: {
-          include: {
-            platform: true,
+      });
+
+      if (!vendor) throw new ApiError("Vendor not found", 404);
+
+      let resolvedCategoryId = "";
+      if (vendor.type === "SERVICE" && vendor.serviceCategoryId) {
+        resolvedCategoryId = vendor.serviceCategoryId;
+      } else if (vendor.type === "PRODUCT" && vendor.productCategoryId) {
+        resolvedCategoryId = vendor.productCategoryId;
+      }
+
+      let formattedItems: { id: string; name: string }[] = [];
+      if (vendor.type === "SERVICE") {
+        formattedItems = vendor.vendorItems.map((vi) => ({
+          id: vi.item.id,
+          name: vi.item.name,
+        }));
+      } else if (vendor.type === "PRODUCT") {
+        formattedItems = vendor.productItemCategories.map((pic) => ({
+          id: pic.itemCategory.id,
+          name: pic.itemCategory.name,
+        }));
+      }
+
+      return {
+        id: vendor.id,
+        companyName: vendor.companyName,
+        picName: vendor.picName,
+        country: vendor.country,
+        province: vendor.province,
+        city: vendor.city,
+        district: vendor.district,
+        subDistrict: vendor.subDistrict,
+        postalCode: vendor.postalCode,
+        address: vendor.address,
+        isActive: vendor.isActive,
+        trackingUrl: vendor.trackingUrl,
+
+        // Data Tipe dan Kategori Utama
+        type: vendor.type,
+        categoryId: resolvedCategoryId,
+
+        // Data Items yang sudah diseragamkan
+        items: formattedItems,
+
+        // Data Contacts
+        contacts: vendor.contacts.map((c) => ({
+          id: c.id,
+          contactId: c.contactId,
+          isPrimary: c.isPrimary,
+          platform: {
+            id: c.platform.id,
+            name: c.platform.name,
+            slug: c.platform.slug,
+            icon: c.platform.icon,
           },
-        },
-      },
-    });
-
-    if (!vendor) throw new ApiError("Vendor not found", 404);
-
-    return {
-      // 1. Data Utama
-      id: vendor.id,
-      companyName: vendor.companyName,
-      picName: vendor.picName,
-      isActive: vendor.isActive,
-      trackingUrl: vendor.trackingUrl, // ✅ Tambahkan ini
-
-      // 2. Data Alamat Lengkap
-      country: vendor.country,
-      province: vendor.province,
-      city: vendor.city,
-      district: vendor.district,
-      subDistrict: vendor.subDistrict,
-      postalCode: vendor.postalCode,
-      address: vendor.address,
-
-      // 3. Items (Flattened)
-      // Kita ubah nama jadi 'items' agar frontend lebih mudah
-      items: vendor.vendorItems.map((vi) => ({
-        id: vi.item.id,
-        name: vi.item.name,
-        description: vi.item.description,
-        category: vi.item.category
-          ? {
-              id: vi.item.category.id,
-              name: vi.item.category.name,
-              type: vi.item.category.type,
-            }
-          : null,
-      })),
-
-      // 4. Contacts
-      contacts: vendor.contacts.map((c) => ({
-        id: c.id, // ID tabel pivot
-        contactId: c.contactId, // ID kontak/username
-        platform: {
-          id: c.platform.id,
-          name: c.platform.name,
-          slug: c.platform.slug,
-          icon: c.platform.icon,
-        },
-      })),
-    };
+        })),
+      };
+    } catch (error) {
+      console.error("❌ Error in getVendorById:", error);
+      if (error instanceof ApiError) throw error;
+      throw new ApiError("Failed to fetch vendor detail", 500);
+    }
   }
-
   // === GET BY ID (Complete Vendor Detail) ===
   async getVendorByIdDetail(id: string) {
     try {
@@ -472,30 +490,42 @@ export class VendorService {
       const targetType = type ?? existing.type;
       const targetCategoryId = categoryId;
 
+      // 1. VALIDASI KATEGORI
       if (targetCategoryId) {
         if (targetType === "SERVICE") {
           const categoryExists = await this.prisma.vendorCategory.findUnique({
             where: { id: targetCategoryId },
           });
-          if (!categoryExists) {
+          if (!categoryExists)
             throw new ApiError("Selected service category not found", 400);
-          }
         } else if (targetType === "PRODUCT") {
           const categoryExists = await this.prisma.productCategory.findUnique({
             where: { id: targetCategoryId },
           });
-          if (!categoryExists) {
+          if (!categoryExists)
             throw new ApiError("Selected product category not found", 400);
-          }
         }
       }
 
+      // 2. VALIDASI ITEMS BERDASARKAN TIPE VENDOR
       if (itemIds?.length) {
-        const items = await this.prisma.vendorItem.findMany({
-          where: { id: { in: itemIds } },
-        });
-        if (items.length !== itemIds.length) {
-          throw new ApiError("One or more vendor items not found", 400);
+        if (targetType === "SERVICE") {
+          const items = await this.prisma.vendorItem.findMany({
+            where: { id: { in: itemIds } },
+          });
+          if (items.length !== itemIds.length) {
+            throw new ApiError("One or more service items not found", 400);
+          }
+        } else if (targetType === "PRODUCT") {
+          const items = await this.prisma.itemCategory.findMany({
+            where: { id: { in: itemIds } },
+          });
+          if (items.length !== itemIds.length) {
+            throw new ApiError(
+              "One or more product item categories not found",
+              400,
+            );
+          }
         }
       }
 
@@ -546,16 +576,27 @@ export class VendorService {
           },
         });
 
+        // 3. SIMPAN RELASI ITEMS BERDASARKAN TIPE
         if (itemIds) {
           await tx.vendorVendorItem.deleteMany({ where: { vendorId: id } });
+          await tx.vendorItemCategory.deleteMany({ where: { vendorId: id } });
 
           if (itemIds.length > 0) {
-            await tx.vendorVendorItem.createMany({
-              data: itemIds.map((itemId) => ({
-                vendorId: id,
-                itemId,
-              })),
-            });
+            if (targetType === "SERVICE") {
+              await tx.vendorVendorItem.createMany({
+                data: itemIds.map((itemId) => ({
+                  vendorId: id,
+                  itemId,
+                })),
+              });
+            } else if (targetType === "PRODUCT") {
+              await tx.vendorItemCategory.createMany({
+                data: itemIds.map((itemCategoryId) => ({
+                  vendorId: id,
+                  itemCategoryId,
+                })),
+              });
+            }
           }
         }
 
@@ -579,6 +620,7 @@ export class VendorService {
             serviceCategory: true,
             productCategory: true,
             vendorItems: { include: { item: true } },
+            productItemCategories: { include: { itemCategory: true } },
             contacts: { include: { platform: true } },
           },
         });
