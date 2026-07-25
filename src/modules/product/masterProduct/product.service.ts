@@ -594,6 +594,64 @@ export class ProductService {
     return this.getProductById(id);
   }
 
+  async updateMasterPrice(
+    id: string,
+    payload: {
+      basePrice: number | string;
+      activeVendorPriceRecordId?: string | null;
+      activePriceFreightMode?: string | null;
+      priceTiers: {
+        minQuantity: number;
+        maxQuantity?: number | null;
+        price: number | string;
+      }[];
+    },
+  ) {
+    const { basePrice, activeVendorPriceRecordId, activePriceFreightMode, priceTiers } = payload;
+
+    if (priceTiers.length > 0) {
+      const sortedTiers = priceTiers.sort((a, b) => a.minQuantity - b.minQuantity);
+      for (let i = 0; i < sortedTiers.length; i++) {
+        const current = sortedTiers[i];
+        const next = sortedTiers[i + 1];
+        if (current.maxQuantity && current.minQuantity > current.maxQuantity) {
+          throw new ApiError(`Invalid tier range: ${current.minQuantity} - ${current.maxQuantity}`, 400);
+        }
+        if (next && current.maxQuantity && next.minQuantity <= current.maxQuantity) {
+          throw new ApiError(`Price tiers overlap between range ending at ${current.maxQuantity} and starting at ${next.minQuantity}`, 400);
+        }
+      }
+    }
+
+    return await this.prisma.$transaction(async (tx) => {
+      const product = await tx.product.update({
+        where: { id },
+        data: {
+          basePrice: basePrice.toString(),
+          activeVendorPriceRecordId: activeVendorPriceRecordId || null,
+          activePriceFreightMode: activePriceFreightMode || null,
+        },
+      });
+
+      // Clear existing tiers
+      await tx.priceTier.deleteMany({ where: { productId: id } });
+
+      // Insert new tiers
+      if (priceTiers.length > 0) {
+        await tx.priceTier.createMany({
+          data: priceTiers.map((t) => ({
+            productId: id,
+            minQuantity: t.minQuantity,
+            maxQuantity: t.maxQuantity ?? null,
+            price: t.price.toString(),
+          })),
+        });
+      }
+
+      return product;
+    });
+  }
+
   // === ADD IMAGE ===
   async addImage(
     id: string,
@@ -1214,6 +1272,16 @@ export class ProductService {
         category: true,
         itemCategory: true,
         itemName: true,
+        activeVendorPriceRecord: {
+          include: {
+            vendor: true,
+          },
+        },
+        vendorPrices: {
+          include: {
+            vendor: true,
+          },
+        },
 
         // Price Tiers untuk Produk Utama
         priceTiers: {
@@ -1358,6 +1426,19 @@ export class ProductService {
       orderBy: { createdAt: "desc" },
       include: {
         category: true,
+        priceTiers: {
+          orderBy: { minQuantity: "asc" },
+        },
+        activeVendorPriceRecord: {
+          include: {
+            vendor: true,
+          },
+        },
+        vendorPrices: {
+          include: {
+            vendor: true,
+          },
+        },
         images: {
           include: {
             mockupAreas: true,

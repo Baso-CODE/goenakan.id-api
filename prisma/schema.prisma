@@ -465,6 +465,9 @@ model Product {
   isMultiFace        Boolean             @default(false)
   mockupFrontImageId String?
   mockupBackImageId  String?
+  activeVendorPriceRecordId String?
+  activePriceFreightMode    String?             // "SEA" | "AIR" | "CUSTOM"
+  activeVendorPriceRecord   VendorPriceRecord?  @relation("ActiveProductPrice", fields: [activeVendorPriceRecordId], references: [id], onDelete: SetNull)
   vendorPrices       VendorPriceRecord[]
 
   @@map("products")
@@ -834,6 +837,7 @@ model VendorPriceRecord {
   vendor        Vendor?  @relation("ProductVendorPrices", fields: [vendorId], references: [id], onDelete: SetNull)
   serviceVendor Vendor?  @relation("ServiceVendorPrices", fields: [serviceVendorId], references: [id], onDelete: SetNull)
   currency      Currency @relation(fields: [currencyCode], references: [code])
+  activeProducts Product[] @relation("ActiveProductPrice")
 
   @@map("vendor_price_records")
 }

@@ -120,6 +120,13 @@ export class ProductRouter {
       this.productController.updatePriceTiers,
     );
 
+    this.router.put(
+      "/:id/master-price",
+      auth,
+      verifyRole(requiredRole),
+      this.productController.updateMasterPrice,
+    );
+
     // === MEDIA ===
     this.router.post(
       "/:id/image",

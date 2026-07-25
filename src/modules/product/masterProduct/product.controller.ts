@@ -168,6 +168,22 @@ export class ProductController {
     }
   };
 
+  // === UPDATE MASTER PRICE ===
+  updateMasterPrice = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { id } = req.params;
+      const data = req.body;
+      const updated = await this.productService.updateMasterPrice(id, data);
+      res.status(200).send(updated);
+    } catch (error) {
+      next(error);
+    }
+  };
+
   // === ADD IMAGE ===
   addImage = async (req: Request, res: Response, next: NextFunction) => {
     try {
