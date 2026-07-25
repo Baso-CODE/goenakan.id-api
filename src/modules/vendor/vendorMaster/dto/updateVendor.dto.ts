@@ -3,6 +3,7 @@ import {
   ArrayNotEmpty,
   IsArray,
   IsBoolean,
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
@@ -18,6 +19,15 @@ export class UpdateVendorDTO {
   @IsOptional()
   @IsString()
   picName?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(["SERVICE", "PRODUCT"])
+  type?: string;
+
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
 
   @IsOptional()
   @IsString()
@@ -60,6 +70,7 @@ export class UpdateVendorDTO {
   @IsOptional()
   @IsString()
   trackingUrl?: string;
+
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

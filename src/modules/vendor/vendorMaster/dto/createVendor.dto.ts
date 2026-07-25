@@ -3,6 +3,7 @@ import {
   ArrayNotEmpty,
   IsArray,
   IsBoolean,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -28,6 +29,15 @@ export class CreateVendorDTO {
   @IsNotEmpty()
   @IsString()
   picName!: string;
+
+  @IsNotEmpty()
+  @IsString()
+  @IsIn(["SERVICE", "PRODUCT"])
+  type!: string;
+
+  @IsNotEmpty()
+  @IsUUID()
+  categoryId!: string;
 
   @IsOptional()
   @IsString()

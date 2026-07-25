@@ -1,7 +1,7 @@
 import * as dotenv from "dotenv";
-dotenv.config();
 import "reflect-metadata";
 import { PrismaService } from "./modules/prisma/prisma.service";
+dotenv.config();
 
 const prisma = new PrismaService();
 
@@ -12,11 +12,11 @@ async function run() {
       attributeValues: {
         include: {
           attributeValue: {
-            include: { attribute: true }
-          }
-        }
-      }
-    }
+            include: { attribute: true },
+          },
+        },
+      },
+    },
   });
 
   if (!product) {

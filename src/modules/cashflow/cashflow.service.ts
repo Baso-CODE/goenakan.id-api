@@ -31,12 +31,11 @@ export class CashflowService {
       if (startDate) where.dateOrder.gte = new Date(startDate);
       if (endDate) {
         const end = new Date(endDate);
-        end.setDate(end.getDate() + 1); // Include end date
+        end.setDate(end.getDate() + 1);
         where.dateOrder.lt = end;
       }
     }
 
-    // 2. Fetch Data Orders + Relation ke CashflowSummary
     const [orders, total] = await Promise.all([
       this.prisma.order.findMany({
         where,
@@ -45,7 +44,6 @@ export class CashflowService {
         orderBy: { dateOrder: "desc" },
         include: {
           cashflowSummary: true,
-
           client: {
             select: {
               type: true,
@@ -77,14 +75,12 @@ export class CashflowService {
         orderId: order.id,
         dateOrder: order.dateOrder,
         orderNumber: order.orderNumber,
+        salesCategory: order.salesCategory,
+        currencyCode: order.currencyCode,
         clientName: clientName,
-
-        // Data Financial
         totalRevenue: revenue,
         totalCost: cost,
         profitOrLoss: profit,
-
-        // Status: Apakah sudah pernah diedit cashflow-nya?
         hasCashflowData: !!summary,
       };
     });
@@ -101,27 +97,55 @@ export class CashflowService {
   }
 
   async getCashflowDetail(orderId: string) {
-    // 1. Ambil data Order (HAPUS INCLUDE VENDORS)
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: {
         products: {
           include: { product: true, variant: true },
         },
-        // Blok vendors DIHAPUS dari sini karena sudah tidak ada di schema
       },
     });
 
     if (!order) {
-      throw new ApiError("Order not found", 404);
+      throw new ApiError("Order tidak ditemukan", 404);
     }
 
-    // 2. Format Vendor List untuk Frontend
-    // Karena Vendor sekarang didapat melalui Purchase Order,
-    // jika Frontend butuh list vendor, kita harus query ke PurchaseOrder.
-    // (Bisa kamu aktifkan lagi dengan query yang baru jika dibutuhkan Frontend)
+    const vendors = await this.prisma.vendor.findMany({
+      where: { isActive: true },
+      include: {
+        vendorItems: {
+          include: { item: true },
+        },
+        productItemCategories: {
+          include: { itemCategory: true },
+        },
+      },
+      orderBy: { companyName: "asc" },
+    });
 
-    // 3. Cek CashflowSummary (Logic Lama - Tetap Dipakai)
+    const availableVendors = vendors.map((v) => {
+      let items: { id: string; name: string }[] = [];
+
+      if (v.type === "SERVICE") {
+        items = v.vendorItems.map((vi) => ({
+          id: vi.item.id,
+          name: vi.item.name,
+        }));
+      } else if (v.type === "PRODUCT") {
+        items = v.productItemCategories.map((pic) => ({
+          id: pic.itemCategory.id,
+          name: pic.itemCategory.name,
+        }));
+      }
+
+      return {
+        id: v.id,
+        companyName: v.companyName,
+        type: v.type,
+        items: items,
+      };
+    });
+
     const existingSummary = await this.prisma.cashflowSummary.findFirst({
       where: { orderId },
       include: {
@@ -130,22 +154,24 @@ export class CashflowService {
       },
     });
 
-    // A. Jika SUDAH ADA (Edit Mode)
     if (existingSummary) {
       return {
         mode: "EDIT",
         summary: existingSummary,
+        availableVendors,
         revenues: existingSummary.revenues.map((r) => ({
           ...r,
           unitPrice: Number(r.unitPrice),
           total: Number(r.total),
           exchangeRate: Number(r.exchangeRate),
+          currency: r.currencyCode || r.currency || order.currencyCode,
         })),
         costs: existingSummary.costs.map((c) => ({
           ...c,
           costPerUnit: Number(c.costPerUnit),
           total: Number(c.total),
           exchangeRate: Number(c.exchangeRate),
+          currency: c.currencyCode || c.currency || order.currencyCode,
         })),
       };
     }
@@ -161,7 +187,7 @@ export class CashflowService {
         unitPrice: Number(p.unitPrice),
         quantity: p.quantity,
         total: Number(p.unitPrice) * p.quantity,
-        currency: "IDR",
+        currency: order.currencyCode,
         exchangeRate: 1,
       };
     });
@@ -174,7 +200,9 @@ export class CashflowService {
         totalRevenue: Number(order.totalAmount),
         totalCost: 0,
         profitLoss: Number(order.totalAmount),
+        baseCurrencyId: order.currencyCode,
       },
+      availableVendors, // 👈 Sertakan list vendor di sini juga
       revenues: initialRevenues,
       costs: [],
     };
@@ -190,10 +218,13 @@ export class CashflowService {
     const totalCost = costItems.reduce((acc, item) => acc + item.total, 0);
     const profitLoss = totalRevenue - totalCost;
 
-    // 1. Ambil order untuk memastikan orderNumber terbaru
+    // 1. Ambil order untuk memastikan orderNumber terbaru DAN currencyCode
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      select: { orderNumber: true },
+      select: {
+        orderNumber: true,
+        currencyCode: true,
+      },
     });
 
     if (!order) throw new ApiError("Order tidak ditemukan", 404);
@@ -214,7 +245,8 @@ export class CashflowService {
             totalRevenue,
             totalCost,
             profitLoss,
-            orderNumber: order.orderNumber!, // ✨ UPDATE: Sync orderNumber
+            orderNumber: order.orderNumber!,
+            baseCurrencyId: order.currencyCode,
           },
         });
 
@@ -227,11 +259,11 @@ export class CashflowService {
         const newSummary = await tx.cashflowSummary.create({
           data: {
             orderId,
-            orderNumber: order.orderNumber!, // ✨ UPDATE: Gunakan orderNumber
+            orderNumber: order.orderNumber!,
             totalRevenue,
             totalCost,
             profitLoss,
-            baseCurrencyId: "IDR",
+            baseCurrencyId: order.currencyCode,
           },
         });
         summaryId = newSummary.id;
@@ -260,6 +292,7 @@ export class CashflowService {
           data: costItems.map((item) => ({
             cashflowId: summaryId!,
             description: item.description,
+            vendorId: item.vendorId || null,
             costPerUnit: item.costPerUnit,
             quantity: item.quantity,
             total: item.total,

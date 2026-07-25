@@ -12,7 +12,7 @@ export interface CashflowRevenueInput {
 
 export interface CashflowCostInput {
   description: string;
-  // vendorId?: string;
+  vendorId?: string;
   costPerUnit: number;
   quantity: number;
   currency: string;

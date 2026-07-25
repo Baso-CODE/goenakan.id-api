@@ -131,7 +131,10 @@ export class VendorCategoryService {
   async getActiveCategories() {
     try {
       const data = await this.prisma.vendorCategory.findMany({
-        where: { isActive: true },
+        where: {
+          isActive: true,
+          type: "SERVICE", // 👈 Memastikan hanya mengambil kategori bertipe SERVICE
+        },
         orderBy: { createdAt: "desc" },
         select: {
           id: true,
