@@ -90,10 +90,19 @@ export class SupplierCogsService {
       }
     }
 
+    let productIdVal = data.productId || null;
+    let tempProductNameVal = data.tempProductName || null;
+
+    if (productIdVal) {
+      tempProductNameVal = null;
+    } else if (tempProductNameVal) {
+      productIdVal = null;
+    }
+
     return this.prisma.vendorPriceRecord.create({
       data: {
-        productId: data.productId || null,
-        tempProductName: data.tempProductName || null,
+        productId: productIdVal,
+        tempProductName: tempProductNameVal,
         status: data.status || "POTENTIAL",
         calculationMode: data.calculationMode || "FIXED",
         tiers: data.tiers || null,
@@ -165,11 +174,20 @@ export class SupplierCogsService {
       }
     }
 
+    let productIdVal: string | null | undefined = data.productId !== undefined ? data.productId : undefined;
+    let tempProductNameVal: string | null | undefined = data.tempProductName !== undefined ? data.tempProductName : undefined;
+
+    if (productIdVal) {
+      tempProductNameVal = null;
+    } else if (tempProductNameVal) {
+      productIdVal = null;
+    }
+
     return this.prisma.vendorPriceRecord.update({
       where: { id },
       data: {
-        productId: data.productId !== undefined ? data.productId : undefined,
-        tempProductName: data.tempProductName !== undefined ? data.tempProductName : undefined,
+        productId: productIdVal,
+        tempProductName: tempProductNameVal,
         status: data.status !== undefined ? data.status : undefined,
         calculationMode: data.calculationMode !== undefined ? data.calculationMode : undefined,
         tiers: data.tiers !== undefined ? data.tiers : undefined,
