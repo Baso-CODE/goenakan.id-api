@@ -48,6 +48,10 @@ class PurchaseOrderItemDTO {
   @IsString()
   productId?: string;
 
+  @IsOptional()
+  @IsString()
+  variantId?: string;
+
   // Opsional: Referensi SO/SN dari Order tabel
   @IsOptional()
   @IsString()
@@ -78,7 +82,6 @@ class PurchaseOrderItemDTO {
   @IsString()
   remarks?: string;
 }
-
 // ==========================================
 // MAIN DTO UNTUK CREATE PURCHASE ORDER
 // ==========================================

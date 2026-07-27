@@ -776,13 +776,6 @@ export class QuotationService {
   async getQuotationReferences() {
     try {
       return await this.prisma.quotation.findMany({
-        where: {
-          // status: "ACCEPTED",
-          orderId: null,
-          resultingOrders: {
-            none: {},
-          },
-        },
         select: {
           id: true,
           quotationNumber: true,
