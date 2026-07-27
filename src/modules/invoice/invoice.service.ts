@@ -269,13 +269,12 @@ export class InvoiceService {
     if (query.search && query.search.trim() !== "") {
       const searchTerm = query.search.trim();
       where.OR = [
-        // Cari berdasarkan Nama Perusahaan (B2B)
+        { invoiceNumber: { contains: searchTerm } },
         {
           client: {
             b2b: { is: { companyName: { contains: searchTerm } } },
           },
         },
-        // Cari berdasarkan Nama Perorangan (B2C)
         {
           client: {
             b2c: { is: { name: { contains: searchTerm } } },
@@ -286,7 +285,6 @@ export class InvoiceService {
     }
 
     // 2. Filter Status & Kategori
-    // Pastikan tidak memfilter jika string "ALL" dikirim dari frontend
     if (query.status && query.status !== "ALL") {
       where.status = query.status;
     }
@@ -309,7 +307,7 @@ export class InvoiceService {
       if (query.endDate) {
         const end = new Date(query.endDate);
         if (!isNaN(end.getTime())) {
-          end.setDate(end.getDate() + 1); // +1 hari agar inklusif
+          end.setDate(end.getDate() + 1);
           dateFilter.lt = end;
         }
       }
@@ -332,17 +330,19 @@ export class InvoiceService {
           include: { b2b: true, b2c: true },
         },
         order: {
-          select: { orderNumber: true },
+          select: {
+            orderNumber: true,
+            currencyCode: true,
+            salesCategory: true,
+          },
         },
         _count: {
-          select: { items: true }, // Hitung jumlah item di invoice
+          select: { items: true },
         },
       },
     });
 
-    // === Format Data untuk Frontend Table ===
     const formattedData = invoices.map((inv) => {
-      // 1. Tentukan Nama Client (Flattening)
       let clientName = "-";
       if (inv.client?.b2b) {
         clientName = inv.client.b2b.companyName;
@@ -357,9 +357,10 @@ export class InvoiceService {
         dueDate: inv.dueDate,
         orderNumber: inv.order?.orderNumber || "-",
         clientName: clientName,
-        totalAmount: Number(inv.totalAmount),
-        status: inv.status,
         category: inv.category,
+        totalAmount: Number(inv.totalAmount),
+        currencyCode: inv.order?.currencyCode || "IDR",
+        status: inv.status,
         method: inv.method || "-",
         totalItems: inv._count.items,
       };
@@ -390,6 +391,8 @@ export class InvoiceService {
             orderNumber: true,
             dateOrder: true,
             totalAmount: true,
+            currencyCode: true,
+            salesCategory: true,
             invoices: {
               select: {
                 id: true,
@@ -400,18 +403,12 @@ export class InvoiceService {
                 paidAt: true,
               },
             },
-            sales: {
+            // ✨ PERBAIKAN: Mengganti 'sales' menjadi 'createdBy' (User)
+            createdBy: {
               select: {
                 name: true,
                 phone: true,
-                signatureUrl: true,
-                bankAccounts: {
-                  select: {
-                    bankName: true,
-                    accountNumber: true,
-                    accountHolderName: true,
-                  },
-                },
+                image: true, // Kita gunakan image sebagai profil/tanda tangan
               },
             },
           },
@@ -435,6 +432,7 @@ export class InvoiceService {
     });
 
     if (!invoice) throw new ApiError("Invoice not found", 404);
+
     let previousInvoice = null;
     let totalPreviousPaid = 0;
 
@@ -458,8 +456,9 @@ export class InvoiceService {
       });
 
       const pastInvoices = invoice.order!.invoices.filter(
-        (inv) => inv.id < invoice.id,
+        (inv) => inv.id < invoice.id && inv.status === "PAID",
       );
+
       totalPreviousPaid = pastInvoices.reduce(
         (sum, inv) => sum + Number(inv.totalAmount),
         0,
@@ -472,7 +471,6 @@ export class InvoiceService {
       totalPreviousPaid,
     };
   }
-
   async getMonthlyRevenueChart(month: number, year: number) {
     // 1. Tentukan Range Tanggal (Awal s/d Akhir Bulan)
     const startDate = startOfMonth(new Date(year, month - 1));
