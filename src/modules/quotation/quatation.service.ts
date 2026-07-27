@@ -110,6 +110,7 @@ export class QuotationService {
 
     return { data, meta };
   }
+
   // ==========================================
   // 2. GET BY ID (DETAIL)
   // ==========================================
@@ -473,6 +474,7 @@ export class QuotationService {
       let newTotalAmount = existing.totalAmount;
 
       if (items && items.length > 0) {
+        // Hapus item lama beserta tier-nya secara berelasi
         await tx.quotationItem.deleteMany({ where: { quotationId: id } });
 
         let calculatedSubTotal = 0;
@@ -509,11 +511,20 @@ export class QuotationService {
               totalPrice: lineTotal < 0 ? 0 : lineTotal,
             };
           });
+
           if (tiersToCreate.length > 0) {
             calculatedSubTotal += tiersToCreate[0].totalPrice;
           }
 
-          // Insert Item beserta relasi Tier-nya
+          // Gabungkan catatan kustomisasi dan atribut terpilih ke dalam field JSON customization
+          const customizationData = {
+            ...(item.selectedAttributes
+              ? { selectedAttributes: item.selectedAttributes }
+              : {}),
+            ...(item.customization ? { customText: item.customization } : {}),
+          };
+
+          // Insert Item beserta relasi Tier-nya dan atribut varian
           await tx.quotationItem.create({
             data: {
               quotationId: id,
@@ -522,7 +533,10 @@ export class QuotationService {
               productName: item.productName,
               description: item.description,
               discount: item.discount || 0,
-              customization: item.customization ?? Prisma.JsonNull,
+              customization:
+                Object.keys(customizationData).length > 0
+                  ? customizationData
+                  : Prisma.JsonNull,
               remarks: item.remarks,
               tiers: {
                 create: tiersToCreate,
@@ -554,7 +568,6 @@ export class QuotationService {
 
       // === LOGIC C: BUILD UPDATE PAYLOAD ===
       const updatePayload: Prisma.QuotationUncheckedUpdateInput = {
-        // Header fields
         ...(headerData.date && { date: new Date(headerData.date) }),
         ...(headerData.validUntil !== undefined && {
           validUntil: headerData.validUntil
@@ -562,8 +575,9 @@ export class QuotationService {
             : null,
         }),
         ...(headerData.status && { status: headerData.status as any }),
-
-        // ✨ TAMBAHAN: Relasi ke User pembuat/penanggung jawab
+        ...((headerData as any).updatedById && {
+          updatedById: (headerData as any).updatedById,
+        }),
         ...(headerData.userId !== undefined && {
           userId: headerData.userId || null,
         }),
@@ -576,7 +590,7 @@ export class QuotationService {
           picId: headerData.picId || null,
         }),
 
-        // ✨ TAMBAHAN: Currency & Payment Terms
+        // Currency & Payment Terms
         ...(headerData.currencyCode !== undefined && {
           currencyCode: headerData.currencyCode,
         }),
@@ -608,7 +622,6 @@ export class QuotationService {
           notes: {
             include: { category: true },
           },
-          // ✨ TAMBAHAN: Mengembalikan data Client dan User agar frontend mendapatkan data lengkap
           client: { select: { id: true, custCode: true, type: true } },
           user: { select: { id: true, name: true, email: true } },
         },

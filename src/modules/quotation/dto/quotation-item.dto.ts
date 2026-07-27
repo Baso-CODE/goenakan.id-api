@@ -4,6 +4,7 @@ import {
   IsInt,
   IsNotEmpty,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -48,6 +49,11 @@ export class CreateQuotationItemDTO {
   @IsUUID()
   variantId?: string;
 
+  // ✨ TAMBAHAN: Untuk menangkap pilihan atribut fleksibel dari frontend (Warna, Ukuran, dll)
+  @IsOptional()
+  @IsObject()
+  selectedAttributes?: Record<string, any>;
+
   @IsNotEmpty()
   @IsString()
   productName!: string;
@@ -71,6 +77,7 @@ export class CreateQuotationItemDTO {
   @IsOptional()
   @IsString()
   quantityLabel?: string;
+
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

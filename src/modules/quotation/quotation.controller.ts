@@ -65,7 +65,6 @@ export class QuotationController {
     try {
       const body = req.body as CreateQuotationDTO;
 
-      // Ambil ID dari user yang sedang login
       const userId = (req as any).user?.id;
       if (userId) {
         body.userId = userId;
@@ -85,6 +84,11 @@ export class QuotationController {
     try {
       const { id } = req.params;
       const body = req.body as UpdateQuotationDTO;
+
+      const userId = (req as any).user?.id;
+      if (userId) {
+        (body as any).updatedById = userId;
+      }
 
       const result = await this.quotationService.updateQuotation(id, body);
       res.status(200).json(result);
