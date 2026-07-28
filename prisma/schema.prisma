@@ -466,13 +466,13 @@ model Product {
   mockupAreaWidth  Float?
   mockupAreaHeight Float?
 
-  isMultiFace        Boolean             @default(false)
-  mockupFrontImageId String?
-  mockupBackImageId  String?
+  isMultiFace               Boolean             @default(false)
+  mockupFrontImageId        String?
+  mockupBackImageId         String?
   activeVendorPriceRecordId String?
-  activePriceFreightMode    String?             // "SEA" | "AIR" | "CUSTOM"
+  activePriceFreightMode    String? // "SEA" | "AIR" | "CUSTOM"
   activeVendorPriceRecord   VendorPriceRecord?  @relation("ActiveProductPrice", fields: [activeVendorPriceRecordId], references: [id], onDelete: SetNull)
-  vendorPrices       VendorPriceRecord[]
+  vendorPrices              VendorPriceRecord[]
 
   @@map("products")
 }
@@ -589,14 +589,15 @@ model ProductVariant {
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
-  attributeValues ProductVariantAttributeValue[]
-  images          ProductVariantImage[]
-  orderProducts   OrderProduct[]
-  invoiceItems    InvoiceItem[]
-  quotationItems  QuotationItem[]
-  cartItems       CartItem[]
-  webOrderItems   WebOrderItem[]
-  priceTiers      PriceTier[]
+  attributeValues    ProductVariantAttributeValue[]
+  images             ProductVariantImage[]
+  orderProducts      OrderProduct[]
+  invoiceItems       InvoiceItem[]
+  quotationItems     QuotationItem[]
+  cartItems          CartItem[]
+  webOrderItems      WebOrderItem[]
+  priceTiers         PriceTier[]
+  purchaseOrderItems PurchaseOrderItem[]
 
   @@map("product_variants")
 }
@@ -798,17 +799,16 @@ model VendorPriceRecord {
   imagePublicId       String?
 
   // Import Mode
-  importType       String   @default("BORONGAN") // "BORONGAN" | "RESMI"
+  importType       String  @default("BORONGAN") // "BORONGAN" | "RESMI"
   hsCode           String?
-  beaMasukPercent  Decimal  @default(0.00) @db.Decimal(5, 2)
-  ppnPercent       Decimal  @default(11.00) @db.Decimal(5, 2)
-  pphPercent       Decimal  @default(2.50) @db.Decimal(5, 2)
-  formECost        Decimal  @default(0.00) @db.Decimal(10, 2)
-  insurancePercent Decimal  @default(0.00) @db.Decimal(5, 2)
-  handlingCost     Decimal  @default(0.00) @db.Decimal(10, 2)
-  otherCost        Decimal  @default(0.00) @db.Decimal(10, 2)
-  
-  
+  beaMasukPercent  Decimal @default(0.00) @db.Decimal(5, 2)
+  ppnPercent       Decimal @default(11.00) @db.Decimal(5, 2)
+  pphPercent       Decimal @default(2.50) @db.Decimal(5, 2)
+  formECost        Decimal @default(0.00) @db.Decimal(10, 2)
+  insurancePercent Decimal @default(0.00) @db.Decimal(5, 2)
+  handlingCost     Decimal @default(0.00) @db.Decimal(10, 2)
+  otherCost        Decimal @default(0.00) @db.Decimal(10, 2)
+
   // Supplier Pricing details
   foreignPrice Decimal @db.Decimal(10, 2)
   currencyCode String  @default("RMB")
@@ -837,10 +837,10 @@ model VendorPriceRecord {
   updatedAt DateTime @updatedAt
 
   // Relationships
-  product       Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
-  vendor        Vendor?  @relation("ProductVendorPrices", fields: [vendorId], references: [id], onDelete: SetNull)
-  serviceVendor Vendor?  @relation("ServiceVendorPrices", fields: [serviceVendorId], references: [id], onDelete: SetNull)
-  currency      Currency @relation(fields: [currencyCode], references: [code])
+  product        Product?  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  vendor         Vendor?   @relation("ProductVendorPrices", fields: [vendorId], references: [id], onDelete: SetNull)
+  serviceVendor  Vendor?   @relation("ServiceVendorPrices", fields: [serviceVendorId], references: [id], onDelete: SetNull)
+  currency       Currency  @relation(fields: [currencyCode], references: [code])
   activeProducts Product[] @relation("ActiveProductPrice")
 
   @@map("vendor_price_records")
@@ -1190,27 +1190,32 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderItem {
-  id               String        @id @default(uuid())
-  purchaseOrderId  String
-  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  itemName         String
-  productId        String?
-  product          Product?      @relation(fields: [productId], references: [id])
+  id              String        @id @default(uuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  itemName        String
+  productId       String?
+  product         Product?      @relation(fields: [productId], references: [id])
+
+  variantId String?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id])
+
   // === REFERENSI SO / SN ===
-  // Relasi ke tabel Order (Opsional: karena tipe INDIRECT_EXPENSES / STOCK tidak pakai SO)
-  orderId          String?
-  order            Order?        @relation(fields: [orderId], references: [id])
+  orderId String?
+  order   Order?  @relation(fields: [orderId], references: [id])
+
   // === KALKULASI KUANTITAS ===
   quantityOrder    Int
-  quantityStock    Int           @default(0)
+  quantityStock    Int    @default(0)
   quantityPurchase Int
   uom              String
+
   // === KALKULASI HARGA ===
-  unitPrice        Decimal
-  totalAmount      Decimal
-  remarks          String?       @db.Text
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  unitPrice   Decimal
+  totalAmount Decimal
+  remarks     String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@map("purchase_order_items")
 }
@@ -1397,7 +1402,6 @@ model Quotation {
   order           Order?  @relation("OrderQuotations", fields: [orderId], references: [id])
   resultingOrders Order[] @relation("OrderSourcedFromQuotation")
 
-  // === CREATED BY (INTERNAL SALES / USER) ===
   userId String?
   user   User?   @relation("QuotationCreatedBy", fields: [userId], references: [id])
 
@@ -1462,44 +1466,18 @@ model QuotationFollowUp {
   @@map("quotation_follow_ups")
 }
 
-// model QuotationItem {
-//   id          String @id @default(uuid())
-//   quotationId String
-
-//   productId String?
-//   product   Product? @relation(fields: [productId], references: [id])
-
-//   variantId String?
-//   variant   ProductVariant? @relation(fields: [variantId], references: [id])
-
-//   productName String
-//   description String? @db.Text
-
-//   quantity   Int
-//   unitPrice  Decimal
-//   discount   Decimal? @default(0)
-//   totalPrice Decimal
-
-//   customization Json?
-//   remarks       String?
-
-//   imageUrl      String?
-//   imagePublicId String?
-
-//   quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
-
-//   @@map("quotation_items")
-// }
-
 model QuotationItem {
-  id            String              @id @default(cuid())
-  quotationId   String
-  productId     String?
-  product       Product?            @relation(fields: [productId], references: [id])
-  variantId     String?
-  variant       ProductVariant?     @relation(fields: [variantId], references: [id])
-  productName   String
-  description   String?             @db.Text
+  id          String          @id @default(cuid())
+  quotationId String
+  productId   String?
+  product     Product?        @relation(fields: [productId], references: [id])
+  variantId   String?
+  variant     ProductVariant? @relation(fields: [variantId], references: [id])
+  productName String
+  description String?         @db.Text
+  quantity    Int             @default(1)
+  unitPrice   Decimal         @default(0)
+
   customization Json?
   discount      Decimal?            @default(0)
   remarks       String?

@@ -4,6 +4,7 @@ import {
   IsInt,
   IsNotEmpty,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -48,6 +49,10 @@ export class CreateQuotationItemDTO {
   @IsUUID()
   variantId?: string;
 
+  @IsOptional()
+  @IsObject()
+  selectedAttributes?: Record<string, any>;
+
   @IsNotEmpty()
   @IsString()
   productName!: string;
@@ -58,7 +63,7 @@ export class CreateQuotationItemDTO {
 
   @IsOptional()
   @IsInt()
-  @Min(1)
+  @Min(0)
   @Type(() => Number)
   quantity?: number;
 
@@ -71,6 +76,7 @@ export class CreateQuotationItemDTO {
   @IsOptional()
   @IsString()
   quantityLabel?: string;
+
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

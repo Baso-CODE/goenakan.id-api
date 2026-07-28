@@ -10,7 +10,6 @@ import {
 } from "class-validator";
 import { CreateQuotationItemDTO } from "./quotation-item.dto";
 
-//
 const EmptyStringToUndefined = Transform(({ value }) =>
   value === "" || value === null ? undefined : value,
 );

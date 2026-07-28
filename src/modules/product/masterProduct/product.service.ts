@@ -641,15 +641,27 @@ export class ProductService {
     } = payload;
 
     if (priceTiers.length > 0) {
-      const sortedTiers = priceTiers.sort((a, b) => a.minQuantity - b.minQuantity);
+      const sortedTiers = priceTiers.sort(
+        (a, b) => a.minQuantity - b.minQuantity,
+      );
       for (let i = 0; i < sortedTiers.length; i++) {
         const current = sortedTiers[i];
         const next = sortedTiers[i + 1];
         if (current.maxQuantity && current.minQuantity > current.maxQuantity) {
-          throw new ApiError(`Invalid tier range: ${current.minQuantity} - ${current.maxQuantity}`, 400);
+          throw new ApiError(
+            `Invalid tier range: ${current.minQuantity} - ${current.maxQuantity}`,
+            400,
+          );
         }
-        if (next && current.maxQuantity && next.minQuantity <= current.maxQuantity) {
-          throw new ApiError(`Price tiers overlap between range ending at ${current.maxQuantity} and starting at ${next.minQuantity}`, 400);
+        if (
+          next &&
+          current.maxQuantity &&
+          next.minQuantity <= current.maxQuantity
+        ) {
+          throw new ApiError(
+            `Price tiers overlap between range ending at ${current.maxQuantity} and starting at ${next.minQuantity}`,
+            400,
+          );
         }
       }
     }

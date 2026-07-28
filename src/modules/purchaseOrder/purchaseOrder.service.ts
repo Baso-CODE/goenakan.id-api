@@ -60,7 +60,7 @@ export class PurchaseOrderService {
   // ====================================================================
   async createPurchaseOrder(data: CreatePurchaseOrderDTO) {
     const { items, vendorId, createdById, ...poCore } = data;
-    // 1. Validasi Vendor & Snapshot Alamat
+
     const vendor = await this.prisma.vendor.findUnique({
       where: { id: vendorId },
     });
@@ -70,20 +70,22 @@ export class PurchaseOrderService {
     }
     const snapshotVendorAddress = vendor.address || "-";
 
-    // 2. Kalkulasi Item dan Total Keseluruhan
     let grandTotalAmount = 0;
     const poItemsData: any[] = [];
 
     for (const item of items) {
-      // Sesuai rule: Total Amount = qty order x unit price
-      const itemTotalAmount = item.quantityOrder * item.unitPrice;
+      const itemTotalAmount = item.quantityPurchase * item.unitPrice;
       grandTotalAmount += itemTotalAmount;
 
-      // Siapkan relasi opsional (SO/SN & Product)
       const connectRelations: any = {};
       if (item.productId) {
         connectRelations.product = { connect: { id: item.productId } };
       }
+
+      if (item.variantId) {
+        connectRelations.variant = { connect: { id: item.variantId } };
+      }
+
       if (item.orderId) {
         connectRelations.order = { connect: { id: item.orderId } };
       }
@@ -101,14 +103,12 @@ export class PurchaseOrderService {
       });
     }
 
-    // 3. Simpan ke Database menggunakan Transaction
     const newPO = await this.prisma.$transaction(async (tx) => {
       const finalPONumber =
         poCore.poNumber && poCore.poNumber.trim() !== ""
           ? poCore.poNumber
           : await this.generatePONumber(tx);
 
-      // Siapkan relasi ke Currency
       const currencyCode = poCore.currencyCode || "IDR";
 
       const createdPO = await tx.purchaseOrder.create({
@@ -122,7 +122,6 @@ export class PurchaseOrderService {
           notes: poCore.notes || null,
           totalAmount: grandTotalAmount,
           vendorAddress: snapshotVendorAddress,
-          // Relasi (Connect)
           vendor: { connect: { id: vendorId } },
           currency: { connect: { code: currencyCode } },
           createdBy: createdById ? { connect: { id: createdById } } : undefined,
@@ -136,6 +135,7 @@ export class PurchaseOrderService {
           items: {
             include: {
               product: true,
+              variant: true,
               order: true,
             },
           },
@@ -188,13 +188,19 @@ export class PurchaseOrderService {
     const poItemsData: any[] = [];
 
     for (const item of items) {
-      const itemTotalAmount = item.quantityOrder * item.unitPrice;
+      const itemTotalAmount = item.quantityPurchase * item.unitPrice;
       grandTotalAmount += itemTotalAmount;
 
       const connectRelations: any = {};
       if (item.productId) {
         connectRelations.product = { connect: { id: item.productId } };
       }
+
+      // ✨ TAMBAHAN: Hubungkan relasi variant jika variantId dikirimkan saat update
+      if (item.variantId) {
+        connectRelations.variant = { connect: { id: item.variantId } };
+      }
+
       if (item.orderId) {
         connectRelations.order = { connect: { id: item.orderId } };
       }
@@ -214,6 +220,7 @@ export class PurchaseOrderService {
 
     // 4. Proses Update ke Database menggunakan Transaction
     const updatedPO = await this.prisma.$transaction(async (tx) => {
+      // Hapus item lama, lalu buat ulang dengan data yang baru (termasuk variantId)
       await tx.purchaseOrderItem.deleteMany({
         where: { purchaseOrderId: id },
       });
@@ -242,6 +249,7 @@ export class PurchaseOrderService {
           items: {
             include: {
               product: true,
+              variant: true, // ✨ TAMBAHKAN INI AGAR DETAIL VARIAN IKUT MUNCUL DI RESPONSE
               order: true,
             },
           },
