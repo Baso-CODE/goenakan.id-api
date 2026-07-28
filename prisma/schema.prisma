@@ -423,6 +423,10 @@ model Product {
   description     String?                 @db.Text
   uom             String                  @default("pcs")
   basePrice       Decimal
+  foreignPrice    Decimal?
+  currencyCode    String?                 @default("IDR")
+  exchangeRate    Decimal?                @default(1.0)
+  additionalFee   Decimal?                @default(0.0)
   isCustom        Boolean                 @default(false)
   isMadeByOrder   Boolean                 @default(false)
   materialTypeId  String?

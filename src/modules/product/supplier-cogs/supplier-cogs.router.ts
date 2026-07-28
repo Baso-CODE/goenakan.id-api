@@ -57,6 +57,14 @@ export class SupplierCogsRouter {
       this.controller.updateRecord,
     );
 
+    this.router.put(
+      "/:id",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      validateBody(UpdateVendorPriceRecordDTO),
+      this.controller.updateRecord,
+    );
+
     this.router.delete(
       "/:id",
       this.nextAuthMiddleware.verifyNextAuthToken,
