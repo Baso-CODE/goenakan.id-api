@@ -109,6 +109,14 @@ export class CreateProductImageDTO {
   @IsOptional()
   @IsString()
   altText?: string;
+
+  @IsOptional()
+  @IsString()
+  url?: string;
+
+  @IsOptional()
+  @IsString()
+  publicId?: string;
 }
 
 export class CreateProductVideoDTO {
@@ -150,6 +158,22 @@ export class CreateProductDTO {
   @IsInt({ message: "Base price must be an integer" })
   @Min(0, { message: "Base price cannot be negative" })
   basePrice!: number;
+ 
+  @IsOptional()
+  @IsNumber()
+  foreignPrice?: number;
+ 
+  @IsOptional()
+  @IsString()
+  currencyCode?: string;
+ 
+  @IsOptional()
+  @IsNumber()
+  exchangeRate?: number;
+ 
+  @IsOptional()
+  @IsNumber()
+  additionalFee?: number;
 
   @IsOptional()
   @Type(() => Number)

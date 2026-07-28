@@ -141,10 +141,24 @@ export class ProductService {
 
     // ============ MEDIA UPLOAD (IMAGE ONLY) ============
     try {
+      if (imagesMetadata && imagesMetadata.length > 0) {
+        for (const meta of imagesMetadata) {
+          if (meta.url) {
+            uploadedImages.push({
+              url: meta.url,
+              publicId: meta.publicId || `fe_link_${Date.now()}_${Math.random()}`,
+              isFeatured: meta.isFeatured || false,
+              altText: meta.altText || data.name || "Product Image",
+            });
+          }
+        }
+      }
+
       if (files.images) {
+        const fileMetadataList = (imagesMetadata || []).filter(m => !m.url);
         for (let i = 0; i < files.images.length; i++) {
           const file = files.images[i];
-          const metadata = imagesMetadata?.[i] || {};
+          const metadata = fileMetadataList[i] || {};
 
           const uploadResult = await this.cloudinary.upload(file, {
             folder: "products",
@@ -172,6 +186,10 @@ export class ProductService {
             sku: data.sku,
             description: data.description,
             basePrice: data.basePrice,
+            foreignPrice: data.foreignPrice !== undefined && data.foreignPrice !== null ? data.foreignPrice.toString() : null,
+            currencyCode: data.currencyCode || "IDR",
+            exchangeRate: data.exchangeRate !== undefined && data.exchangeRate !== null ? data.exchangeRate.toString() : null,
+            additionalFee: data.additionalFee !== undefined && data.additionalFee !== null ? data.additionalFee.toString() : null,
             isCustom: data.isCustom,
             isMadeByOrder: data.isMadeByOrder || false,
             materialTypeId: data.materialTypeId,
@@ -600,6 +618,10 @@ export class ProductService {
       basePrice: number | string;
       activeVendorPriceRecordId?: string | null;
       activePriceFreightMode?: string | null;
+      foreignPrice?: number | string | null;
+      currencyCode?: string | null;
+      exchangeRate?: number | string | null;
+      additionalFee?: number | string | null;
       priceTiers: {
         minQuantity: number;
         maxQuantity?: number | null;
@@ -612,6 +634,10 @@ export class ProductService {
       activeVendorPriceRecordId,
       activePriceFreightMode,
       priceTiers,
+      foreignPrice,
+      currencyCode,
+      exchangeRate,
+      additionalFee,
     } = payload;
 
     if (priceTiers.length > 0) {
@@ -647,6 +673,10 @@ export class ProductService {
           basePrice: basePrice.toString(),
           activeVendorPriceRecordId: activeVendorPriceRecordId || null,
           activePriceFreightMode: activePriceFreightMode || null,
+          foreignPrice: foreignPrice !== undefined && foreignPrice !== null ? foreignPrice.toString() : null,
+          currencyCode: currencyCode || "IDR",
+          exchangeRate: exchangeRate !== undefined && exchangeRate !== null ? exchangeRate.toString() : null,
+          additionalFee: additionalFee !== undefined && additionalFee !== null ? additionalFee.toString() : null,
         },
       });
 
@@ -672,18 +702,31 @@ export class ProductService {
   // === ADD IMAGE ===
   async addImage(
     id: string,
-    file: Express.Multer.File,
-    metadata?: { isFeatured?: boolean; altText?: string },
+    file?: Express.Multer.File,
+    metadata?: { isFeatured?: boolean; altText?: string; url?: string },
   ) {
-    const upload = await this.cloudinary.upload(file, {
-      folder: "products",
-      resource_type: "image",
-    });
+    let secureUrl = "";
+    let publicId = "";
+
+    if (file) {
+      const upload = await this.cloudinary.upload(file, {
+        folder: "products",
+        resource_type: "image",
+      });
+      secureUrl = upload.secure_url;
+      publicId = upload.public_id;
+    } else if (metadata?.url) {
+      secureUrl = metadata.url;
+      publicId = `fe_link_${Date.now()}_${Math.random()}`;
+    } else {
+      throw new ApiError("No image file or URL provided", 400);
+    }
+
     await this.prisma.productImage.create({
       data: {
         productId: id,
-        url: upload.secure_url,
-        publicId: upload.public_id,
+        url: secureUrl,
+        publicId: publicId,
         isFeatured: metadata?.isFeatured || false,
         altText: metadata?.altText || "Product Image",
       },
@@ -707,10 +750,28 @@ export class ProductService {
   async deleteImage(imageId: string) {
     const img = await this.prisma.productImage.findUnique({
       where: { id: imageId },
+      include: { product: true }
     });
     if (!img) throw new ApiError("Image not found", 404);
     const productId = img.productId;
     await this.cloudinary.remove(img.url);
+
+    if (img.product) {
+      const updateData: any = {};
+      if (img.product.mockupFrontImageId === imageId) {
+        updateData.mockupFrontImageId = null;
+      }
+      if (img.product.mockupBackImageId === imageId) {
+        updateData.mockupBackImageId = null;
+      }
+      if (Object.keys(updateData).length > 0) {
+        await this.prisma.product.update({
+          where: { id: productId },
+          data: updateData,
+        });
+      }
+    }
+
     await this.prisma.productImage.delete({ where: { id: imageId } });
 
     const updatedProduct = await this.prisma.product.findUnique({
