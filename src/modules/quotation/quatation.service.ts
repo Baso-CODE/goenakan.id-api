@@ -127,12 +127,12 @@ export class QuotationService {
           },
         },
         user: {
-          // Menambahkan relasi ke User (Sales Internal)
+          // Relasi ke User (Sales Internal)
           select: { id: true, name: true, email: true },
         },
         items: {
           include: {
-            tiers: true,
+            tiers: true, // Menarik data tier sebagai acuan harga grosir
             variant: {
               select: {
                 id: true,
@@ -165,7 +165,7 @@ export class QuotationService {
         const b2b = quotation.client.b2b;
         clientDetail = {
           type: "B2B",
-          status: clientStatus, // Menampilkan POTENTIAL atau OFFICIAL
+          status: clientStatus,
           id: quotation.client.id,
           custCode: quotation.client.custCode,
           name: b2b.companyName,
@@ -179,7 +179,7 @@ export class QuotationService {
         const b2c = quotation.client.b2c;
         clientDetail = {
           type: "B2C",
-          status: clientStatus, // Menampilkan POTENTIAL atau OFFICIAL
+          status: clientStatus,
           id: quotation.client.id,
           custCode: quotation.client.custCode,
           name: b2c.name,
@@ -195,11 +195,9 @@ export class QuotationService {
     return {
       ...quotation,
       clientInfo: clientDetail,
-      // Menambahkan informasi pembuat quotation
       createdBy: quotation.user,
     };
   }
-
   // ==========================================
   // 3. CREATE QUOTATION
   // ==========================================
@@ -458,7 +456,7 @@ export class QuotationService {
   }
 
   // ==========================================
-  // 4. UPDATE QUOTATION
+  // 4. UPDATE QUOTATION (DIPERBAIKI)
   // ==========================================
   async updateQuotation(id: string, data: UpdateQuotationDTO) {
     const existing = await this.prisma.quotation.findUnique({
@@ -480,43 +478,29 @@ export class QuotationService {
         let calculatedSubTotal = 0;
 
         for (const item of items) {
+          // 1. Tangkap quantity dan unitPrice utama dari input form
+          const mainQty = item.quantity ? Number(item.quantity) : 1;
+          const mainPrice = item.unitPrice ? Number(item.unitPrice) : 0;
+          const itemDiscount = item.discount ? Number(item.discount) : 0;
+
+          // 2. Hitung total baris berdasarkan input utama (Quantity x UnitPrice - Discount)
+          const lineTotal = mainQty * mainPrice - itemDiscount;
+          calculatedSubTotal += lineTotal < 0 ? 0 : lineTotal;
+
+          // 3. Siapkan data tiers sebagai acuan referensi (jika ada)
           const tiersData =
-            item.tiers && item.tiers.length > 0
-              ? item.tiers
-              : [
-                  {
-                    minQuantity: item.quantity ? Number(item.quantity) : 1,
-                    maxQuantity: undefined,
-                    quantityLabel: item.quantityLabel || null,
-                    unitPrice: item.unitPrice || 0,
-                  },
-                ];
+            item.tiers && item.tiers.length > 0 ? item.tiers : [];
+          const tiersToCreate = tiersData.map((tier: any) => ({
+            minQuantity: tier.minQuantity ? Number(tier.minQuantity) : 1,
+            maxQuantity: tier.maxQuantity ? Number(tier.maxQuantity) : null,
+            quantityLabel: tier.quantityLabel || "Pcs",
+            unitPrice: tier.unitPrice ? Number(tier.unitPrice) : 0,
+            totalPrice:
+              (tier.minQuantity ? Number(tier.minQuantity) : 1) *
+              (tier.unitPrice ? Number(tier.unitPrice) : 0),
+          }));
 
-          const tiersToCreate = tiersData.map((tier: any) => {
-            const baseQtyForCalculation = tier.minQuantity
-              ? Number(tier.minQuantity)
-              : 1;
-            const finalUnitPrice = tier.unitPrice || 0;
-
-            // Hitung total per baris menggunakan minQuantity
-            const lineTotal =
-              baseQtyForCalculation * Number(finalUnitPrice) -
-              Number(item.discount || 0);
-
-            return {
-              minQuantity: baseQtyForCalculation,
-              maxQuantity: tier.maxQuantity ? Number(tier.maxQuantity) : null,
-              quantityLabel: tier.quantityLabel || null,
-              unitPrice: finalUnitPrice,
-              totalPrice: lineTotal < 0 ? 0 : lineTotal,
-            };
-          });
-
-          if (tiersToCreate.length > 0) {
-            calculatedSubTotal += tiersToCreate[0].totalPrice;
-          }
-
-          // Gabungkan catatan kustomisasi dan atribut terpilih ke dalam field JSON customization
+          // 4. Atribut kustomisasi produk
           const customizationData = {
             ...(item.selectedAttributes
               ? { selectedAttributes: item.selectedAttributes }
@@ -524,7 +508,7 @@ export class QuotationService {
             ...(item.customization ? { customText: item.customization } : {}),
           };
 
-          // Insert Item beserta relasi Tier-nya dan atribut varian
+          // 5. Simpan Item Quotation beserta Quantity & UnitPrice utamanya
           await tx.quotationItem.create({
             data: {
               quotationId: id,
@@ -532,14 +516,16 @@ export class QuotationService {
               variantId: item.variantId || null,
               productName: item.productName,
               description: item.description,
-              discount: item.discount || 0,
+              quantity: mainQty, // Menyimpan Qty utama
+              unitPrice: mainPrice, // Menyimpan UnitPrice utama
+              discount: itemDiscount,
               customization:
                 Object.keys(customizationData).length > 0
                   ? customizationData
                   : Prisma.JsonNull,
               remarks: item.remarks,
               tiers: {
-                create: tiersToCreate,
+                create: tiersToCreate, // Menyimpan data tier sebagai referensi
               },
             },
           });
@@ -552,7 +538,6 @@ export class QuotationService {
       // === LOGIC B: UPDATE NOTES ===
       if (notes) {
         await tx.quotationNote.deleteMany({ where: { quotationId: id } });
-
         if (notes.length > 0) {
           await tx.quotationNote.createMany({
             data: notes.flatMap((note) =>
@@ -581,24 +566,18 @@ export class QuotationService {
         ...(headerData.userId !== undefined && {
           userId: headerData.userId || null,
         }),
-
-        // Relasi ke tabel Client terpusat
         ...(headerData.clientId !== undefined && {
           clientId: headerData.clientId || null,
         }),
         ...(headerData.picId !== undefined && {
           picId: headerData.picId || null,
         }),
-
-        // Currency & Payment Terms
         ...(headerData.currencyCode !== undefined && {
           currencyCode: headerData.currencyCode,
         }),
         ...(headerData.paymentTerms !== undefined && {
           paymentTerms: headerData.paymentTerms || null,
         }),
-
-        // Financials
         subTotal: newSubTotal,
         totalAmount: newTotalAmount,
       };
@@ -606,25 +585,6 @@ export class QuotationService {
       return await tx.quotation.update({
         where: { id },
         data: updatePayload,
-        include: {
-          items: {
-            include: {
-              tiers: true,
-              variant: {
-                select: {
-                  id: true,
-                  variantName: true,
-                  price: true,
-                },
-              },
-            },
-          },
-          notes: {
-            include: { category: true },
-          },
-          client: { select: { id: true, custCode: true, type: true } },
-          user: { select: { id: true, name: true, email: true } },
-        },
       });
     });
   }

@@ -49,7 +49,6 @@ export class CreateQuotationItemDTO {
   @IsUUID()
   variantId?: string;
 
-  // ✨ TAMBAHAN: Untuk menangkap pilihan atribut fleksibel dari frontend (Warna, Ukuran, dll)
   @IsOptional()
   @IsObject()
   selectedAttributes?: Record<string, any>;
@@ -64,7 +63,7 @@ export class CreateQuotationItemDTO {
 
   @IsOptional()
   @IsInt()
-  @Min(1)
+  @Min(0)
   @Type(() => Number)
   quantity?: number;
 

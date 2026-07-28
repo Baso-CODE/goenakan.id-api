@@ -82,7 +82,9 @@ export class QuotationController {
   // === UPDATE ===
   update = async (req: Request, res: Response, next: NextFunction) => {
     try {
+      console.log(req.body);
       const { id } = req.params;
+
       const body = req.body as UpdateQuotationDTO;
 
       const userId = (req as any).user?.id;
