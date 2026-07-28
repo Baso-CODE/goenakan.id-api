@@ -32,7 +32,7 @@ export class QuotationRouter {
     this.router.get(
       "/",
       this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_INVOICE"]), // Sesuaikan Role
+      verifyRole(["SUPER_ADMIN", "ADMIN_INVOICE"]),
       this.quotationController.getAll,
     );
 
@@ -41,6 +41,14 @@ export class QuotationRouter {
       this.nextAuthMiddleware.verifyNextAuthToken,
       this.quotationController.getQuotationReferences,
     );
+
+    this.router.get(
+      "/follow-ups/all",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN", "ADMIN_INVOICE"]),
+      this.quotationController.getAllGlobalFollowUps,
+    );
+
     this.router.get(
       "/print/:id",
       this.nextAuthMiddleware.verifyNextAuthToken,

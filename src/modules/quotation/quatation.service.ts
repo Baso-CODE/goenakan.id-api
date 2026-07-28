@@ -127,12 +127,11 @@ export class QuotationService {
           },
         },
         user: {
-          // Relasi ke User (Sales Internal)
           select: { id: true, name: true, email: true },
         },
         items: {
           include: {
-            tiers: true, // Menarik data tier sebagai acuan harga grosir
+            tiers: true,
             variant: {
               select: {
                 id: true,
@@ -198,14 +197,14 @@ export class QuotationService {
       createdBy: quotation.user,
     };
   }
+
   // ==========================================
-  // 3. CREATE QUOTATION
+  // 3. CREATE QUOTATION (DIPERBAIKI)
   // ==========================================
   async createQuotation(
     data: CreateQuotationDTO,
     files: Express.Multer.File[],
   ) {
-    // 1. Validasi: clientId sekarang WAJIB ada
     if (!data.clientId) {
       throw new ApiError(
         "Client information is required. Please select a client.",
@@ -245,83 +244,40 @@ export class QuotationService {
 
     let subTotal = 0;
 
-    // 4. Prepare Items & Tiers
+    // 4. Prepare Items & Tiers (SINKRON DENGAN UPDATE LOGIC)
     const itemsToCreate = await Promise.all(
       data.items.map(async (item: any, index) => {
-        let variantPrice: number | null = null;
-
-        if (item.productId) {
-          const product = await this.prisma.product.findUnique({
-            where: { id: item.productId },
-            include: { productVariants: true },
-          });
-
-          if (product?.isCustom) {
-            if (!item.variantId) {
-              throw new ApiError(
-                `Variant wajib dipilih untuk product custom: ${product.name}`,
-                400,
-              );
-            }
-            const variant = product.productVariants.find(
-              (v) => v.id === item.variantId,
-            );
-            if (!variant) {
-              throw new ApiError(
-                `Variant tidak valid untuk product: ${product.name}`,
-                400,
-              );
-            }
-            if (variant.price) {
-              variantPrice = Number(variant.price);
-            }
-          }
-        }
-
         const img = uploadedImages[index];
 
-        const tiersData =
-          item.tiers && item.tiers.length > 0
-            ? item.tiers
-            : [
-                {
-                  minQuantity: item.quantity ? Number(item.quantity) : 1,
-                  maxQuantity: undefined,
-                  quantityLabel: item.quantityLabel || null,
-                  unitPrice: item.unitPrice || 0,
-                },
-              ];
+        const mainQty = item.quantity ? Number(item.quantity) : 1;
+        const mainPrice = item.unitPrice ? Number(item.unitPrice) : 0;
+        const itemDiscount = item.discount ? Number(item.discount) : 0;
 
-        const tiersToCreate = tiersData.map((tier: any) => {
-          let finalUnitPrice = tier.unitPrice;
+        // 4b. Hitung total baris berdasarkan input utama
+        const lineTotal = mainQty * mainPrice - itemDiscount;
+        subTotal += lineTotal < 0 ? 0 : lineTotal; // Tambahkan ke keseluruhan subTotal
 
-          if (!finalUnitPrice && variantPrice !== null) {
-            finalUnitPrice = variantPrice;
-          }
-          const baseQtyForCalculation = tier.minQuantity
-            ? Number(tier.minQuantity)
-            : 1;
-          const lineTotal =
-            baseQtyForCalculation * Number(finalUnitPrice) -
-            Number(item.discount || 0);
-
-          return {
-            minQuantity: baseQtyForCalculation,
-            maxQuantity: tier.maxQuantity ? Number(tier.maxQuantity) : null,
-            quantityLabel: tier.quantityLabel || null,
-            unitPrice: finalUnitPrice,
-            totalPrice: lineTotal < 0 ? 0 : lineTotal,
-          };
-        });
-        if (tiersToCreate.length > 0) {
-          subTotal += tiersToCreate[0].totalPrice;
-        }
+        // 4c. Siapkan data tiers sebagai acuan referensi
+        const tiersData = item.tiers && item.tiers.length > 0 ? item.tiers : [];
+        const tiersToCreate = tiersData.map((tier: any) => ({
+          minQuantity: tier.minQuantity ? Number(tier.minQuantity) : 1,
+          maxQuantity: tier.maxQuantity ? Number(tier.maxQuantity) : null,
+          quantityLabel: tier.quantityLabel || "Pcs",
+          unitPrice: tier.unitPrice ? Number(tier.unitPrice) : 0,
+          totalPrice:
+            (tier.minQuantity ? Number(tier.minQuantity) : 1) *
+            (tier.unitPrice ? Number(tier.unitPrice) : 0),
+        }));
 
         return {
           productId: item.productId || null,
           variantId: item.variantId || null,
           productName: item.productName,
           description: item.description,
+
+          quantity: mainQty,
+          unitPrice: mainPrice,
+          discount: itemDiscount,
 
           customization: item.customization ?? Prisma.JsonNull,
           remarks: item.remarks,
@@ -374,7 +330,7 @@ export class QuotationService {
       }
     }
 
-    // 7. Retry loop
+    // 7. Retry loop untuk Quotation Number
     const MAX_RETRIES = 5;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       const nextSequence = maxSequence + 1 + attempt;
@@ -395,7 +351,7 @@ export class QuotationService {
 
             // Relasi murni menggunakan ID Database
             clientId: data.clientId,
-            picId: (data as any).picId || null, // Menangkap picId jika B2B
+            picId: (data as any).picId || null,
 
             // Currency & Payment Terms
             currencyCode: data.currencyCode || "IDR",
@@ -433,7 +389,7 @@ export class QuotationService {
             },
             notes: { include: { category: true } },
             client: { select: { id: true, custCode: true, type: true } },
-            user: { select: { id: true, name: true, email: true } }, // Mengembalikan data user pembuat
+            user: { select: { id: true, name: true, email: true } },
           },
         });
 
@@ -508,7 +464,6 @@ export class QuotationService {
             ...(item.customization ? { customText: item.customization } : {}),
           };
 
-          // 5. Simpan Item Quotation beserta Quantity & UnitPrice utamanya
           await tx.quotationItem.create({
             data: {
               quotationId: id,
@@ -516,8 +471,8 @@ export class QuotationService {
               variantId: item.variantId || null,
               productName: item.productName,
               description: item.description,
-              quantity: mainQty, // Menyimpan Qty utama
-              unitPrice: mainPrice, // Menyimpan UnitPrice utama
+              quantity: mainQty,
+              unitPrice: mainPrice,
               discount: itemDiscount,
               customization:
                 Object.keys(customizationData).length > 0
@@ -525,7 +480,7 @@ export class QuotationService {
                   : Prisma.JsonNull,
               remarks: item.remarks,
               tiers: {
-                create: tiersToCreate, // Menyimpan data tier sebagai referensi
+                create: tiersToCreate,
               },
             },
           });
@@ -648,12 +603,67 @@ export class QuotationService {
     });
   }
 
-  // Get Detail Quotation untuk Print / Preview
+  // ==========================================
+  // GET ALL FOLLOW UPS (GLOBAL WITH PAGINATION & SEARCH)
+  // ==========================================
+  async getAllFollowUps(query: {
+    page?: number;
+    take?: number;
+    search?: string;
+  }) {
+    const page = Number(query.page) || 1;
+    const take = Number(query.take) || 10;
+    const skip = (page - 1) * take;
+
+    const where: Prisma.QuotationFollowUpWhereInput = {};
+
+    // Filter Pencarian (Search)
+    if (query.search) {
+      where.OR = [
+        { name: { contains: query.search } },
+        { notes: { contains: query.search } },
+        { quotation: { quotationNumber: { contains: query.search } } },
+      ];
+    }
+
+    // Hitung total data untuk meta paginasi
+    const count = await this.prisma.quotationFollowUp.count({ where });
+
+    // Ambil data beserta relasinya
+    const data = await this.prisma.quotationFollowUp.findMany({
+      where,
+      skip,
+      take,
+      orderBy: { date: "desc" },
+      include: {
+        quotation: {
+          select: {
+            id: true,
+            quotationNumber: true,
+            client: {
+              include: {
+                b2b: true,
+                b2c: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const meta = this.pagination.generateMeta({
+      page: Number(query.page || 1),
+      take: Number(query.take || 10),
+      count,
+    });
+
+    return { data, meta };
+  }
+
   async getQuotationByIdForPrint(id: string) {
     const quotation = await this.prisma.quotation.findUnique({
       where: { id },
       include: {
-        // 1. Data Client
         client: {
           include: {
             b2b: {
@@ -713,7 +723,55 @@ export class QuotationService {
       throw new ApiError("Quotation not found", 404);
     }
 
-    // Gunakan 'as any' jika TS masih kesulitan mengenali relasi items setelah perubahan schema
+    // ====================================================================
+    // LANGKAH 1: Kumpulkan semua UUID Atribut & Value dari JSON Customization
+    // ====================================================================
+    const attributeIds = new Set<string>();
+    const valueIds = new Set<string>();
+
+    (quotation.items as any[]).forEach((item) => {
+      if (item.customization) {
+        try {
+          const parsed =
+            typeof item.customization === "string"
+              ? JSON.parse(item.customization)
+              : item.customization;
+
+          const attrs = parsed?.selectedAttributes || parsed;
+          if (typeof attrs === "object" && attrs !== null) {
+            Object.entries(attrs).forEach(([attrId, valId]) => {
+              attributeIds.add(attrId);
+              valueIds.add(String(valId));
+            });
+          }
+        } catch (error) {}
+      }
+    });
+
+    // ====================================================================
+    // LANGKAH 2: Ambil Nama Asli dari Database (Prisma)
+    // Berdasarkan skema: model Attribute dan model AttributeValue
+    // ====================================================================
+    const attributes = await this.prisma.attribute.findMany({
+      where: { id: { in: Array.from(attributeIds) } },
+      select: { id: true, name: true },
+    });
+
+    const attributeValues = await this.prisma.attributeValue.findMany({
+      where: { id: { in: Array.from(valueIds) } },
+      select: { id: true, value: true },
+    });
+
+    const attrDictionary = Object.fromEntries(
+      attributes.map((a) => [a.id, a.name]),
+    );
+    const valDictionary = Object.fromEntries(
+      attributeValues.map((v) => [v.id, v.value]),
+    );
+
+    // ====================================================================
+    // LANGKAH 3: Terjemahkan dan Rapikan Data Item
+    // ====================================================================
     const normalizedItems = (quotation.items as any[]).map((item) => {
       let imageUrl: string | null = null;
 
@@ -725,11 +783,41 @@ export class QuotationService {
 
       const finalDescription =
         item.description || item.product?.description || null;
+      let readableCustomization: Record<string, string> | string | null = null;
+
+      if (item.customization) {
+        try {
+          const parsed =
+            typeof item.customization === "string"
+              ? JSON.parse(item.customization)
+              : item.customization;
+
+          const attrs = parsed?.selectedAttributes || parsed;
+
+          if (typeof attrs === "object" && attrs !== null) {
+            const customizationObject: Record<string, string> = {};
+            Object.entries(attrs).forEach(([attrId, valId]) => {
+              const realName = attrDictionary[attrId] || attrId;
+              const realValue = valDictionary[String(valId)] || String(valId);
+
+              customizationObject[realName] = realValue;
+            });
+            readableCustomization = customizationObject;
+          } else {
+            // Jika format JSON-nya berbeda dari ekspektasi
+            readableCustomization = attrs;
+          }
+        } catch (error) {
+          // Jika data aslinya memang berupa teks biasa (bukan JSON)
+          readableCustomization = item.customization;
+        }
+      }
 
       return {
         ...item,
         imageUrl,
         description: finalDescription,
+        customization: readableCustomization, // Kirimkan data yang sudah diterjemahkan!
         remarks: item.remarks ?? null,
         tiers: item.tiers || [],
       };
@@ -739,10 +827,9 @@ export class QuotationService {
       ...quotation,
       validUntil: quotation.validUntil ?? null,
       items: normalizedItems,
-      createdBy: quotation.user, // Mengirim info pembuat
+      createdBy: quotation.user,
     };
   }
-
   // ====================================================================
   // GET QUOTATION REFERENCES (Hanya ID dan Nomor untuk Dropdown Order)
   // ====================================================================

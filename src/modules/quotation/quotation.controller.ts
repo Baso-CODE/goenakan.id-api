@@ -138,6 +138,27 @@ export class QuotationController {
     }
   };
 
+  // === GET ALL GLOBAL FOLLOW UPS (Pagination, Search) ===
+  getAllGlobalFollowUps = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { page, take, search } = req.query;
+
+      const result = await this.quotationService.getAllFollowUps({
+        page: Number(page),
+        take: Number(take),
+        search: search as string,
+      });
+
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
   // === GET FOR PRINT ===
   getForPrint = async (req: Request, res: Response, next: NextFunction) => {
     try {
