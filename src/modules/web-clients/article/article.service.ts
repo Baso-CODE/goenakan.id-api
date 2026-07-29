@@ -553,7 +553,7 @@ export class ArticleService {
           createdAt: "desc", // Ambil yang terbaru di kategori tersebut
         },
         include: {
-          category: { select: { name: true } },
+          category: { select: { name_id: true, name_en: true } },
         },
       });
 
@@ -702,7 +702,9 @@ export class ArticleService {
       take: Number(query.take || 10),
       orderBy: { createdAt: "desc" },
       include: {
-        category: { select: { id: true, name: true, slug: true } },
+        category: {
+          select: { id: true, name_id: true, name_en: true, slug: true },
+        },
         author: { select: { name: true } },
       },
     });
@@ -778,7 +780,9 @@ export class ArticleService {
       take: Number(query.take || 6),
       orderBy: orderBy,
       include: {
-        category: { select: { id: true, name: true, slug: true } },
+        category: {
+          select: { id: true, name_id: true, name_en: true, slug: true },
+        },
         author: { select: { name: true } },
       },
     });

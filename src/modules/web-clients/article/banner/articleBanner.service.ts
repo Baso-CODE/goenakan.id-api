@@ -222,7 +222,8 @@ export class ArticleBannerService {
               slug: true,
               category: {
                 select: {
-                  name: true,
+                  name_id: true,
+                  name_en: true,
                 },
               },
             },
@@ -230,8 +231,6 @@ export class ArticleBannerService {
         },
       });
 
-      // Mapping agar struktur data tetap kompatibel dengan frontend
-      // Frontend biasanya mengakses banner.article.title
       return banners.map((banner) => ({
         ...banner,
         article: banner.article

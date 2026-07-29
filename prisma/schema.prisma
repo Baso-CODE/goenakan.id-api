@@ -205,6 +205,8 @@ model User {
   createdQuotations   Quotation[]          @relation("QuotationCreatedBy")
   updatedQuotations   Quotation[]          @relation("QuotationUpdatedBy")
   approvedQuotations  Quotation[]          @relation("QuotationApprovedBy")
+  createdReplacements ReplacementOrder[]   @relation("ReplacementCreatedBy")
+  updatedReplacements ReplacementOrder[]   @relation("ReplacementUpdatedBy")
 
   @@map("users")
 }
@@ -213,8 +215,7 @@ model Role {
   id          String  @id @default(cuid())
   name        String  @unique
   description String?
-
-  users User[]
+  users       User[]
 
   @@map("roles")
 }
@@ -276,19 +277,20 @@ model PurchaseChannel {
 }
 
 model Client {
-  id         String       @id @default(uuid())
-  custCode   String       @unique
-  type       ClientType
-  userId     String?      @unique
-  user       User?        @relation(fields: [userId], references: [id])
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
-  status     ClientStatus @default(OFFICIAL)
-  b2b        ClientB2B?
-  b2c        ClientB2C?
-  orders     Order[]
-  invoices   Invoice[]
-  quotations Quotation[]
+  id                String             @id @default(uuid())
+  custCode          String             @unique
+  type              ClientType
+  userId            String?            @unique
+  user              User?              @relation(fields: [userId], references: [id])
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  status            ClientStatus       @default(OFFICIAL)
+  b2b               ClientB2B?
+  b2c               ClientB2C?
+  orders            Order[]
+  invoices          Invoice[]
+  quotations        Quotation[]
+  replacementOrders ReplacementOrder[]
 
   @@map("clients")
 }
@@ -340,9 +342,10 @@ model ClientB2BPIC {
   email       String?
   phone       String?
 
-  clientB2B  ClientB2B   @relation(fields: [clientB2BId], references: [id])
-  orders     Order[]
-  quotations Quotation[]
+  clientB2B         ClientB2B          @relation(fields: [clientB2BId], references: [id])
+  orders            Order[]
+  quotations        Quotation[]
+  replacementOrders ReplacementOrder[]
 
   @@map("client_b2b_pics")
 }
@@ -466,13 +469,14 @@ model Product {
   mockupAreaWidth  Float?
   mockupAreaHeight Float?
 
-  isMultiFace               Boolean             @default(false)
+  isMultiFace               Boolean                   @default(false)
   mockupFrontImageId        String?
   mockupBackImageId         String?
   activeVendorPriceRecordId String?
   activePriceFreightMode    String? // "SEA" | "AIR" | "CUSTOM"
-  activeVendorPriceRecord   VendorPriceRecord?  @relation("ActiveProductPrice", fields: [activeVendorPriceRecordId], references: [id], onDelete: SetNull)
+  activeVendorPriceRecord   VendorPriceRecord?        @relation("ActiveProductPrice", fields: [activeVendorPriceRecordId], references: [id], onDelete: SetNull)
   vendorPrices              VendorPriceRecord[]
+  replacementProducts       ReplacementOrderProduct[]
 
   @@map("products")
 }
@@ -589,15 +593,16 @@ model ProductVariant {
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
-  attributeValues    ProductVariantAttributeValue[]
-  images             ProductVariantImage[]
-  orderProducts      OrderProduct[]
-  invoiceItems       InvoiceItem[]
-  quotationItems     QuotationItem[]
-  cartItems          CartItem[]
-  webOrderItems      WebOrderItem[]
-  priceTiers         PriceTier[]
-  purchaseOrderItems PurchaseOrderItem[]
+  attributeValues     ProductVariantAttributeValue[]
+  images              ProductVariantImage[]
+  orderProducts       OrderProduct[]
+  invoiceItems        InvoiceItem[]
+  quotationItems      QuotationItem[]
+  cartItems           CartItem[]
+  webOrderItems       WebOrderItem[]
+  priceTiers          PriceTier[]
+  purchaseOrderItems  PurchaseOrderItem[]
+  replacementProducts ReplacementOrderProduct[]
 
   @@map("product_variants")
 }
@@ -1099,6 +1104,7 @@ model Order {
   sales                Sales?                @relation(fields: [salesId], references: [id])
   salesId              String?
   whatsappMessages     WhatsappMessage[]
+  replacementOrders    ReplacementOrder[]    @relation("OrderToReplacement")
 
   @@map("orders")
 }
@@ -1155,6 +1161,70 @@ model OrderSampleFollowUp {
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@map("order_sample_follow_ups")
+}
+
+// ===============================================
+// REPLACEMENT ORDER SECTION
+// ===============================================
+
+model ReplacementOrder {
+  id                String   @id @default(uuid())
+  replacementNumber String?  @unique // Replacement Number (RN)
+  replacementDate   DateTime @default(now()) // Replacement order date
+
+  // === RELATIONS TO ORIGINAL ORDER ===
+  referenceOrderId String
+  referenceOrder   Order  @relation("OrderToReplacement", fields: [referenceOrderId], references: [id])
+
+  // === CLIENT RELATIONS (Menyediakan nama, alamat, dll via relasi) ===
+  clientId       String
+  client         Client        @relation(fields: [clientId], references: [id])
+  clientB2BPICId String?
+  pic            ClientB2BPIC? @relation(fields: [clientB2BPICId], references: [id])
+
+  // === DETAILS ===
+  replacementReason String // (wrong color, defect, lost shipment, etc)
+  remarks           String? @db.Text
+
+  // === SHIPPING TRACKING ===
+  sendToCustDate    DateTime?
+  arrivalInCustDate DateTime?
+
+  // === ITEMS ===
+  items ReplacementOrderProduct[]
+
+  // === AUDIT TRAIL ===
+  createdById String?
+  createdBy   User?   @relation("ReplacementCreatedBy", fields: [createdById], references: [id])
+  updatedById String?
+  updatedBy   User?   @relation("ReplacementUpdatedBy", fields: [updatedById], references: [id])
+
+  createdAt DateTime @default(now()) // Created time
+  updatedAt DateTime @updatedAt // Updated time
+
+  @@map("replacement_orders")
+}
+
+model ReplacementOrderProduct {
+  id                 String           @id @default(uuid())
+  replacementOrderId String
+  replacementOrder   ReplacementOrder @relation(fields: [replacementOrderId], references: [id], onDelete: Cascade)
+
+  // Referensi ke produk yang diganti
+  productId String
+  product   Product         @relation(fields: [productId], references: [id])
+  variantId String?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id])
+
+  quantity  Int
+  // Harga bisa diset 0 jika ini murni replacement gratis, atau tetap dicatat sebagai referensi nilai
+  unitPrice Decimal? @default(0)
+
+  selectedAttributes Json?
+  customization      Json?
+  remarks            String?
+
+  @@map("replacement_order_products")
 }
 
 // ===============================================
@@ -1946,13 +2016,20 @@ model WebOrderItem {
 // ===============================================
 
 model ArticleCategory {
-  id          String   @id @default(uuid())
-  name        String   @unique // contoh: "Tutorial", "Tips & Trik"
-  slug        String   @unique
-  description String?  @db.Text
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id   String @id @default(uuid())
+  slug String @unique
+
+  // === KONTEN BAHASA INDONESIA (DEFAULT) ===
+  name_id        String  @unique @map("name")
+  description_id String? @map("description") @db.Text
+
+  // === KONTEN BAHASA INGGRIS ===
+  name_en        String?
+  description_en String? @db.Text
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   articles Article[]
 
