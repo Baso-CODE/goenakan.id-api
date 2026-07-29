@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { injectable } from "tsyringe";
 
 import { ApiError } from "../../utils/api-error";
+import { CounterService } from "../../utils/counter.service";
 import { CloudinaryService } from "../cloudinary/cloudinary.service";
 import { PaginationService } from "../pagination/pagination.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -14,8 +15,45 @@ export class QuotationService {
     private readonly prisma: PrismaService,
     private readonly pagination: PaginationService,
     private readonly cloudinary: CloudinaryService,
+    private readonly counterService: CounterService,
   ) {}
 
+  // ====================================================================
+  // HELPER: GENERATE QUOTATION NUMBER (Aman dari Race Condition)
+  // Format Baru: GI-QNYYMMXXXJJ (Contoh: GI-QN260300101)
+  // ====================================================================
+  private async generateQuotationNumber(
+    tx: any,
+    custCode: string,
+  ): Promise<string> {
+    // 1. Dapatkan periode Tahun & Bulan (YYMM), contoh: "2603"
+    const periodYYMM = this.counterService.getCurrentPeriodYYMM();
+
+    // 2. Dapatkan XXX (3 digit urutan client berdasarkan custCode database)
+    // Kita ekstrak angka dari custCode (misal: "C-005" atau "005" -> akan diambil "005")
+    let clientSeq = "000";
+    const numberMatch = custCode.match(/\d+/);
+    if (numberMatch) {
+      // Pastikan selalu 3 digit (tambah nol di depan jika kurang, potong jika lebih)
+      clientSeq = numberMatch[0].padStart(3, "0").slice(-3);
+    } else {
+      // Fallback jika custCode klien kebetulan tidak mengandung angka sama sekali
+      clientSeq = "999";
+    }
+
+    // 3. Dapatkan JJ (2 digit urutan Quotation per bulan)
+    // Tipe counter "QN_2603" agar mereset dari 01 setiap bulan berganti
+    const counterType = `QN_${periodYYMM}`;
+    const quotationSeq = await this.counterService.getNextFormattedNumber(
+      tx,
+      counterType,
+      periodYYMM,
+      2, // padding 2 digit (JJ)
+    );
+
+    // 4. Gabungkan menjadi satu string
+    return `GI-QN${periodYYMM}${clientSeq}${quotationSeq}`;
+  }
   // Helper: Konversi Bulan ke Romawi
   private getRomanMonth(date: Date): string {
     const months = [
@@ -199,7 +237,7 @@ export class QuotationService {
   }
 
   // ==========================================
-  // 3. CREATE QUOTATION (DIPERBAIKI)
+  // 3. CREATE QUOTATION
   // ==========================================
   async createQuotation(
     data: CreateQuotationDTO,
@@ -212,24 +250,33 @@ export class QuotationService {
       );
     }
 
-    // 2. Group file per item index
+    // A. CEK CLIENT SEBELUM TRANSAKSI MULAI (Agar bisa dapat custCode)
+    const client = await this.prisma.client.findUnique({
+      where: { id: data.clientId },
+      select: { custCode: true },
+    });
+
+    if (!client) {
+      throw new ApiError("Client not found in database.", 404);
+    }
+
+    // B. UPLOAD CLOUDINARY (Dilakukan di luar transaksi agar aman)
     const fileByItemIndex: Record<number, Express.Multer.File> = {};
     if (files && files.length > 0) {
       for (const file of files) {
         const match = file.fieldname.match(/^items\[(\d+)\]\[image\]$/);
         if (match) {
-          const idx = parseInt(match[1], 10);
-          fileByItemIndex[idx] = file;
+          fileByItemIndex[parseInt(match[1], 10)] = file;
         }
       }
     }
 
-    // 3. Upload image per item
     const uploadedImages: Record<number, { url: string; publicId: string }> =
       {};
     for (const [idxStr, file] of Object.entries(fileByItemIndex)) {
       const idx = parseInt(idxStr, 10);
       try {
+        // Asumsi kamu punya ini di kelasmu
         const result = await this.cloudinary.upload(file, {
           folder: "quotation-items",
         });
@@ -242,173 +289,100 @@ export class QuotationService {
       }
     }
 
+    // C. PERSIAPKAN DATA ITEMS & HITUNG TOTAL
     let subTotal = 0;
+    const itemsToCreate = data.items.map((item: any, index) => {
+      const img = uploadedImages[index];
+      const mainQty = item.quantity ? Number(item.quantity) : 1;
+      const mainPrice = item.unitPrice ? Number(item.unitPrice) : 0;
+      const itemDiscount = item.discount ? Number(item.discount) : 0;
 
-    // 4. Prepare Items & Tiers (SINKRON DENGAN UPDATE LOGIC)
-    const itemsToCreate = await Promise.all(
-      data.items.map(async (item: any, index) => {
-        const img = uploadedImages[index];
+      const lineTotal = mainQty * mainPrice - itemDiscount;
+      subTotal += lineTotal < 0 ? 0 : lineTotal;
 
-        const mainQty = item.quantity ? Number(item.quantity) : 1;
-        const mainPrice = item.unitPrice ? Number(item.unitPrice) : 0;
-        const itemDiscount = item.discount ? Number(item.discount) : 0;
+      const tiersData = item.tiers && item.tiers.length > 0 ? item.tiers : [];
+      const tiersToCreate = tiersData.map((tier: any) => ({
+        minQuantity: tier.minQuantity ? Number(tier.minQuantity) : 1,
+        maxQuantity: tier.maxQuantity ? Number(tier.maxQuantity) : null,
+        quantityLabel: tier.quantityLabel || "Pcs",
+        unitPrice: tier.unitPrice ? Number(tier.unitPrice) : 0,
+        totalPrice:
+          (tier.minQuantity ? Number(tier.minQuantity) : 1) *
+          (tier.unitPrice ? Number(tier.unitPrice) : 0),
+      }));
 
-        // 4b. Hitung total baris berdasarkan input utama
-        const lineTotal = mainQty * mainPrice - itemDiscount;
-        subTotal += lineTotal < 0 ? 0 : lineTotal; // Tambahkan ke keseluruhan subTotal
-
-        // 4c. Siapkan data tiers sebagai acuan referensi
-        const tiersData = item.tiers && item.tiers.length > 0 ? item.tiers : [];
-        const tiersToCreate = tiersData.map((tier: any) => ({
-          minQuantity: tier.minQuantity ? Number(tier.minQuantity) : 1,
-          maxQuantity: tier.maxQuantity ? Number(tier.maxQuantity) : null,
-          quantityLabel: tier.quantityLabel || "Pcs",
-          unitPrice: tier.unitPrice ? Number(tier.unitPrice) : 0,
-          totalPrice:
-            (tier.minQuantity ? Number(tier.minQuantity) : 1) *
-            (tier.unitPrice ? Number(tier.unitPrice) : 0),
-        }));
-
-        return {
-          productId: item.productId || null,
-          variantId: item.variantId || null,
-          productName: item.productName,
-          description: item.description,
-
-          quantity: mainQty,
-          unitPrice: mainPrice,
-          discount: itemDiscount,
-
-          customization: item.customization ?? Prisma.JsonNull,
-          remarks: item.remarks,
-          imageUrl: img?.url ?? null,
-          imagePublicId: img?.publicId ?? null,
-
-          tiers: {
-            create: tiersToCreate,
-          },
-        };
-      }),
-    );
-
-    const totalAmount = subTotal;
-
-    // 5. Client Code (Hanya menggunakan clientId)
-    let clientCode = "NOC";
-    const client = await this.prisma.client.findUnique({
-      where: { id: data.clientId },
-      select: { custCode: true },
+      return {
+        productId: item.productId || null,
+        variantId: item.variantId || null,
+        productName: item.productName,
+        description: item.description,
+        quantity: mainQty,
+        unitPrice: mainPrice,
+        discount: itemDiscount,
+        customization: item.customization ?? Prisma.JsonNull, // Atau sesuaikan logika JSON milikmu
+        remarks: item.remarks,
+        imageUrl: img?.url ?? null,
+        imagePublicId: img?.publicId ?? null,
+        tiers: { create: tiersToCreate },
+      };
     });
 
-    if (!client) {
-      throw new ApiError("Client not found in database.", 404);
-    }
+    // D. BUKA TRANSAKSI UNTUK MENYIMPAN KE DATABASE (Aman dari Race Condition)
+    const newQuotation = await this.prisma.$transaction(async (tx) => {
+      // 1. Buat nomor Quotation menggunakan helper baru di dalam transaksi
+      const quotationNumber = await this.generateQuotationNumber(
+        tx,
+        client.custCode || "000",
+      );
 
-    if (client.custCode) {
-      clientCode = client.custCode;
-    }
+      // 2. Simpan data
+      const quotation = await tx.quotation.create({
+        data: {
+          quotationNumber,
+          date: data.date || new Date(),
+          validUntil: data.validUntil,
+          status: "DRAFT",
+          userId: data.userId || null,
+          clientId: data.clientId,
+          picId: (data as any).picId || null,
+          currencyCode: data.currencyCode || "IDR",
+          paymentTerms: data.paymentTerms || null,
+          subTotal,
+          totalAmount: subTotal,
 
-    const now = new Date();
-    const romanMonth = this.getRomanMonth(now);
-    const year = now.getFullYear();
-
-    // 6. Cari sequence tertinggi
-    const allQuotations = await this.prisma.quotation.findMany({
-      select: { quotationNumber: true },
-    });
-
-    let maxSequence = 0;
-    for (const q of allQuotations) {
-      if (!q.quotationNumber) continue;
-
-      const parts = q.quotationNumber.split("_");
-      if (parts.length >= 2) {
-        const num = parseInt(parts[1], 10);
-        if (!isNaN(num) && num > maxSequence) {
-          maxSequence = num;
-        }
-      }
-    }
-
-    // 7. Retry loop untuk Quotation Number
-    const MAX_RETRIES = 5;
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      const nextSequence = maxSequence + 1 + attempt;
-      const sequence = String(nextSequence).padStart(4, "0");
-
-      const quotationNumber = `QTN_${sequence}_${clientCode}_${romanMonth}_${year}`;
-
-      try {
-        const newQuotation = await this.prisma.quotation.create({
-          data: {
-            quotationNumber,
-            date: data.date || new Date(),
-            validUntil: data.validUntil,
-            status: "DRAFT",
-
-            // Relasi ke User pembuat
-            userId: data.userId || null,
-
-            // Relasi murni menggunakan ID Database
-            clientId: data.clientId,
-            picId: (data as any).picId || null,
-
-            // Currency & Payment Terms
-            currencyCode: data.currencyCode || "IDR",
-            paymentTerms: data.paymentTerms || null,
-
-            subTotal,
-            totalAmount,
-            notes:
-              data.notes && data.notes.length > 0
-                ? {
-                    createMany: {
-                      data: data.notes.flatMap((note) =>
-                        note.contents.map((text) => ({
-                          categoryId: note.categoryId,
-                          content: text,
-                        })),
-                      ),
-                    },
-                  }
-                : undefined,
-            items: { create: itemsToCreate },
-          },
-          include: {
-            items: {
-              include: {
-                tiers: true,
-                variant: {
-                  select: {
-                    id: true,
-                    variantName: true,
-                    price: true,
+          notes:
+            data.notes && data.notes.length > 0
+              ? {
+                  createMany: {
+                    data: data.notes.flatMap((note) =>
+                      note.contents.map((text) => ({
+                        categoryId: note.categoryId,
+                        content: text,
+                      })),
+                    ),
                   },
-                },
-              },
+                }
+              : undefined,
+
+          items: { create: itemsToCreate },
+        },
+        include: {
+          items: {
+            include: {
+              tiers: true,
+              variant: { select: { id: true, variantName: true, price: true } },
             },
-            notes: { include: { category: true } },
-            client: { select: { id: true, custCode: true, type: true } },
-            user: { select: { id: true, name: true, email: true } },
           },
-        });
+          notes: { include: { category: true } },
+          client: { select: { id: true, custCode: true, type: true } },
+          user: { select: { id: true, name: true, email: true } },
+        },
+      });
 
-        return newQuotation;
-      } catch (error: any) {
-        if (error?.code === "P2002" && attempt < MAX_RETRIES - 1) {
-          console.warn(
-            `Duplicate quotationNumber ${quotationNumber}, retrying... (attempt ${attempt + 1})`,
-          );
-          continue;
-        }
-        throw error;
-      }
-    }
+      return quotation;
+    }); // Transaksi ditutup secara otomatis
 
-    throw new ApiError(
-      "Failed to generate unique quotation number after multiple attempts",
-      500,
-    );
+    return newQuotation;
   }
 
   // ==========================================

@@ -1,5 +1,6 @@
 import { injectable } from "tsyringe"; // Sesuaikan jika kamu memakai Dependency Injection lain
 import { ApiError } from "../../utils/api-error";
+import { CounterService } from "../../utils/counter.service";
 import { PaginationService } from "../pagination/pagination.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreatePurchaseOrderDTO } from "./dto/createPurchaseOrder.dto";
@@ -10,49 +11,32 @@ export class PurchaseOrderService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pagination: PaginationService,
+    private readonly counterService: CounterService,
   ) {}
 
   // ====================================================================
-  // HELPER: GENERATE PO NUMBER (Otomatis & Urut, contoh: PO-20240520-0001)
+  // HELPER: GENERATE PO NUMBER (Aman dari Race Condition)
+  // Format Baru: GI-POYYMMXXXXX (Contoh: GI-PO260700001)
   // ====================================================================
   private async generatePONumber(tx: any): Promise<string> {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, "0");
-    const day = String(today.getDate()).padStart(2, "0");
-    const dateStr = `${year}${month}${day}`;
+    const formCode = "PO";
 
-    const prefix = `PO-${dateStr}-`;
+    // 1. Ambil periode tahun dan bulan saat ini (Contoh: "2607")
+    const periodYYMM = this.counterService.getCurrentPeriodYYMM();
 
-    const lastPO = await tx.purchaseOrder.findFirst({
-      where: {
-        poNumber: {
-          startsWith: prefix,
-        },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-      select: {
-        poNumber: true,
-      },
-    });
+    // 2. Tipe counter di database: "PO_2607" agar reset setiap bulan baru
+    const counterType = `${formCode}_${periodYYMM}`;
 
-    let nextIncrement = 1;
+    // 3. Ambil nomor urut berikutnya secara aman dengan 5 digit angka (XXXXX)
+    const sequence = await this.counterService.getNextFormattedNumber(
+      tx,
+      counterType,
+      periodYYMM,
+      5,
+    );
 
-    if (lastPO && lastPO.poNumber) {
-      const parts = lastPO.poNumber.split("-");
-      const lastIncrementStr = parts[parts.length - 1];
-      const lastIncrement = parseInt(lastIncrementStr, 10);
-      if (!isNaN(lastIncrement)) {
-        nextIncrement = lastIncrement + 1;
-      }
-    }
-
-    // Pad angka urut menjadi 4 digit (e.g., 0001)
-    const incrementStr = String(nextIncrement).padStart(4, "0");
-
-    return `${prefix}${incrementStr}`;
+    // 4. Gabungkan menjadi format akhir yang diminta klien
+    return `GI-${formCode}${periodYYMM}${sequence}`;
   }
 
   // ====================================================================

@@ -34,12 +34,13 @@ import { ItemCategoryRouter } from "./modules/product/item-category/item-categor
 import { ItemNameRouter } from "./modules/product/item-names/item-names.router";
 import { ProductRouter } from "./modules/product/masterProduct/product.router";
 import { MaterialTypeRouter } from "./modules/product/material-type/material-type.router";
-import { ProductTagRouter } from "./modules/product/tags/tags.router";
 import { SupplierCogsRouter } from "./modules/product/supplier-cogs/supplier-cogs.router";
+import { ProductTagRouter } from "./modules/product/tags/tags.router";
 import { PurchaseChannelRouter } from "./modules/purchaseChannel/purchaseChannel.router";
 import { PurchaseOrderRouter } from "./modules/purchaseOrder/purchaseOrder.router";
 import { QuotationRouter } from "./modules/quotation/quotation.router";
 import { QuotationNoteCategoryRouter } from "./modules/quotation/quotationNoteCategory/quotationNoteCategory.router";
+import { ReplacementOrderRouter } from "./modules/replacementOrder/replacementOrder.router";
 import { RoleRouter } from "./modules/roles/roles.router";
 import { SalesRouter } from "./modules/sales/sales.router";
 import { UserRouter } from "./modules/userManagement/userManagement.router";
@@ -163,6 +164,7 @@ export default class App {
     const roleRouter = container.resolve(RoleRouter);
     const wilayahRouter = container.resolve(WilayahRouter);
     const whatsappRouter = container.resolve(WhatsappRouter);
+    const replacementOrderRouter = container.resolve(ReplacementOrderRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -240,6 +242,7 @@ export default class App {
     this.app.use("/roles", roleRouter.getRouter());
     this.app.use("/wilayah", wilayahRouter.getRouter());
     this.app.use("/whatsapp", whatsappRouter.getRouter());
+    this.app.use("/replacement-orders", replacementOrderRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

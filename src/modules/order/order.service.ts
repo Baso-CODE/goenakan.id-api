@@ -2,6 +2,7 @@ import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
 import { getErrorMessage } from "../../middleware/getErrorMessage";
 import { ApiError } from "../../utils/api-error";
+import { CounterService } from "../../utils/counter.service";
 import { PaginationService } from "../pagination/pagination.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { WhatsappNotificationService } from "../whatsapp/notification/whatsapp-notification.service";
@@ -21,48 +22,37 @@ export class OrderService {
     private readonly prisma: PrismaService,
     private readonly pagination: PaginationService,
     private whatsappNotification: WhatsappNotificationService,
+    private readonly counterService: CounterService,
   ) {}
 
   // ====================================================================
-  // HELPER: GENERATE ORDER NUMBER (Format: GI-SOxxxx atau GI-SNxxxx)
+  // HELPER: GENERATE ORDER NUMBER (Format: GI-SO260700001 atau GI-SN260700001)
   // ====================================================================
   private async generateOrderNumber(
     tx: any,
     category: "SALES" | "SAMPLE",
   ): Promise<string> {
-    const prefix = category === "SALES" ? "GI-SO" : "GI-SN";
+    // Tentukan kode form (SO untuk Sales, SN untuk Sample)
+    const formCode = category === "SALES" ? "SO" : "SN";
 
-    // Cari order terakhir berdasarkan prefix tersebut
-    const lastOrder = await tx.order.findFirst({
-      where: {
-        orderNumber: {
-          startsWith: prefix,
-        },
-      },
-      orderBy: {
-        createdAt: "desc", // Mengambil yang terbaru
-      },
-      select: {
-        orderNumber: true,
-      },
-    });
+    // Ambil periode tahun dan bulan saat ini (Contoh: "2607" untuk Juli 2026)
+    const periodYYMM = this.counterService.getCurrentPeriodYYMM();
 
-    let nextIncrement = 1;
+    // Tipe counter di database akan menjadi "SO_2607" atau "SN_2607"
+    // agar nomor urut otomatis mereset setiap bulan baru.
+    const counterType = `${formCode}_${periodYYMM}`;
 
-    if (lastOrder && lastOrder.orderNumber) {
-      const lastNumberStr = lastOrder.orderNumber.replace(prefix, "");
-      const lastIncrement = parseInt(lastNumberStr, 10);
+    // Ambil nomor urut berikutnya secara aman (Atomic Increment) dengan 5 digit (XXXXX)
+    const sequence = await this.counterService.getNextFormattedNumber(
+      tx,
+      counterType,
+      periodYYMM,
+      5,
+    );
 
-      if (!isNaN(lastIncrement)) {
-        nextIncrement = lastIncrement + 1;
-      }
-    }
-
-    const incrementStr = String(nextIncrement).padStart(4, "0");
-
-    return `${prefix}${incrementStr}`;
+    // Gabungkan menjadi format akhir: GI-XXYYMMXXXXX
+    return `GI-${formCode}${periodYYMM}${sequence}`;
   }
-
   // ====================================================================
   // MAIN METHOD: CREATE ORDER
   // ====================================================================

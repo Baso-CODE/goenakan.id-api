@@ -51,7 +51,7 @@ export class ArticleCategoryService {
         where,
         skip,
         take,
-        orderBy: { createdAt: "desc" }, // Menambahkan urutan terbaru
+        orderBy: { createdAt: "desc" },
       });
 
       // === Metadata pagination ===

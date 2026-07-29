@@ -260,6 +260,20 @@ model VerificationToken {
 }
 
 // ===============================================
+// AUTO COUNTER SECTION (ANTI RACE CONDITION)
+// ===============================================
+model AutoCounter {
+  id        String @id @default(uuid())
+  type      String // Jenis Form: 'SO', 'SN', 'RN', 'PO', 'CLIENT', 'QN_CLIENT_123'
+  period    String // Periode: '2607' (YYMM), atau 'ALL' jika tidak di-reset per bulan
+  lastValue Int    @default(0) // Urutan terakhir
+
+  // Memastikan kombinasi tipe dan periode tidak boleh ada yang kembar
+  @@unique([type, period], name: "type_period")
+  @@map("auto_counters")
+}
+
+// ===============================================
 // CLIENT SECTION
 // ===============================================
 model PurchaseChannel {
@@ -1218,8 +1232,8 @@ model ReplacementOrderProduct {
   variantId String?
   variant   ProductVariant? @relation(fields: [variantId], references: [id])
 
-  quantity  Int
-  // Harga bisa diset 0 jika ini murni replacement gratis, atau tetap dicatat sebagai referensi nilai
+  quantity Int // Harga bisa diset 0 jika ini murni replacement gratis, atau tetap dicatat sebagai referensi nilai
+
   unitPrice Decimal? @default(0)
 
   selectedAttributes Json?
