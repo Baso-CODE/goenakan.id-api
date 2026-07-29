@@ -131,6 +131,10 @@ export class CreateVendorPriceRecordDTO {
   sponsorPercent?: number;
 
   @IsOptional()
+  @IsInt()
+  roundUpTo?: number;
+
+  @IsOptional()
   @IsString()
   importType?: string;
 
@@ -172,6 +176,11 @@ export class CreateVendorPriceRecordDTO {
   @IsNumber()
   @Min(0)
   otherCost?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  targetQtyPcs?: number;
 
   @IsOptional()
   @IsString()
@@ -301,6 +310,10 @@ export class UpdateVendorPriceRecordDTO {
   sponsorPercent?: number;
 
   @IsOptional()
+  @IsInt()
+  roundUpTo?: number;
+
+  @IsOptional()
   @IsString()
   importType?: string;
 
@@ -342,6 +355,11 @@ export class UpdateVendorPriceRecordDTO {
   @IsNumber()
   @Min(0)
   otherCost?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  targetQtyPcs?: number;
 
   @IsOptional()
   @IsString()

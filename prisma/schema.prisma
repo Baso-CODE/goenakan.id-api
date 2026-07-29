@@ -827,10 +827,12 @@ model VendorPriceRecord {
   seaFreightRate Decimal @default(10000000) @db.Decimal(12, 2)
   airFreightRate Decimal @default(260000) @db.Decimal(12, 2)
   moqCtn         Int     @default(1)
+  targetQtyPcs   Int?    @default(0)
 
   // Target selling guides
   margin         Decimal @default(0) @db.Decimal(10, 2)
   sponsorPercent Decimal @default(0.02) @db.Decimal(5, 4)
+  roundUpTo      Int     @default(1000)
 
   notes     String?  @db.Text
   createdAt DateTime @default(now())
