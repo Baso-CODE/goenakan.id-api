@@ -16,6 +16,8 @@ import {
   UpdateProductVariantFiles,
   UpdateProductVariantsDTO,
 } from "./dto/updateVariantsProduct.dto";
+import { BatchPriceModifierDTO } from "./dto/batchPriceModifier.dto";
+import { CurrencyConversionService } from "../../currency/convertionCurrency.service";
 
 export interface ProductExportQuery {
   startDate?: string;
@@ -39,6 +41,7 @@ export class ProductService {
     private readonly cloudinary: CloudinaryService,
     private readonly pagination: PaginationService,
     private readonly slug: SlugService,
+    private readonly currencyConversion: CurrencyConversionService,
   ) {}
 
   private cartesianProduct(arr: string[][]): string[][] {
@@ -697,6 +700,334 @@ export class ProductService {
 
       return product;
     });
+  }
+
+  // === PRIVATE MATHEMATICAL COGS FORMULA ===
+  private calculateCogsAndSellingPrice(params: {
+    importType: "BORONGAN" | "RESMI";
+    beaMasukPercent?: number;
+    ppnPercent?: number;
+    pphPercent?: number;
+    formECost?: number;
+    insurancePercent?: number;
+    handlingCost?: number;
+    otherCost?: number;
+    foreignPrice: number;
+    gzDeliveryCost: number;
+    exchangeRate: number;
+    qtyPcs: number;
+    qtyPerCtn: number;
+    length: number;
+    width: number;
+    height: number;
+    weight: number;
+    seaFreightRate: number;
+    airFreightRate: number;
+    localFreight: number;
+    margin: number;
+    sponsorPercent: number;
+    roundUpTo?: number;
+  }) {
+    const {
+      importType,
+      beaMasukPercent = 0,
+      ppnPercent = 11,
+      pphPercent = 2.5,
+      formECost = 0,
+      insurancePercent = 0,
+      handlingCost = 0,
+      otherCost = 0,
+      foreignPrice,
+      gzDeliveryCost,
+      exchangeRate,
+      qtyPcs,
+      qtyPerCtn,
+      length,
+      width,
+      height,
+      weight,
+      seaFreightRate,
+      airFreightRate,
+      localFreight,
+      margin,
+      sponsorPercent,
+      roundUpTo = 1000,
+    } = params;
+
+    const safeQtyPerCtn = Math.max(1, qtyPerCtn || 1);
+    const safeQtyPcs = Math.max(1, qtyPcs || safeQtyPerCtn);
+    const totalCtn = Math.max(1, Math.ceil(safeQtyPcs / safeQtyPerCtn));
+
+    const cbmPerCtn = (length * width * height) / 1000000;
+    const totalCbm = cbmPerCtn * totalCtn;
+    const totalSeaCbmAlloc = Math.max(0.1, totalCbm);
+
+    const totalAirWeightAlloc = Math.max(totalSeaCbmAlloc, (weight + 2) * totalCtn);
+
+    const seaFreightCostPcs = importType === "RESMI"
+      ? (seaFreightRate / safeQtyPcs)
+      : ((totalSeaCbmAlloc * seaFreightRate) / safeQtyPcs);
+    const airFreightCostPcs = (totalAirWeightAlloc * airFreightRate) / safeQtyPcs;
+
+    const gzDeliveryCostPcs = gzDeliveryCost * exchangeRate;
+    const baseCostPcs = foreignPrice * exchangeRate;
+
+    let cogsSea = 0;
+    let cogsAir = 0;
+
+    if (importType === "RESMI") {
+      const formECostPcs = (formECost * exchangeRate) / safeQtyPcs;
+      const insuranceCostPcs = (insurancePercent / 100) * baseCostPcs;
+
+      const cifSeaPcs = baseCostPcs + gzDeliveryCostPcs + formECostPcs + seaFreightCostPcs + insuranceCostPcs;
+      const cifAirPcs = baseCostPcs + gzDeliveryCostPcs + formECostPcs + airFreightCostPcs + insuranceCostPcs;
+
+      const bmSeaPcs = (beaMasukPercent / 100) * cifSeaPcs;
+      const bmAirPcs = (beaMasukPercent / 100) * cifAirPcs;
+
+      const ppnSeaPcs = (ppnPercent / 100) * (cifSeaPcs + bmSeaPcs);
+      const ppnAirPcs = (ppnPercent / 100) * (cifAirPcs + bmAirPcs);
+
+      const pphSeaPcs = (pphPercent / 100) * (cifSeaPcs + bmSeaPcs);
+      const pphAirPcs = (pphPercent / 100) * (cifAirPcs + bmAirPcs);
+
+      const taxSeaPcs = bmSeaPcs + ppnSeaPcs + pphSeaPcs;
+      const taxAirPcs = bmAirPcs + ppnAirPcs + pphAirPcs;
+
+      const handlingCostPcs = handlingCost / safeQtyPcs;
+      const otherCostPcs = otherCost / safeQtyPcs;
+
+      cogsSea = cifSeaPcs + taxSeaPcs + handlingCostPcs + otherCostPcs + localFreight;
+      cogsAir = cifAirPcs + taxAirPcs + handlingCostPcs + otherCostPcs + localFreight;
+    } else {
+      cogsSea = baseCostPcs + gzDeliveryCostPcs + seaFreightCostPcs + localFreight;
+      cogsAir = baseCostPcs + gzDeliveryCostPcs + airFreightCostPcs + localFreight;
+    }
+
+    const sponsorMultiplier = 1 + (sponsorPercent / 100);
+    const rawSellSea = (cogsSea * sponsorMultiplier) + margin;
+    const rawSellAir = (cogsAir * sponsorMultiplier) + margin;
+
+    const sellPriceSea = roundUpTo > 1 ? Math.ceil(rawSellSea / roundUpTo) * roundUpTo : Math.round(rawSellSea);
+    const sellPriceAir = roundUpTo > 1 ? Math.ceil(rawSellAir / roundUpTo) * roundUpTo : Math.round(rawSellAir);
+
+    return { sellPriceSea, sellPriceAir };
+  }
+
+  // === BATCH PREVIEW MASTER PRICE ===
+  async previewBatchPrices(data: BatchPriceModifierDTO) {
+    const products = await this.prisma.product.findMany({
+      include: {
+        category: true,
+        activeVendorPriceRecord: {
+          include: {
+            vendor: true,
+          },
+        },
+      },
+    });
+
+    const offsetVal = data.offsetValue || 0;
+    const offsetCurr = data.offsetCurrency || "IDR";
+    let offsetRate = 1;
+    if (offsetCurr !== "IDR") {
+      if (offsetCurr === data.targetCurrency) {
+        offsetRate = data.newExchangeRate;
+      } else {
+        try {
+          const res = await this.currencyConversion.convertCurrency({
+            fromCurrency: offsetCurr,
+            toCurrency: "IDR",
+            amount: 1,
+          });
+          offsetRate = res.rate;
+        } catch (e) {
+          offsetRate = 1;
+        }
+      }
+    }
+    const idrOffset = offsetVal * offsetRate;
+
+    const previewItems = products.map((p) => {
+      const activeQuote = p.activeVendorPriceRecord;
+      const rate = p.currencyCode === data.targetCurrency ? data.newExchangeRate : (Number(p.exchangeRate) || 1);
+      
+      let basePriceCalculated = Number(p.basePrice) || 0;
+      let calculatedTiers: { minQuantity: number; maxQuantity: number | null; price: number }[] = [];
+
+      if (activeQuote) {
+        const qtyPerCtn = activeQuote.qtyPerCtn || 1;
+        const moqCtn = activeQuote.moqCtn || 1;
+        const roundUpToVal = Number((activeQuote as any).roundUpTo) || 1000;
+
+        if (activeQuote.calculationMode === "FIXED") {
+          // Generate 5 MOQ steps as tiers
+          const baseMoqCtn = Math.max(1, moqCtn || 1);
+          calculatedTiers = [0, 1, 2, 3, 4].map((step) => {
+            const stepCtn = baseMoqCtn + step;
+            const stepPcs = stepCtn * qtyPerCtn;
+            const nextStepPcs = (baseMoqCtn + step + 1) * qtyPerCtn;
+            const minQuantity = stepPcs;
+            const maxQuantity = step < 4 ? nextStepPcs - 1 : null;
+
+            const calc = this.calculateCogsAndSellingPrice({
+              importType: activeQuote.importType as "BORONGAN" | "RESMI",
+              beaMasukPercent: Number(activeQuote.beaMasukPercent) || 0,
+              ppnPercent: Number(activeQuote.ppnPercent) || 0,
+              pphPercent: Number(activeQuote.pphPercent) || 0,
+              formECost: Number(activeQuote.formECost) || 0,
+              insurancePercent: Number(activeQuote.insurancePercent) || 0,
+              handlingCost: Number(activeQuote.handlingCost) || 0,
+              otherCost: Number(activeQuote.otherCost) || 0,
+              foreignPrice: Number(activeQuote.foreignPrice) || 0,
+              gzDeliveryCost: Number(activeQuote.gzDeliveryCost) || 0,
+              exchangeRate: rate,
+              qtyPcs: stepPcs,
+              qtyPerCtn,
+              length: Number(activeQuote.length) || 0,
+              width: Number(activeQuote.width) || 0,
+              height: Number(activeQuote.height) || 0,
+              weight: Number(activeQuote.weight) || 0,
+              seaFreightRate: Number(activeQuote.seaFreightRate) || 0,
+              airFreightRate: Number(activeQuote.airFreightRate) || 0,
+              localFreight: Number(activeQuote.localFreight) || 0,
+              margin: Number(activeQuote.margin) || 0,
+              sponsorPercent: Number(activeQuote.sponsorPercent) * 100 || 0,
+              roundUpTo: roundUpToVal,
+            });
+
+            const finalPrice = p.activePriceFreightMode === "SEA" ? calc.sellPriceSea : calc.sellPriceAir;
+            return {
+              minQuantity,
+              maxQuantity,
+              price: finalPrice + idrOffset,
+            };
+          });
+
+          if (calculatedTiers.length > 0) {
+            basePriceCalculated = calculatedTiers[0].price;
+          }
+        } else {
+          // Handle VARIABLE mode tiers from activeQuote.tiers
+          const quoteTiers = activeQuote.tiers;
+          if (quoteTiers && Array.isArray(quoteTiers) && quoteTiers.length > 0) {
+            const sorted = [...quoteTiers].sort((a: any, b: any) => (Number(a.totalPcs) || 0) - (Number(b.totalPcs) || 0));
+
+            calculatedTiers = sorted.map((item: any, idx: number) => {
+              const minQuantity = Number(item.totalPcs) || 1;
+              const nextItem = sorted[idx + 1] as any;
+              const maxQuantity = nextItem ? (Number(nextItem.totalPcs) || 0) - 1 : null;
+
+              const calc = this.calculateCogsAndSellingPrice({
+                importType: activeQuote.importType as "BORONGAN" | "RESMI",
+                beaMasukPercent: Number(activeQuote.beaMasukPercent) || 0,
+                ppnPercent: Number(activeQuote.ppnPercent) || 0,
+                pphPercent: Number(activeQuote.pphPercent) || 0,
+                formECost: Number(activeQuote.formECost) || 0,
+                insurancePercent: Number(activeQuote.insurancePercent) || 0,
+                handlingCost: Number(activeQuote.handlingCost) || 0,
+                otherCost: Number(activeQuote.otherCost) || 0,
+                foreignPrice: Number(item.pricePcs) || 0,
+                gzDeliveryCost: Number(item.gzCost) || Number(activeQuote.gzDeliveryCost) || 0,
+                exchangeRate: rate,
+                qtyPcs: minQuantity,
+                qtyPerCtn,
+                length: Number(activeQuote.length) || 0,
+                width: Number(activeQuote.width) || 0,
+                height: Number(activeQuote.height) || 0,
+                weight: Number(activeQuote.weight) || 0,
+                seaFreightRate: Number(activeQuote.seaFreightRate) || 0,
+                airFreightRate: Number(activeQuote.airFreightRate) || 0,
+                localFreight: Number(activeQuote.localFreight) || 0,
+                margin: Number(activeQuote.margin) || 0,
+                sponsorPercent: Number(activeQuote.sponsorPercent) * 100 || 0,
+                roundUpTo: roundUpToVal,
+              });
+
+              const finalPrice = p.activePriceFreightMode === "SEA" ? calc.sellPriceSea : calc.sellPriceAir;
+              return {
+                minQuantity,
+                maxQuantity,
+                price: finalPrice + idrOffset,
+              };
+            });
+
+            if (calculatedTiers.length > 0) {
+              basePriceCalculated = calculatedTiers[0].price;
+            }
+          }
+        }
+      } else {
+        // CUSTOM Mode or Local Product
+        if (p.currencyCode && p.currencyCode !== "IDR") {
+          basePriceCalculated = (Number(p.foreignPrice) * rate) + (Number(p.additionalFee) || 0) + idrOffset;
+        } else {
+          basePriceCalculated = (Number(p.basePrice) || 0) + idrOffset;
+        }
+      }
+
+      const roundUp = p.activeVendorPriceRecord ? Number((p.activeVendorPriceRecord as any).roundUpTo) || 1000 : 1000;
+      const finalPriceRounded = roundUp > 1 ? Math.ceil(basePriceCalculated / roundUp) * roundUp : Math.round(basePriceCalculated);
+
+      return {
+        productId: p.id,
+        name: p.name,
+        sku: p.sku,
+        categoryName: p.category?.name_id || p.category?.name_en || "-",
+        currentPrice: Number(p.basePrice) || 0,
+        newPrice: finalPriceRounded,
+        difference: finalPriceRounded - (Number(p.basePrice) || 0),
+        priceTiers: calculatedTiers.map((t) => ({
+          minQuantity: t.minQuantity,
+          maxQuantity: t.maxQuantity,
+          price: roundUp > 1 ? Math.ceil(t.price / roundUp) * roundUp : Math.round(t.price),
+        })),
+      };
+    });
+
+    return {
+      summary: {
+        totalProducts: products.length,
+        targetCurrency: data.targetCurrency,
+        newExchangeRate: data.newExchangeRate,
+        rupiahOffset: idrOffset,
+      },
+      previewItems,
+    };
+  }
+
+  // === BATCH UPDATE MASTER PRICE ===
+  async updateBatchPrices(data: BatchPriceModifierDTO) {
+    const preview = await this.previewBatchPrices(data);
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const item of preview.previewItems) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: {
+            basePrice: item.newPrice.toString(),
+            exchangeRate: (await tx.product.findUnique({ where: { id: item.productId } }))?.currencyCode === data.targetCurrency 
+              ? data.newExchangeRate.toString() 
+              : undefined,
+          },
+        });
+
+        // Update price tiers if generated/recalculated
+        if (item.priceTiers && item.priceTiers.length > 0) {
+          await tx.priceTier.deleteMany({ where: { productId: item.productId } });
+          await tx.priceTier.createMany({
+            data: item.priceTiers.map((t) => ({
+              productId: item.productId,
+              minQuantity: t.minQuantity,
+              maxQuantity: t.maxQuantity,
+              price: t.price.toString(),
+            })),
+          });
+        }
+      }
+    });
+
+    return { success: true, message: `Successfully updated ${preview.previewItems.length} product prices.` };
   }
 
   // === ADD IMAGE ===
