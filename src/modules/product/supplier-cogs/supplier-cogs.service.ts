@@ -1,7 +1,10 @@
 import { injectable } from "tsyringe";
-import { PrismaService } from "../../prisma/prisma.service";
 import { ApiError } from "../../../utils/api-error";
-import { CreateVendorPriceRecordDTO, UpdateVendorPriceRecordDTO } from "./supplier-cogs.dto";
+import { PrismaService } from "../../prisma/prisma.service";
+import {
+  CreateVendorPriceRecordDTO,
+  UpdateVendorPriceRecordDTO,
+} from "./supplier-cogs.dto";
 
 @injectable()
 export class SupplierCogsService {
@@ -176,8 +179,10 @@ export class SupplierCogsService {
       }
     }
 
-    let productIdVal: string | null | undefined = data.productId !== undefined ? data.productId : undefined;
-    let tempProductNameVal: string | null | undefined = data.tempProductName !== undefined ? data.tempProductName : undefined;
+    let productIdVal: string | null | undefined =
+      data.productId !== undefined ? data.productId : undefined;
+    let tempProductNameVal: string | null | undefined =
+      data.tempProductName !== undefined ? data.tempProductName : undefined;
 
     if (productIdVal) {
       tempProductNameVal = null;
@@ -191,40 +196,66 @@ export class SupplierCogsService {
         productId: productIdVal,
         tempProductName: tempProductNameVal,
         status: data.status !== undefined ? data.status : undefined,
-        calculationMode: data.calculationMode !== undefined ? data.calculationMode : undefined,
+        calculationMode:
+          data.calculationMode !== undefined ? data.calculationMode : undefined,
         tiers: data.tiers !== undefined ? data.tiers : undefined,
         vendorId: data.vendorId !== undefined ? data.vendorId : undefined,
-        serviceVendorId: data.serviceVendorId !== undefined ? data.serviceVendorId : undefined,
-        supplierPlatform: data.supplierPlatform !== undefined ? data.supplierPlatform : undefined,
-        supplierContactName: data.supplierContactName !== undefined ? data.supplierContactName : undefined,
-        supplierContactLink: data.supplierContactLink !== undefined ? data.supplierContactLink : undefined,
+        serviceVendorId:
+          data.serviceVendorId !== undefined ? data.serviceVendorId : undefined,
+        supplierPlatform:
+          data.supplierPlatform !== undefined
+            ? data.supplierPlatform
+            : undefined,
+        supplierContactName:
+          data.supplierContactName !== undefined
+            ? data.supplierContactName
+            : undefined,
+        supplierContactLink:
+          data.supplierContactLink !== undefined
+            ? data.supplierContactLink
+            : undefined,
         imageUrl: data.imageUrl !== undefined ? data.imageUrl : undefined,
-        imagePublicId: data.imagePublicId !== undefined ? data.imagePublicId : undefined,
-        foreignPrice: data.foreignPrice !== undefined ? data.foreignPrice : undefined,
-        currencyCode: data.currencyCode !== undefined ? data.currencyCode : undefined,
-        exchangeRate: data.exchangeRate !== undefined ? data.exchangeRate : undefined,
+        imagePublicId:
+          data.imagePublicId !== undefined ? data.imagePublicId : undefined,
+        foreignPrice:
+          data.foreignPrice !== undefined ? data.foreignPrice : undefined,
+        currencyCode:
+          data.currencyCode !== undefined ? data.currencyCode : undefined,
+        exchangeRate:
+          data.exchangeRate !== undefined ? data.exchangeRate : undefined,
         qtyPerCtn: data.qtyPerCtn !== undefined ? data.qtyPerCtn : undefined,
         length: data.length !== undefined ? data.length : undefined,
         width: data.width !== undefined ? data.width : undefined,
         height: data.height !== undefined ? data.height : undefined,
         weight: data.weight !== undefined ? data.weight : undefined,
-        gzDeliveryCost: data.gzDeliveryCost !== undefined ? data.gzDeliveryCost : undefined,
-        localFreight: data.localFreight !== undefined ? data.localFreight : undefined,
-        seaFreightRate: data.seaFreightRate !== undefined ? data.seaFreightRate : undefined,
-        airFreightRate: data.airFreightRate !== undefined ? data.airFreightRate : undefined,
+        gzDeliveryCost:
+          data.gzDeliveryCost !== undefined ? data.gzDeliveryCost : undefined,
+        localFreight:
+          data.localFreight !== undefined ? data.localFreight : undefined,
+        seaFreightRate:
+          data.seaFreightRate !== undefined ? data.seaFreightRate : undefined,
+        airFreightRate:
+          data.airFreightRate !== undefined ? data.airFreightRate : undefined,
         moqCtn: data.moqCtn !== undefined ? data.moqCtn : undefined,
-        targetQtyPcs: data.targetQtyPcs !== undefined ? data.targetQtyPcs : undefined,
+        targetQtyPcs:
+          data.targetQtyPcs !== undefined ? data.targetQtyPcs : undefined,
         margin: data.margin !== undefined ? data.margin : undefined,
-        sponsorPercent: data.sponsorPercent !== undefined ? data.sponsorPercent : undefined,
+        sponsorPercent:
+          data.sponsorPercent !== undefined ? data.sponsorPercent : undefined,
         roundUpTo: data.roundUpTo !== undefined ? data.roundUpTo : undefined,
         importType: data.importType !== undefined ? data.importType : undefined,
         hsCode: data.hsCode !== undefined ? data.hsCode : undefined,
-        beaMasukPercent: data.beaMasukPercent !== undefined ? data.beaMasukPercent : undefined,
+        beaMasukPercent:
+          data.beaMasukPercent !== undefined ? data.beaMasukPercent : undefined,
         ppnPercent: data.ppnPercent !== undefined ? data.ppnPercent : undefined,
         pphPercent: data.pphPercent !== undefined ? data.pphPercent : undefined,
         formECost: data.formECost !== undefined ? data.formECost : undefined,
-        insurancePercent: data.insurancePercent !== undefined ? data.insurancePercent : undefined,
-        handlingCost: data.handlingCost !== undefined ? data.handlingCost : undefined,
+        insurancePercent:
+          data.insurancePercent !== undefined
+            ? data.insurancePercent
+            : undefined,
+        handlingCost:
+          data.handlingCost !== undefined ? data.handlingCost : undefined,
         otherCost: data.otherCost !== undefined ? data.otherCost : undefined,
         notes: data.notes !== undefined ? data.notes : undefined,
       },
@@ -259,15 +290,17 @@ export class SupplierCogsService {
       const url = `https://open.er-api.com/v6/latest/${apiBase}`;
       const response = await fetch(url);
       if (!response.ok) {
-        throw new Error(`Failed to fetch exchange rates: ${response.statusText}`);
+        throw new Error(
+          `Failed to fetch exchange rates: ${response.statusText}`,
+        );
       }
       const data = await response.json();
-      
+
       const rates = { ...data.rates };
       if (base === "RMB" && rates.CNY) {
         rates.RMB = rates.CNY;
       }
-      
+
       return {
         success: true,
         base,
@@ -285,7 +318,8 @@ export class SupplierCogsService {
         success: false,
         base,
         rates: fallbackRates[base] || { IDR: 1 },
-        message: error.message || "Failed to fetch rates, returned fallback values.",
+        message:
+          error.message || "Failed to fetch rates, returned fallback values.",
       };
     }
   }

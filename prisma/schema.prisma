@@ -296,6 +296,7 @@ model Client {
   type              ClientType
   userId            String?            @unique
   user              User?              @relation(fields: [userId], references: [id])
+  joinedDate        DateTime           @default(now())
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   status            ClientStatus       @default(OFFICIAL)

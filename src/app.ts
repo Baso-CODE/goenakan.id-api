@@ -248,16 +248,16 @@ export default class App {
     this.app.use(errorMiddleware);
   }
   public async start(): Promise<void> {
-    try {
-      const whatsappService = container.resolve(WhatsappService);
-      await whatsappService.initialize();
-      console.log("✅ WhatsApp service ready");
-    } catch (error) {
-      console.error("❌ WhatsApp init error:", error);
-    }
+    // try {
+    //   const whatsappService = container.resolve(WhatsappService);
+    //   await whatsappService.initialize();
+    //   console.log("✅ WhatsApp service ready");
+    // } catch (error) {
+    //   console.error("❌ WhatsApp init error:", error);
+    // }
 
-    const whatsappCronService = container.resolve(WhatsappCronService);
-    whatsappCronService.startJobs();
+    // const whatsappCronService = container.resolve(WhatsappCronService);
+    // whatsappCronService.startJobs();
 
     this.app.listen(env().PORT, () => {
       console.log(`  ➜  [API] Local:   http://localhost:${env().PORT}`);
