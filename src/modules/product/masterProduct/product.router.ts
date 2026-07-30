@@ -79,6 +79,21 @@ export class ProductRouter {
       this.productController.getTopSelling,
     );
 
+    // === BATCH PRICE MODIFIER ===
+    this.router.post(
+      "/master-price/batch-preview",
+      auth,
+      verifyRole(requiredRole),
+      this.productController.batchPreviewMasterPrice,
+    );
+
+    this.router.post(
+      "/master-price/batch-update",
+      auth,
+      verifyRole(requiredRole),
+      this.productController.batchUpdateMasterPrice,
+    );
+
     // GET PRODUCT BY ID
     this.router.get(
       "/:id",

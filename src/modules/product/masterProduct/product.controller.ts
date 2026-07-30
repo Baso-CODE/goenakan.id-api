@@ -184,6 +184,36 @@ export class ProductController {
     }
   };
 
+  // === BATCH PREVIEW MASTER PRICE ===
+  batchPreviewMasterPrice = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const data = req.body;
+      const preview = await this.productService.previewBatchPrices(data);
+      res.status(200).send(preview);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === BATCH UPDATE MASTER PRICE ===
+  batchUpdateMasterPrice = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const data = req.body;
+      const result = await this.productService.updateBatchPrices(data);
+      res.status(200).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
   // === ADD IMAGE ===
   addImage = async (req: Request, res: Response, next: NextFunction) => {
     try {
