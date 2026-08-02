@@ -1317,8 +1317,8 @@ model PurchaseOrderItem {
 
 model Cashflow {
   id                 String            @id @default(uuid())
-  orderId            String? // ✨ Ubah jadi opsional
-  replacementOrderId String? // ✨ Tambahan untuk Replacement
+  orderId            String?
+  replacementOrderId String?
   description        String
   amount             Decimal
   type               CashflowType
@@ -1330,28 +1330,75 @@ model Cashflow {
   @@map("cashflows")
 }
 
-// model InboundOutbound {
-//   id      String    @id @default(uuid())
-//   orderId String
-//   type    InOutType
-//   date    DateTime
-//   remarks String
-//   order   Order     @relation(fields: [orderId], references: [id])
+model CashflowSummary {
+  id                 String   @id @default(uuid())
+  orderId            String?
+  replacementOrderId String?
+  orderNumber        String?
+  totalRevenue       Decimal
+  totalCost          Decimal
+  profitLoss         Decimal
+  baseCurrencyId     String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-//   @@map("inbound_outbound")
-// }
+  order            Order?            @relation(fields: [orderId], references: [id])
+  replacementOrder ReplacementOrder? @relation(fields: [replacementOrderId], references: [id])
+  baseCurrency     Currency          @relation(fields: [baseCurrencyId], references: [code])
+  revenues         CashflowRevenue[]
+  costs            CashflowCost[]
 
-// ===============================================
-// PRODUCTION TRACKING (NEW)
-// Mencatat waktu produksi barang di pabrik/vendor
-// ===============================================
+  @@map("cashflow_summaries")
+}
+
+model CashflowRevenue {
+  id           String   @id @default(uuid())
+  cashflowId   String
+  description  String
+  productId    String?
+  unitPrice    Decimal
+  quantity     Int
+  total        Decimal
+  currency     String   @default("IDR")
+  exchangeRate Decimal?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  summary      CashflowSummary @relation(fields: [cashflowId], references: [id])
+  product      Product?        @relation(fields: [productId], references: [id])
+  Currency     Currency?       @relation(fields: [currencyCode], references: [code])
+  currencyCode String?
+
+  @@map("cashflow_revenue")
+}
+
+model CashflowCost {
+  id           String   @id @default(uuid())
+  cashflowId   String
+  description  String
+  vendorId     String?
+  costPerUnit  Decimal
+  quantity     Int
+  total        Decimal
+  currency     String   @default("IDR")
+  exchangeRate Decimal?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  summary      CashflowSummary @relation(fields: [cashflowId], references: [id])
+  vendor       Vendor?         @relation(fields: [vendorId], references: [id])
+  Currency     Currency?       @relation(fields: [currencyCode], references: [code])
+  currencyCode String?
+
+  @@map("cashflow_cost")
+}
 
 model ProductionTracker {
   id                        String                   @id @default(uuid())
-  orderId                   String? // ✨ Ubah opsional
-  orderProductId            String? // ✨ Ubah opsional
-  replacementOrderId        String? // ✨ Tambahan untuk Replacement
-  replacementOrderProductId String? // ✨ Tambahan untuk Item Replacement
+  orderId                   String?
+  orderProductId            String?
+  replacementOrderId        String?
+  replacementOrderProductId String?
   vendorId                  String
   step                      Int                      @default(1)
   quantity                  Int
@@ -1361,10 +1408,10 @@ model ProductionTracker {
   remarks                   String?
   createdAt                 DateTime                 @default(now())
   updatedAt                 DateTime                 @updatedAt
-  order                     Order?                   @relation(fields: [orderId], references: [id]) // ✨ Ubah opsional
-  orderProduct              OrderProduct?            @relation(fields: [orderProductId], references: [id], onDelete: Cascade) // ✨ Ubah opsional
-  replacementOrder          ReplacementOrder?        @relation(fields: [replacementOrderId], references: [id]) // ✨ Relasi baru
-  replacementOrderProduct   ReplacementOrderProduct? @relation(fields: [replacementOrderProductId], references: [id], onDelete: Cascade) // ✨ Relasi baru item
+  order                     Order?                   @relation(fields: [orderId], references: [id])
+  orderProduct              OrderProduct?            @relation(fields: [orderProductId], references: [id], onDelete: Cascade)
+  replacementOrder          ReplacementOrder?        @relation(fields: [replacementOrderId], references: [id])
+  replacementOrderProduct   ReplacementOrderProduct? @relation(fields: [replacementOrderProductId], references: [id], onDelete: Cascade)
   vendor                    Vendor                   @relation(fields: [vendorId], references: [id])
 
   @@map("production_trackers")
@@ -1599,69 +1646,6 @@ model QuotationItemTier {
   item            QuotationItem @relation(fields: [quotationItemId], references: [id], onDelete: Cascade)
 
   @@map("quotation_item_tiers")
-}
-
-model CashflowSummary {
-  id                 String   @id @default(uuid())
-  orderId            String?
-  replacementOrderId String?
-  orderNumber        String?
-  totalRevenue       Decimal
-  totalCost          Decimal
-  profitLoss         Decimal
-  baseCurrencyId     String
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-
-  order            Order?            @relation(fields: [orderId], references: [id])
-  replacementOrder ReplacementOrder? @relation(fields: [replacementOrderId], references: [id])
-  baseCurrency     Currency          @relation(fields: [baseCurrencyId], references: [code])
-  revenues         CashflowRevenue[]
-  costs            CashflowCost[]
-
-  @@map("cashflow_summaries")
-}
-
-model CashflowRevenue {
-  id           String   @id @default(uuid())
-  cashflowId   String
-  description  String
-  productId    String?
-  unitPrice    Decimal
-  quantity     Int
-  total        Decimal
-  currency     String   @default("IDR")
-  exchangeRate Decimal?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  summary      CashflowSummary @relation(fields: [cashflowId], references: [id])
-  product      Product?        @relation(fields: [productId], references: [id])
-  Currency     Currency?       @relation(fields: [currencyCode], references: [code])
-  currencyCode String?
-
-  @@map("cashflow_revenue")
-}
-
-model CashflowCost {
-  id           String   @id @default(uuid())
-  cashflowId   String
-  description  String
-  vendorId     String?
-  costPerUnit  Decimal
-  quantity     Int
-  total        Decimal
-  currency     String   @default("IDR")
-  exchangeRate Decimal?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  summary      CashflowSummary @relation(fields: [cashflowId], references: [id])
-  vendor       Vendor?         @relation(fields: [vendorId], references: [id])
-  Currency     Currency?       @relation(fields: [currencyCode], references: [code])
-  currencyCode String?
-
-  @@map("cashflow_cost")
 }
 
 // ===============================================

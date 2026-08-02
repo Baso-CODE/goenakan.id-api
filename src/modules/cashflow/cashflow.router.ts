@@ -2,7 +2,9 @@ import { Router } from "express";
 import { autoInjectable } from "tsyringe";
 import { NextAuthMiddleware } from "../../middleware/nextAuth.middleware";
 import { verifyRole } from "../../middleware/role.middleware";
+import { validateBody } from "../../middleware/validation.middleware";
 import { CashflowController } from "./cashflow.controller";
+import { SaveCashflowDTO } from "./dto/cashflow.dto";
 
 @autoInjectable()
 export class CashflowRouter {
@@ -23,15 +25,16 @@ export class CashflowRouter {
       this.cashflowController.getAll,
     );
     this.router.get(
-      "/:orderId",
+      "/detail",
       this.nextAuthMiddleware.verifyNextAuthToken,
       verifyRole(["SUPER_ADMIN"]),
       this.cashflowController.getDetailByOrder,
     );
     this.router.post(
-      "/:orderId",
+      "/",
       this.nextAuthMiddleware.verifyNextAuthToken,
       verifyRole(["SUPER_ADMIN"]),
+      validateBody(SaveCashflowDTO),
       this.cashflowController.save,
     );
     // this.router.get(

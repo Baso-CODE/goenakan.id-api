@@ -105,4 +105,23 @@ export class ReplacementOrderController {
       next(error);
     }
   };
+
+  // ==========================================
+  // GET REPLACEMENT ORDER BY ID
+  // ==========================================
+  getReplacementOrderById = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { id } = req.params;
+      const result =
+        await this.replacementOrderService.getReplacementOrderById(id);
+
+      res.status(200).send({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  };
 }

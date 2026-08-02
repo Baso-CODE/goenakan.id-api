@@ -264,7 +264,11 @@ export class ShipmentService {
         id: true,
         type: true,
         orderId: true,
+        replacementOrderId: true, // ✨ Tambahan: Ambil replacementOrderId
         order: { select: { warrantyDays: true } },
+        replacementOrder: {
+          select: { referenceOrder: { select: { warrantyDays: true } } },
+        }, // ✨ Ambil garansi dari order asli replacement
       },
     });
 
@@ -307,67 +311,103 @@ export class ShipmentService {
 
       // 2. LOGIC JIKA BARANG OUTBOUND SAMPAI KE PELANGGAN
       if (shipment.type === "OUTBOUND" && data.status === "ARRIVED") {
-        const orderData = await tx.order.findUnique({
-          where: { id: shipment.orderId },
-          include: {
-            products: { select: { quantity: true } },
-            shipments: {
-              where: { type: "OUTBOUND", status: "ARRIVED" },
-              include: { items: { select: { quantity: true } } },
+        // A. JIKA INI PENGIRIMAN ORDER BIASA
+        if (shipment.orderId) {
+          const orderData = await tx.order.findUnique({
+            where: { id: shipment.orderId },
+            include: {
+              products: { select: { quantity: true } },
+              shipments: {
+                where: { type: "OUTBOUND", status: "ARRIVED" },
+                include: { items: { select: { quantity: true } } },
+              },
             },
-          },
-        });
+          });
 
-        if (orderData) {
-          const totalOrderQty = orderData.products.reduce(
-            (sum, p) => sum + p.quantity,
-            0,
-          );
+          if (orderData) {
+            const totalOrderQty = orderData.products.reduce(
+              (sum, p) => sum + p.quantity,
+              0,
+            );
 
-          // Hitung total barang dari SEMUA shipment yang statusnya ARRIVED
-          const totalArrivedQty = orderData.shipments.reduce(
-            (sumShip, ship) => {
-              return (
-                sumShip +
-                ship.items.reduce((sumItem, item) => sumItem + item.quantity, 0)
-              );
-            },
-            0,
-          );
+            const totalArrivedQty = orderData.shipments.reduce(
+              (sumShip, ship) => {
+                return (
+                  sumShip +
+                  ship.items.reduce(
+                    (sumItem, item) => sumItem + item.quantity,
+                    0,
+                  )
+                );
+              },
+              0,
+            );
 
-          // Jika jumlah yang sudah sampai sama dengan (atau lebih) dari jumlah order, baru COMPLETED
-          if (totalArrivedQty >= totalOrderQty) {
-            await tx.order.update({
-              where: { id: shipment.orderId },
-              data: { status: "COMPLETED" },
+            if (totalArrivedQty >= totalOrderQty) {
+              await tx.order.update({
+                where: { id: shipment.orderId },
+                data: { status: "COMPLETED" },
+              });
+            }
+          }
+
+          // AUTO-ACTIVATE WARRANTY UNTUK ORDER BIASA
+          if (shipment.order?.warrantyDays && shipment.order.warrantyDays > 0) {
+            const startDate = new Date(data.date);
+            const expiryDate = new Date(startDate);
+            expiryDate.setDate(
+              expiryDate.getDate() + shipment.order.warrantyDays,
+            );
+
+            const existingWarranty = await tx.orderWarranty.findFirst({
+              where: { shipmentId: shipment.id },
             });
+
+            if (!existingWarranty) {
+              await tx.orderWarranty.create({
+                data: {
+                  orderId: shipment.orderId,
+                  shipmentId: shipment.id,
+                  warrantyDays: shipment.order.warrantyDays,
+                  startDate: startDate,
+                  expiryDate: expiryDate,
+                  status: "ACTIVE",
+                  notes: `Garansi otomatis diaktifkan selama ${shipment.order.warrantyDays} hari sejak tanggal penerimaan.`,
+                },
+              });
+            }
           }
         }
 
-        // B. AUTO-ACTIVATE WARRANTY (Tetap berjalan per shipment)
-        if (shipment.order.warrantyDays && shipment.order.warrantyDays > 0) {
-          const startDate = new Date(data.date);
-          const expiryDate = new Date(startDate);
-          expiryDate.setDate(
-            expiryDate.getDate() + shipment.order.warrantyDays,
-          );
+        // B. JIKA INI PENGIRIMAN REPLACEMENT ORDER
+        else if (shipment.replacementOrderId) {
+          // Opsional: Jika ingin mengaktifkan garansi berdasarkan pesanan referensi aslinya
+          const warrantyDays =
+            shipment.replacementOrder?.referenceOrder?.warrantyDays;
 
-          const existingWarranty = await tx.orderWarranty.findFirst({
-            where: { shipmentId: shipment.id },
-          });
+          if (warrantyDays && warrantyDays > 0) {
+            const startDate = new Date(data.date);
+            const expiryDate = new Date(startDate);
+            expiryDate.setDate(expiryDate.getDate() + warrantyDays);
 
-          if (!existingWarranty) {
-            await tx.orderWarranty.create({
-              data: {
-                orderId: shipment.orderId,
-                shipmentId: shipment.id,
-                warrantyDays: shipment.order.warrantyDays,
-                startDate: startDate,
-                expiryDate: expiryDate,
-                status: "ACTIVE",
-                notes: `Garansi otomatis diaktifkan selama ${shipment.order.warrantyDays} hari sejak tanggal penerimaan.`,
-              },
+            const existingWarranty = await tx.orderWarranty.findFirst({
+              where: { shipmentId: shipment.id },
             });
+
+            if (!existingWarranty) {
+              await tx.orderWarranty.create({
+                data: {
+                  // Hubungkan garansi ke order asli (referenceOrder) dari replacement tersebut
+                  orderId: shipment.replacementOrderId,
+                  shipmentId: shipment.id,
+                  warrantyDays: warrantyDays,
+                  startDate: startDate,
+                  expiryDate: expiryDate,
+                  status: "ACTIVE",
+                  notes: `Garansi penggantian otomatis diaktifkan selama ${warrantyDays} hari.`,
+                },
+              });
+            }
           }
         }
       }
@@ -457,6 +497,40 @@ export class ShipmentService {
             },
           },
         },
+        // ✨ TAMBAHAN: Sertakan relasi replacementOrder beserta detail klien dan order aslinya
+        replacementOrder: {
+          include: {
+            pic: true,
+            client: {
+              include: {
+                b2b: { include: { department: true } },
+                b2c: true,
+              },
+            },
+            referenceOrder: {
+              include: {
+                sales: true,
+                invoices: {
+                  where: { status: { not: "CANCELLED" } },
+                  orderBy: { createdAt: "asc" },
+                  select: {
+                    id: true,
+                    invoiceNumber: true,
+                    totalAmount: true,
+                    status: true,
+                    category: true,
+                    createdAt: true,
+                  },
+                },
+                shipments: {
+                  where: { type: "OUTBOUND" },
+                  orderBy: { createdAt: "asc" },
+                  include: { items: true },
+                },
+              },
+            },
+          },
+        },
         vendor: true,
         items: {
           include: {
@@ -489,7 +563,14 @@ export class ShipmentService {
 
     if (!shipment) throw new ApiError("Shipment not found", 404);
 
-    const outboundShipments = shipment.order.shipments;
+    // Tentukan sumber data berdasarkan apakah ini Order biasa atau Replacement Order
+    const isReplacement = !!shipment.replacementOrderId;
+    const parentEntity = isReplacement
+      ? shipment.replacementOrder?.referenceOrder
+      : shipment.order;
+
+    // Ambil daftar outbound shipments untuk perhitungan sisa kuantiti (jika ada)
+    const outboundShipments = parentEntity?.shipments || [];
 
     const currentShipmentIndex = outboundShipments.findIndex(
       (s) => s.id === id,
@@ -531,14 +612,13 @@ export class ShipmentService {
       };
     });
 
+    const invoices = parentEntity?.invoices || [];
+
     return {
       ...shipment,
-
       items: formattedItems,
-
-      invoiceNumbers: shipment.order.invoices.map((inv) => inv.invoiceNumber),
-      invoices: shipment.order.invoices,
-
+      invoiceNumbers: invoices.map((inv: any) => inv.invoiceNumber),
+      invoices: invoices,
       previousDO: previousDO
         ? {
             id: previousDO.id,

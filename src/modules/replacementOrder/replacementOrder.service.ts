@@ -284,4 +284,22 @@ export class ReplacementOrderService {
 
     return { data: formattedData, meta };
   }
+
+  // ==========================================
+  // GET REPLACEMENT ORDER BY ID (UNTUK EDIT)
+  // ==========================================
+  async getReplacementOrderById(id: string) {
+    const replacementOrder = await this.prisma.replacementOrder.findUnique({
+      where: { id },
+      include: {
+        items: true,
+      },
+    });
+
+    if (!replacementOrder) {
+      throw new ApiError(`Replacement Order with ID ${id} not found`, 404);
+    }
+
+    return replacementOrder;
+  }
 }

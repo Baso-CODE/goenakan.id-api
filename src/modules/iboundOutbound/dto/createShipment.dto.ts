@@ -53,9 +53,13 @@ export class ShipmentItemInputDTO {
 
 // --- MAIN DTO: CREATE SHIPMENT HEADER ---
 export class CreateShipmentDTO {
-  @IsNotEmpty()
+  @IsOptional()
   @IsUUID()
-  orderId!: string;
+  orderId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  replacementOrderId?: string;
 
   @IsOptional()
   @IsUUID()

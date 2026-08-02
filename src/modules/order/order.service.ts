@@ -1669,12 +1669,11 @@ export class OrderService {
   async getOrderForReplacement(id: string) {
     const order = await this.prisma.order.findUnique({
       where: { id },
-      // Kita gunakan 'select' agar kueri sangat ringan dan cepat
       select: {
         id: true,
         orderNumber: true,
         clientId: true,
-        // Gunakan nama relasi item pesananmu (di kode sebelumnya kamu memakai 'products')
+        currencyCode: true,
         products: {
           select: {
             productId: true,

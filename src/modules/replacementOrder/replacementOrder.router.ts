@@ -29,6 +29,12 @@ export class ReplacementOrderRouter {
       this.replacementOrderController.getAllReplacementOrders,
     );
 
+    this.router.get(
+      "/:id",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.replacementOrderController.getReplacementOrderById,
+    );
     // 2. CREATE REPLACEMENT ORDER
     this.router.post(
       "/",

@@ -30,20 +30,36 @@ export class CashflowController {
     next: NextFunction,
   ) => {
     try {
-      const { orderId } = req.params;
-      const result = await this.service.getCashflowDetail(orderId);
+      // 1. Ekstrak data dari query URL
+      const { orderId, replacementOrderId } = req.query;
+
+      // 2. Validasi sederhana
+      if (!orderId && !replacementOrderId) {
+        throw new Error(
+          "Parameter orderId atau replacementOrderId wajib disertakan",
+        );
+      }
+
+      // 3. Teruskan ke service sebagai objek
+      const result = await this.service.getCashflowDetail({
+        orderId: orderId as string,
+        replacementOrderId: replacementOrderId as string,
+      });
+
       res.status(200).json(result);
     } catch (error) {
       next(error);
     }
   };
-
   // SAVE / UPDATE Cashflow
   save = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { orderId } = req.params;
-      const data = req.body; // Pastikan body sesuai SaveCashflowDTO
-      const result = await this.service.saveCashflow(orderId, data);
+      // 1. Data ID dan Items semuanya sudah ada di dalam req.body berkat DTO baru
+      const data = req.body;
+
+      // 2. Teruskan data tersebut ke service
+      const result = await this.service.saveCashflow(data);
+
       res
         .status(200)
         .json({ message: "Cashflow saved successfully", ...result });
