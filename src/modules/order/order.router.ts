@@ -96,6 +96,13 @@ export class OrderRouter {
     );
 
     this.router.get(
+      "/:id/replacement-data",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.orderController.getOrderByIdReplacement,
+    );
+
+    this.router.get(
       "/:id",
       this.nextAuthMiddleware.verifyNextAuthToken,
       verifyRole(["SUPER_ADMIN"]),

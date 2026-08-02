@@ -1077,7 +1077,6 @@ model Order {
   orderNumber          String?               @unique
   dateOrder            DateTime
   salesCategory        SalesCategory
-  // poNumber             String?
   clientPoNumber       String?
   remark               String?               @db.Text
   currencyCode         String                @default("IDR")
@@ -1216,6 +1215,11 @@ model ReplacementOrder {
   updatedById String?
   updatedBy   User?   @relation("ReplacementUpdatedBy", fields: [updatedById], references: [id])
 
+  cashflows          Cashflow[]
+  cashflowSummaries  CashflowSummary[]
+  productionTrackers ProductionTracker[]
+  shipments          Shipment[]
+
   createdAt DateTime @default(now()) // Created time
   updatedAt DateTime @updatedAt // Updated time
 
@@ -1235,8 +1239,8 @@ model ReplacementOrderProduct {
 
   quantity Int // Harga bisa diset 0 jika ini murni replacement gratis, atau tetap dicatat sebagai referensi nilai
 
-  unitPrice Decimal? @default(0)
-
+  unitPrice          Decimal?            @default(0)
+  productionTrackers ProductionTracker[]
   selectedAttributes Json?
   customization      Json?
   remarks            String?
@@ -1312,14 +1316,16 @@ model PurchaseOrderItem {
 // ===============================================
 
 model Cashflow {
-  id          String       @id @default(uuid())
-  orderId     String
-  description String
-  amount      Decimal
-  type        CashflowType
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  order       Order        @relation(fields: [orderId], references: [id])
+  id                 String            @id @default(uuid())
+  orderId            String? // ✨ Ubah jadi opsional
+  replacementOrderId String? // ✨ Tambahan untuk Replacement
+  description        String
+  amount             Decimal
+  type               CashflowType
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  order              Order?            @relation(fields: [orderId], references: [id])
+  replacementOrder   ReplacementOrder? @relation(fields: [replacementOrderId], references: [id])
 
   @@map("cashflows")
 }
@@ -1341,21 +1347,25 @@ model Cashflow {
 // ===============================================
 
 model ProductionTracker {
-  id             String           @id @default(uuid())
-  orderId        String
-  orderProductId String
-  vendorId       String
-  step           Int              @default(1)
-  quantity       Int
-  startDate      DateTime?
-  endDate        DateTime?
-  status         ProductionStatus @default(PENDING)
-  remarks        String?
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  order          Order            @relation(fields: [orderId], references: [id])
-  orderProduct   OrderProduct     @relation(fields: [orderProductId], references: [id], onDelete: Cascade)
-  vendor         Vendor           @relation(fields: [vendorId], references: [id])
+  id                        String                   @id @default(uuid())
+  orderId                   String? // ✨ Ubah opsional
+  orderProductId            String? // ✨ Ubah opsional
+  replacementOrderId        String? // ✨ Tambahan untuk Replacement
+  replacementOrderProductId String? // ✨ Tambahan untuk Item Replacement
+  vendorId                  String
+  step                      Int                      @default(1)
+  quantity                  Int
+  startDate                 DateTime?
+  endDate                   DateTime?
+  status                    ProductionStatus         @default(PENDING)
+  remarks                   String?
+  createdAt                 DateTime                 @default(now())
+  updatedAt                 DateTime                 @updatedAt
+  order                     Order?                   @relation(fields: [orderId], references: [id]) // ✨ Ubah opsional
+  orderProduct              OrderProduct?            @relation(fields: [orderProductId], references: [id], onDelete: Cascade) // ✨ Ubah opsional
+  replacementOrder          ReplacementOrder?        @relation(fields: [replacementOrderId], references: [id]) // ✨ Relasi baru
+  replacementOrderProduct   ReplacementOrderProduct? @relation(fields: [replacementOrderProductId], references: [id], onDelete: Cascade) // ✨ Relasi baru item
+  vendor                    Vendor                   @relation(fields: [vendorId], references: [id])
 
   @@map("production_trackers")
 }
@@ -1367,7 +1377,8 @@ model ProductionTracker {
 
 model Shipment {
   id                 String            @id @default(uuid())
-  orderId            String
+  orderId            String?
+  replacementOrderId String?
   vendorId           String?
   deliveryNoteNumber String?
   trackingNumber     String?
@@ -1385,7 +1396,8 @@ model Shipment {
   notes              ShipmentNote[]
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
-  order              Order             @relation(fields: [orderId], references: [id])
+  order              Order?            @relation(fields: [orderId], references: [id])
+  replacementOrder   ReplacementOrder? @relation(fields: [replacementOrderId], references: [id])
   vendor             Vendor?           @relation(fields: [vendorId], references: [id])
   items              ShipmentItem[]
 
@@ -1590,20 +1602,22 @@ model QuotationItemTier {
 }
 
 model CashflowSummary {
-  id             String   @id @default(uuid())
-  orderId        String
-  orderNumber    String?
-  totalRevenue   Decimal
-  totalCost      Decimal
-  profitLoss     Decimal
-  baseCurrencyId String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                 String   @id @default(uuid())
+  orderId            String?
+  replacementOrderId String?
+  orderNumber        String?
+  totalRevenue       Decimal
+  totalCost          Decimal
+  profitLoss         Decimal
+  baseCurrencyId     String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  order        Order             @relation(fields: [orderId], references: [id])
-  baseCurrency Currency          @relation(fields: [baseCurrencyId], references: [code])
-  revenues     CashflowRevenue[]
-  costs        CashflowCost[]
+  order            Order?            @relation(fields: [orderId], references: [id])
+  replacementOrder ReplacementOrder? @relation(fields: [replacementOrderId], references: [id])
+  baseCurrency     Currency          @relation(fields: [baseCurrencyId], references: [code])
+  revenues         CashflowRevenue[]
+  costs            CashflowCost[]
 
   @@map("cashflow_summaries")
 }

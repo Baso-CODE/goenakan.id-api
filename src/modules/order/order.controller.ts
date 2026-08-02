@@ -233,4 +233,19 @@ export class OrderController {
       next(error);
     }
   };
+
+  getOrderByIdReplacement = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { id } = req.params;
+      const result = await this.orderService.getOrderForReplacement(id);
+
+      res.status(200).send({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  };
 }

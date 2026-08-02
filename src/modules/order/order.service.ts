@@ -151,8 +151,6 @@ export class OrderService {
         variant: item.variantId
           ? { connect: { id: item.variantId } }
           : undefined,
-        // ALASAN: Prisma mendukung penyimpanan objek langsung ke field berjenis Json.
-        // Jika dari frontend ada data selectedAttributes, kita simpan. Jika tidak, abaikan.
         selectedAttributes: item.selectedAttributes
           ? item.selectedAttributes
           : undefined,
@@ -425,6 +423,9 @@ export class OrderService {
           unitPrice: finalPrice,
           variant: item.variantId
             ? { connect: { id: item.variantId } }
+            : undefined,
+          selectedAttributes: item.selectedAttributes
+            ? item.selectedAttributes
             : undefined,
         };
 
@@ -1660,5 +1661,38 @@ export class OrderService {
     } catch (error) {
       console.error("❌ [CRON ERROR] Gagal mengecek garansi expired:", error);
     }
+  }
+
+  // =================================================================
+  // GET ORDER FOR REPLACEMENT AUTO-FILL
+  // =================================================================
+  async getOrderForReplacement(id: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      // Kita gunakan 'select' agar kueri sangat ringan dan cepat
+      select: {
+        id: true,
+        orderNumber: true,
+        clientId: true,
+        // Gunakan nama relasi item pesananmu (di kode sebelumnya kamu memakai 'products')
+        products: {
+          select: {
+            productId: true,
+            variantId: true,
+            quantity: true,
+            unitPrice: true,
+            customization: true,
+            selectedAttributes: true,
+            remarks: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new ApiError(`Order with ID ${id} not found`, 404);
+    }
+
+    return order;
   }
 }
