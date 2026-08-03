@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsString } from "class-validator";
+import { IsNotEmpty, IsNumber, IsOptional, IsString, IsArray } from "class-validator";
 
 export class BatchPriceModifierDTO {
   @IsNotEmpty()
@@ -16,4 +16,9 @@ export class BatchPriceModifierDTO {
   @IsOptional()
   @IsString()
   offsetCurrency?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  productIds?: string[];
 }

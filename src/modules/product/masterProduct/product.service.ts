@@ -817,6 +817,12 @@ export class ProductService {
   // === BATCH PREVIEW MASTER PRICE ===
   async previewBatchPrices(data: BatchPriceModifierDTO) {
     const products = await this.prisma.product.findMany({
+      where: {
+        currencyCode: data.targetCurrency,
+        ...(data.productIds && data.productIds.length > 0 && {
+          id: { in: data.productIds },
+        }),
+      },
       include: {
         category: true,
         activeVendorPriceRecord: {

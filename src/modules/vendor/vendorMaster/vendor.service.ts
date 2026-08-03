@@ -229,6 +229,20 @@ export class VendorService {
           id: true,
           companyName: true,
           type: true,
+          picName: true,
+          contacts: {
+            select: {
+              id: true,
+              contactId: true,
+              isPrimary: true,
+              platform: {
+                select: {
+                  name: true,
+                  slug: true,
+                },
+              },
+            },
+          },
           serviceCategory: {
             select: {
               id: true,
@@ -291,6 +305,8 @@ export class VendorService {
           companyName: v.companyName,
           types: types.length > 0 ? types : ["PRODUCT", "SERVICE"],
           categoryNames,
+          picName: v.picName,
+          contacts: v.contacts,
         };
       });
     } catch (error) {
