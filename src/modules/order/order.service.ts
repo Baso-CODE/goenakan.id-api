@@ -245,6 +245,17 @@ export class OrderService {
           },
         },
       });
+      const clientRecord = await tx.client.findUnique({
+        where: { id: orderCore.clientId },
+        select: { status: true },
+      });
+
+      if (clientRecord && clientRecord.status === "POTENTIAL") {
+        await tx.client.update({
+          where: { id: orderCore.clientId },
+          data: { status: "OFFICIAL" },
+        });
+      }
 
       if (isSampleOrder && sampleFollowUps && sampleFollowUps.length > 0) {
         await tx.orderSampleFollowUp.createMany({
@@ -1693,5 +1704,246 @@ export class OrderService {
     }
 
     return order;
+  }
+
+  // =================================================================
+  // GET ALL COMBINED ORDERS (SALES, SAMPLE, & REPLACEMENT)
+  // =================================================================
+  async getAllCombinedOrders(query: {
+    page?: number;
+    take?: number;
+    search?: string;
+    startDate?: string;
+    endDate?: string;
+  }) {
+    const { page = 1, take = 10, search, startDate, endDate } = query;
+    const skip = (Number(page) - 1) * Number(take);
+
+    // 1. Siapkan Filter Pencarian
+    const orderWhere: any = {};
+    const replacementWhere: any = {};
+
+    if (search) {
+      const searchTerm = search.trim();
+
+      orderWhere.OR = [
+        { orderNumber: { contains: searchTerm, mode: "insensitive" } },
+        { clientPoNumber: { contains: searchTerm, mode: "insensitive" } },
+        {
+          client: {
+            b2b: { companyName: { contains: searchTerm, mode: "insensitive" } },
+          },
+        },
+        {
+          client: {
+            b2c: { name: { contains: searchTerm, mode: "insensitive" } },
+          },
+        },
+        { pic: { name: { contains: searchTerm, mode: "insensitive" } } },
+        { createdBy: { name: { contains: searchTerm, mode: "insensitive" } } },
+      ];
+
+      replacementWhere.OR = [
+        { replacementNumber: { contains: searchTerm, mode: "insensitive" } },
+        {
+          referenceOrder: {
+            orderNumber: { contains: searchTerm, mode: "insensitive" },
+          },
+        },
+        {
+          client: {
+            b2b: { companyName: { contains: searchTerm, mode: "insensitive" } },
+          },
+        },
+        {
+          client: {
+            b2c: { name: { contains: searchTerm, mode: "insensitive" } },
+          },
+        },
+        { pic: { name: { contains: searchTerm, mode: "insensitive" } } },
+        { createdBy: { name: { contains: searchTerm, mode: "insensitive" } } },
+      ];
+    }
+
+    // 2. Siapkan Filter Tanggal
+    if (startDate || endDate) {
+      const dateFilter: any = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        if (!isNaN(start.getTime())) dateFilter.gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        if (!isNaN(end.getTime())) {
+          end.setDate(end.getDate() + 1);
+          dateFilter.lt = end;
+        }
+      }
+      if (Object.keys(dateFilter).length > 0) {
+        orderWhere.dateOrder = dateFilter;
+        replacementWhere.replacementDate = dateFilter;
+      }
+    }
+
+    const [orders, replacements] = await Promise.all([
+      // Ambil Semua Order
+      this.prisma.order.findMany({
+        where: orderWhere,
+        include: {
+          client: {
+            include: {
+              b2c: true,
+              b2b: { include: { pics: { select: { name: true } } } },
+            },
+          },
+          pic: { select: { name: true } },
+          createdBy: { select: { name: true } },
+          updatedBy: { select: { name: true } },
+          referenceQuotation: { select: { quotationNumber: true } },
+          referenceSample: { select: { orderNumber: true } },
+          shipments: {
+            where: { type: "OUTBOUND" },
+            orderBy: { updatedAt: "desc" },
+            take: 1,
+            select: { createdAt: true, departureDate: true, arrivalDate: true },
+          },
+          _count: { select: { products: true } },
+        },
+      }),
+
+      // Ambil Semua Replacement
+      this.prisma.replacementOrder.findMany({
+        where: replacementWhere,
+        include: {
+          client: {
+            include: {
+              b2c: true,
+              b2b: { include: { pics: { select: { name: true } } } },
+            },
+          },
+          pic: { select: { name: true } },
+          createdBy: { select: { name: true } },
+          updatedBy: { select: { name: true } },
+          referenceOrder: {
+            select: {
+              orderNumber: true,
+              shippingAddress: true,
+              currencyCode: true,
+            },
+          },
+          _count: { select: { items: true } },
+        },
+      }),
+    ]);
+
+    let combinedData: any[] = [];
+
+    // Format Order
+    orders.forEach((order) => {
+      let clientName = "-";
+      let picCustomer = order.pic?.name || "-";
+
+      if (order.client?.b2b) {
+        clientName = order.client.b2b.companyName;
+        if (picCustomer === "-" && order.client.b2b.pics?.length > 0)
+          picCustomer = order.client.b2b.pics[0].name;
+      } else if (order.client?.b2c) {
+        clientName = order.client.b2c.name;
+      }
+
+      const lastShipment =
+        order.shipments.length > 0 ? order.shipments[0] : null;
+
+      combinedData.push({
+        id: order.id,
+        type: "ORDER",
+        orderDate: order.dateOrder,
+        orderNumber: order.orderNumber || "-",
+        customerName: clientName,
+        picCustomer: picCustomer,
+        status: order.status,
+        clientPoNumber: order.clientPoNumber || "-",
+        totalAmount: Number(order.totalAmount),
+        currencyCode: order.currencyCode,
+        totalItems: order._count.products,
+        salesName: order.createdBy?.name || "-",
+        sampleReference: order.referenceSample?.orderNumber || "-",
+        quotationReference: order.referenceQuotation?.quotationNumber || "-",
+        sendToCustDate: lastShipment?.departureDate || null,
+        arrivalInCustDate: lastShipment?.arrivalDate || null,
+        shippingAddress: order.shippingAddress || "-",
+        remark: order.remark || "-",
+        createdBy: order.createdBy?.name || "System",
+        createdTime: order.createdAt,
+        updatedBy: order.updatedBy?.name || "-",
+        updatedTime: order.updatedAt,
+        salesCategory: order.salesCategory,
+      });
+    });
+
+    // Format Replacement Order (Khusus Pencatatan Internal)
+    replacements.forEach((rep) => {
+      let clientName = "-";
+      let picCustomer = rep.pic?.name || "-";
+
+      if (rep.client?.b2b) {
+        clientName = rep.client.b2b.companyName;
+        if (picCustomer === "-" && rep.client.b2b.pics?.length > 0)
+          picCustomer = rep.client.b2b.pics[0].name;
+      } else if (rep.client?.b2c) {
+        clientName = rep.client.b2c.name;
+      }
+
+      combinedData.push({
+        id: rep.id,
+        type: "REPLACEMENT",
+        orderDate: rep.replacementDate,
+        orderNumber: rep.replacementNumber || "-",
+        customerName: clientName,
+        picCustomer: picCustomer,
+        status: "REPLACEMENT",
+
+        clientPoNumber: "-",
+
+        totalAmount: 0,
+        currencyCode: rep.referenceOrder?.currencyCode || "IDR",
+
+        totalItems: rep._count?.items || 0,
+
+        salesName: rep.createdBy?.name || "-",
+        sampleReference: "-",
+        quotationReference: "-",
+        sendToCustDate: rep.sendToCustDate || null,
+        arrivalInCustDate: rep.arrivalInCustDate || null,
+        shippingAddress: rep.referenceOrder?.shippingAddress || "-",
+        remark: rep.replacementReason
+          ? `${rep.replacementReason} - ${rep.remarks || ""}`
+          : rep.remarks || "-",
+        createdBy: rep.createdBy?.name || "System",
+        createdTime: rep.createdAt,
+        updatedBy: rep.updatedBy?.name || "-",
+        updatedTime: rep.updatedAt,
+        salesCategory: "REPLACEMENT",
+      });
+    });
+
+    combinedData.sort(
+      (a, b) =>
+        new Date(b.createdTime).getTime() - new Date(a.createdTime).getTime(),
+    );
+
+    const total = combinedData.length;
+    const paginatedData = combinedData.slice(skip, skip + Number(take));
+
+    const meta = {
+      page: Number(page),
+      take: Number(take),
+      total,
+      hasPrevious: page > 1,
+      hasNext: skip + Number(take) < total,
+      perPage: Number(take),
+    };
+
+    return { data: paginatedData, meta };
   }
 }

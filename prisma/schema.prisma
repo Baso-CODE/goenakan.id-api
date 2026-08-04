@@ -143,7 +143,6 @@ enum TransactionType {
 enum PurchaseType {
   DIRECT_MATERIAL // Pembelian produk berdasarkan SO
   DIRECT_EXPENSES // Pembelian selain produk (ex: logistik) berdasarkan SO
-  INDIRECT_EXPENSES // Pembelian diluar SO (listrik, air, dll)
   STOCK // Pembelian produk bukan berdasarkan SO
 }
 

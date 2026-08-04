@@ -25,6 +25,12 @@ export class OrderRouter {
       verifyRole(["SUPER_ADMIN"]),
       this.orderController.getAllOrder,
     );
+    this.router.get(
+      "/combined",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.orderController.getAllCombinedOrders,
+    );
 
     this.router.get(
       "/samples",
