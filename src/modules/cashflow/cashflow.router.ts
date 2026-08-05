@@ -30,6 +30,13 @@ export class CashflowRouter {
       verifyRole(["SUPER_ADMIN"]),
       this.cashflowController.getDetailByOrder,
     );
+
+    this.router.get(
+      "/:id/vendors",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN", "ADMIN_INVOICE"]),
+      this.cashflowController.getVendorsForOrder,
+    );
     this.router.post(
       "/",
       this.nextAuthMiddleware.verifyNextAuthToken,
@@ -37,38 +44,6 @@ export class CashflowRouter {
       validateBody(SaveCashflowDTO),
       this.cashflowController.save,
     );
-    // this.router.get(
-    //   "/:id",
-    //   this.nextAuthMiddleware.verifyNextAuthToken,
-    //   verifyRole(["SUPER_ADMIN"]),
-    //   this.orderController.getOrderByIdDetail,
-    // );
-    // this.router.get(
-    //   "/:id/edit-data",
-    //   this.nextAuthMiddleware.verifyNextAuthToken,
-    //   verifyRole(["SUPER_ADMIN"]),
-    //   this.orderController.getOrderByIdUpdate,
-    // );
-    // this.router.post(
-    //   "/",
-    //   this.nextAuthMiddleware.verifyNextAuthToken,
-    //   verifyRole(["SUPER_ADMIN"]),
-    //   validateBody(CreateOrderDTO),
-    //   this.orderController.createOrder,
-    // );
-    // this.router.patch(
-    //   "/:id",
-    //   this.nextAuthMiddleware.verifyNextAuthToken,
-    //   verifyRole(["SUPER_ADMIN"]),
-    //   validateBody(UpdateOrderDTO),
-    //   this.orderController.updateOrder,
-    // );
-    // this.router.get(
-    //   "/export/excel",
-    //   this.nextAuthMiddleware.verifyNextAuthToken,
-    //   verifyRole(["SUPER_ADMIN"]),
-    //   this.orderController.exportOrders,
-    // );
   };
 
   getRouter(): Router {

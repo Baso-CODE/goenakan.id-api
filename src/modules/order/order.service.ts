@@ -620,19 +620,26 @@ export class OrderService {
             b2c: true,
           },
         },
-        sales: true,
+        createdBy: true,
         products: {
           include: {
             product: true,
             variant: true,
           },
         },
-
         purchaseOrderItems: {
           include: {
             purchaseOrder: {
               include: {
-                vendor: true,
+                vendor: {
+                  include: {
+                    contacts: {
+                      include: {
+                        platform: true,
+                      },
+                    },
+                  },
+                },
               },
             },
           },
@@ -660,6 +667,7 @@ export class OrderService {
 
     const activeInvoiceIds = activeInvoices.map((inv) => inv.id);
     const billedAmountByProduct = new Map<string, number>();
+
     for (const invoice of activeInvoices) {
       const invoiceItemsTotal = invoice.items.reduce(
         (sum, item) => sum + Number(item.price) * item.quantity,
@@ -767,21 +775,37 @@ export class OrderService {
       };
     });
 
+    // Mapping Vendor dari Purchase Order
     const uniqueVendorsMap = new Map();
-    order.purchaseOrderItems.forEach((poi) => {
-      const po = poi.purchaseOrder;
 
-      if (po.vendor && !uniqueVendorsMap.has(po.vendor.id)) {
-        uniqueVendorsMap.set(po.vendor.id, {
-          id: po.vendor.id,
-          companyName: po.vendor.companyName,
-          picName: po.vendor.picName || "Unknown",
-          picPhone: "-",
-          role: "Supplier (via PO)",
-          poRefNumber: po.poNumber,
-        });
-      }
-    });
+    if (order.purchaseOrderItems && order.purchaseOrderItems.length > 0) {
+      order.purchaseOrderItems.forEach((poi) => {
+        const po = poi.purchaseOrder;
+
+        if (po && po.vendor && !uniqueVendorsMap.has(po.vendor.id)) {
+          const vendorData = po.vendor as any;
+
+          let contactDisplay = "-";
+
+          if (vendorData.contacts && vendorData.contacts.length > 0) {
+            const primaryContact =
+              vendorData.contacts.find((c: any) => c.isPrimary) ||
+              vendorData.contacts[0];
+
+            const platformName = primaryContact.platform?.name || "Kontak";
+            contactDisplay = `${primaryContact.contactId} (${platformName})`;
+          }
+
+          uniqueVendorsMap.set(vendorData.id, {
+            id: vendorData.id,
+            companyName: vendorData.companyName,
+            picName: vendorData.picName || "-",
+            picPhone: contactDisplay,
+            role: "Supplier (via PO)",
+          });
+        }
+      });
+    }
     const vendorsDetail = Array.from(uniqueVendorsMap.values());
 
     // 6. Invoices Mapping
@@ -810,14 +834,14 @@ export class OrderService {
         ? order.purchaseChannel.name
         : "-",
       clientInfo: clientInfo,
+
       sales: {
-        name: order.sales?.name || "-",
-        phone: order.sales?.phone || "-",
+        name: order.createdBy?.name || "System",
+        phone: (order.createdBy as any)?.phone || "-",
       },
+
       products: productsDetail,
-
       vendors: vendorsDetail,
-
       invoices: invoicesDetail,
       sampleFollowUps: order.sampleFollowUps.map((fu) => ({
         id: fu.id,
@@ -828,7 +852,6 @@ export class OrderService {
       })),
     };
   }
-
   async getAllOrders(query: {
     page?: number;
     take?: number;

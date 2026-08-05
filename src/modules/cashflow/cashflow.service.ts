@@ -178,150 +178,6 @@ export class CashflowService {
       },
     };
   }
-
-  async getCashflowDetail(query: {
-    orderId?: string;
-    replacementOrderId?: string;
-  }) {
-    const { orderId, replacementOrderId } = query;
-
-    let targetOrderNumber = "";
-    let baseCurrencyCode = "IDR";
-    let initialTotalRevenue = 0;
-    let initialProducts: any[] = [];
-    let referenceId = "";
-
-    if (orderId) {
-      const order = await this.prisma.order.findUnique({
-        where: { id: orderId },
-        include: {
-          products: { include: { product: true, variant: true } },
-        },
-      });
-      if (!order) throw new ApiError("Order tidak ditemukan", 404);
-
-      targetOrderNumber = order.orderNumber || "";
-      baseCurrencyCode = order.currencyCode;
-      initialTotalRevenue = Number(order.totalAmount);
-      initialProducts = order.products;
-      referenceId = order.id;
-    } else if (replacementOrderId) {
-      const replacement = await this.prisma.replacementOrder.findUnique({
-        where: { id: replacementOrderId },
-        include: {
-          referenceOrder: true,
-          items: { include: { product: true, variant: true } },
-        },
-      });
-      if (!replacement)
-        throw new ApiError("Replacement Order tidak ditemukan", 404);
-
-      targetOrderNumber =
-        replacement.replacementNumber ||
-        replacement.referenceOrder?.orderNumber ||
-        "";
-      baseCurrencyCode = replacement.referenceOrder?.currencyCode || "IDR";
-      initialTotalRevenue = 0;
-      initialProducts = replacement.items;
-      referenceId = replacement.id;
-    }
-
-    // 2. AMBIL DATA VENDOR (Sama seperti sebelumnya)
-    const vendors = await this.prisma.vendor.findMany({
-      where: { isActive: true },
-      include: {
-        vendorItems: { include: { item: true } },
-        productItemCategories: { include: { itemCategory: true } },
-      },
-      orderBy: { companyName: "asc" },
-    });
-
-    const availableVendors = vendors.map((v) => {
-      let items: { id: string; name: string }[] = [];
-      if (v.type === "SERVICE") {
-        items = v.vendorItems.map((vi) => ({
-          id: vi.item.id,
-          name: vi.item.name,
-        }));
-      } else if (v.type === "PRODUCT") {
-        items = v.productItemCategories.map((pic) => ({
-          id: pic.itemCategory.id,
-          name: pic.itemCategory.name,
-        }));
-      }
-      return {
-        id: v.id,
-        companyName: v.companyName,
-        type: v.type,
-        items: items,
-      };
-    });
-
-    // 3. CARI CASHFLOW SUMMARY YANG SUDAH ADA
-    const existingSummary = await this.prisma.cashflowSummary.findFirst({
-      where: orderId ? { orderId } : { replacementOrderId },
-      include: {
-        revenues: { include: { product: true } },
-        costs: { include: { vendor: true } },
-      },
-    });
-
-    // A. JIKA SUDAH ADA (Mode Edit)
-    if (existingSummary) {
-      return {
-        mode: "EDIT",
-        summary: existingSummary,
-        availableVendors,
-        revenues: existingSummary.revenues.map((r) => ({
-          ...r,
-          unitPrice: Number(r.unitPrice),
-          total: Number(r.total),
-          exchangeRate: Number(r.exchangeRate),
-          currency: r.currencyCode || r.currency || baseCurrencyCode,
-        })),
-        costs: existingSummary.costs.map((c) => ({
-          ...c,
-          costPerUnit: Number(c.costPerUnit),
-          total: Number(c.total),
-          exchangeRate: Number(c.exchangeRate),
-          currency: c.currencyCode || c.currency || baseCurrencyCode,
-        })),
-      };
-    }
-
-    // B. JIKA BELUM ADA (Mode Create / Auto-Populate)
-    const initialRevenues = initialProducts.map((p) => {
-      const productName = p.product.name;
-      const variantName = p.variant ? ` - ${p.variant.variantName}` : "";
-
-      return {
-        description: `${productName}${variantName}`,
-        productId: p.productId,
-        unitPrice: Number(p.unitPrice) || 0,
-        quantity: p.quantity,
-        total: (Number(p.unitPrice) || 0) * p.quantity,
-        currency: baseCurrencyCode,
-        exchangeRate: 1,
-      };
-    });
-
-    return {
-      mode: "CREATE",
-      summary: {
-        orderId: orderId || null,
-        replacementOrderId: replacementOrderId || null,
-        orderNumber: targetOrderNumber,
-        totalRevenue: initialTotalRevenue,
-        totalCost: 0,
-        profitLoss: initialTotalRevenue,
-        baseCurrencyId: baseCurrencyCode,
-      },
-      availableVendors,
-      revenues: initialRevenues,
-      costs: [],
-    };
-  }
-
   async saveCashflow(data: SaveCashflowDTO) {
     // 1. Ekstrak data dari DTO
     const { orderId, replacementOrderId, revenueItems, costItems } = data;
@@ -446,5 +302,192 @@ export class CashflowService {
     });
 
     return result;
+  }
+
+  async getCashflowDetail(query: {
+    orderId?: string;
+    replacementOrderId?: string;
+  }) {
+    const { orderId, replacementOrderId } = query;
+
+    let targetOrderNumber = "";
+    let baseCurrencyCode = "IDR";
+    let initialTotalRevenue = 0;
+    let initialProducts: any[] = [];
+    let referenceId = "";
+
+    if (orderId) {
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        include: {
+          products: { include: { product: true, variant: true } },
+        },
+      });
+      if (!order) throw new ApiError("Order tidak ditemukan", 404);
+
+      targetOrderNumber = order.orderNumber || "";
+      baseCurrencyCode = order.currencyCode;
+      initialTotalRevenue = Number(order.totalAmount);
+      initialProducts = order.products;
+      referenceId = order.id;
+    } else if (replacementOrderId) {
+      const replacement = await this.prisma.replacementOrder.findUnique({
+        where: { id: replacementOrderId },
+        include: {
+          referenceOrder: true,
+          items: { include: { product: true, variant: true } },
+        },
+      });
+      if (!replacement)
+        throw new ApiError("Replacement Order tidak ditemukan", 404);
+
+      targetOrderNumber =
+        replacement.replacementNumber ||
+        replacement.referenceOrder?.orderNumber ||
+        "";
+      baseCurrencyCode = replacement.referenceOrder?.currencyCode || "IDR";
+      initialTotalRevenue = 0;
+      initialProducts = replacement.items;
+      referenceId = replacement.id;
+    }
+
+    // 2. AMBIL SEMUA VENDOR (Untuk Dropdown pilihan manual)
+    const vendors = await this.prisma.vendor.findMany({
+      where: { isActive: true },
+      include: {
+        vendorItems: { include: { item: true } },
+        productItemCategories: { include: { itemCategory: true } },
+      },
+      orderBy: { companyName: "asc" },
+    });
+
+    const allVendors = vendors.map((v) => {
+      let items: { id: string; name: string }[] = [];
+      if (v.type === "SERVICE") {
+        items = v.vendorItems.map((vi) => ({
+          id: vi.item.id,
+          name: vi.item.name,
+        }));
+      } else if (v.type === "PRODUCT") {
+        items = v.productItemCategories.map((pic) => ({
+          id: pic.itemCategory.id,
+          name: pic.itemCategory.name,
+        }));
+      }
+      return {
+        id: v.id,
+        companyName: v.companyName,
+        type: v.type,
+        items: items,
+      };
+    });
+
+    // ✨ 3. AMBIL VENDOR KHUSUS DARI PO (Untuk Auto-fill)
+    let poVendors: any[] = [];
+    if (orderId) {
+      // Hanya berjalan jika ini adalah Order asli
+      poVendors = await this.getVendorsByOrderId(orderId);
+    }
+    // Catatan: Jika ini replacementOrderId, poVendors akan tetap [] (kosong)
+    // karena saat ini Replacement tidak memiliki PO di database.
+
+    // 4. CARI CASHFLOW SUMMARY YANG SUDAH ADA
+    const existingSummary = await this.prisma.cashflowSummary.findFirst({
+      where: orderId ? { orderId } : { replacementOrderId },
+      include: {
+        revenues: { include: { product: true } },
+        costs: { include: { vendor: true } },
+      },
+    });
+
+    // A. JIKA SUDAH ADA (Mode Edit)
+    if (existingSummary) {
+      return {
+        mode: "EDIT",
+        summary: existingSummary,
+        availableVendors: allVendors, // Untuk dropdown
+        poVendors: poVendors, // Untuk info frontend jika dibutuhkan
+        revenues: existingSummary.revenues.map((r) => ({
+          ...r,
+          unitPrice: Number(r.unitPrice),
+          total: Number(r.total),
+          exchangeRate: Number(r.exchangeRate),
+          currency: r.currencyCode || r.currency || baseCurrencyCode,
+        })),
+        costs: existingSummary.costs.map((c) => ({
+          ...c,
+          costPerUnit: Number(c.costPerUnit),
+          total: Number(c.total),
+          exchangeRate: Number(c.exchangeRate),
+          currency: c.currencyCode || c.currency || baseCurrencyCode,
+        })),
+      };
+    }
+
+    // B. JIKA BELUM ADA (Mode Create / Auto-Populate)
+    const initialRevenues = initialProducts.map((p) => {
+      const productName = p.product.name;
+      const variantName = p.variant ? ` - ${p.variant.variantName}` : "";
+
+      return {
+        description: `${productName}${variantName}`,
+        productId: p.productId,
+        unitPrice: Number(p.unitPrice) || 0,
+        quantity: p.quantity,
+        total: (Number(p.unitPrice) || 0) * p.quantity,
+        currency: baseCurrencyCode,
+        exchangeRate: 1,
+      };
+    });
+
+    return {
+      mode: "CREATE",
+      summary: {
+        orderId: orderId || null,
+        replacementOrderId: replacementOrderId || null,
+        orderNumber: targetOrderNumber,
+        totalRevenue: initialTotalRevenue,
+        totalCost: 0,
+        profitLoss: initialTotalRevenue,
+        baseCurrencyId: baseCurrencyCode,
+      },
+      availableVendors: allVendors, // Semua vendor untuk dropdown manual
+      poVendors: poVendors, // HANYA vendor dari PO untuk Auto-fill
+      revenues: initialRevenues,
+      costs: [],
+    };
+  }
+
+  // ====================================================================
+  // GET VENDORS LINKED TO AN ORDER (VIA PURCHASE ORDERS)
+  // ====================================================================
+  async getVendorsByOrderId(orderId: string) {
+    const poItems = await this.prisma.purchaseOrderItem.findMany({
+      where: { orderId: orderId },
+      include: {
+        purchaseOrder: {
+          include: {
+            vendor: {
+              select: {
+                id: true,
+                companyName: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const uniqueVendorsMap = new Map();
+
+    poItems.forEach((item) => {
+      const vendor = item.purchaseOrder?.vendor;
+      if (vendor && !uniqueVendorsMap.has(vendor.id)) {
+        uniqueVendorsMap.set(vendor.id, vendor);
+      }
+    });
+    const vendorsList = Array.from(uniqueVendorsMap.values());
+
+    return vendorsList;
   }
 }

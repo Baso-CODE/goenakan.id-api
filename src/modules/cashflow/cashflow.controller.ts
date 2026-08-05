@@ -24,6 +24,22 @@ export class CashflowController {
     }
   };
 
+  save = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // 1. Data ID dan Items semuanya sudah ada di dalam req.body berkat DTO baru
+      const data = req.body;
+
+      // 2. Teruskan data tersebut ke service
+      const result = await this.service.saveCashflow(data);
+
+      res
+        .status(200)
+        .json({ message: "Cashflow saved successfully", ...result });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   getDetailByOrder = async (
     req: Request,
     res: Response,
@@ -51,18 +67,17 @@ export class CashflowController {
       next(error);
     }
   };
-  // SAVE / UPDATE Cashflow
-  save = async (req: Request, res: Response, next: NextFunction) => {
+
+  getVendorsForOrder = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
     try {
-      // 1. Data ID dan Items semuanya sudah ada di dalam req.body berkat DTO baru
-      const data = req.body;
+      const { id } = req.params;
+      const vendors = await this.service.getVendorsByOrderId(id);
 
-      // 2. Teruskan data tersebut ke service
-      const result = await this.service.saveCashflow(data);
-
-      res
-        .status(200)
-        .json({ message: "Cashflow saved successfully", ...result });
+      res.status(200).json({ data: vendors });
     } catch (error) {
       next(error);
     }
