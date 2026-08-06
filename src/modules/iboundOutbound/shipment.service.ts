@@ -264,17 +264,18 @@ export class ShipmentService {
         id: true,
         type: true,
         orderId: true,
-        replacementOrderId: true, // ✨ Tambahan: Ambil replacementOrderId
+        replacementOrderId: true,
         order: { select: { warrantyDays: true } },
         replacementOrder: {
           select: { referenceOrder: { select: { warrantyDays: true } } },
-        }, // ✨ Ambil garansi dari order asli replacement
+        },
       },
     });
 
     if (!shipment) throw new ApiError("Shipment not found", 404);
 
     return await this.prisma.$transaction(async (tx) => {
+      // 1. Buat catatan riwayat baru di tabel shipment_history
       const history = await tx.shipmentHistory.create({
         data: {
           shipmentId: shipmentId,
@@ -285,6 +286,7 @@ export class ShipmentService {
         },
       });
 
+      // 2. Simpan catatan tambahan (jika ada)
       if (data.shipmentNotes && data.shipmentNotes.length > 0) {
         await tx.shipmentNote.createMany({
           data: data.shipmentNotes.flatMap((note) =>
@@ -297,6 +299,7 @@ export class ShipmentService {
         });
       }
 
+      // 3. Perbarui status utama pada tabel shipment
       await tx.shipment.update({
         where: { id: shipmentId },
         data: {
@@ -309,7 +312,7 @@ export class ShipmentService {
         },
       });
 
-      // 2. LOGIC JIKA BARANG OUTBOUND SAMPAI KE PELANGGAN
+      // 4. LOGIC JIKA BARANG OUTBOUND SAMPAI KE PELANGGAN
       if (shipment.type === "OUTBOUND" && data.status === "ARRIVED") {
         // A. JIKA INI PENGIRIMAN ORDER BIASA
         if (shipment.orderId) {
@@ -381,7 +384,6 @@ export class ShipmentService {
 
         // B. JIKA INI PENGIRIMAN REPLACEMENT ORDER
         else if (shipment.replacementOrderId) {
-          // Opsional: Jika ingin mengaktifkan garansi berdasarkan pesanan referensi aslinya
           const warrantyDays =
             shipment.replacementOrder?.referenceOrder?.warrantyDays;
 
@@ -397,7 +399,6 @@ export class ShipmentService {
             if (!existingWarranty) {
               await tx.orderWarranty.create({
                 data: {
-                  // Hubungkan garansi ke order asli (referenceOrder) dari replacement tersebut
                   orderId: shipment.replacementOrderId,
                   shipmentId: shipment.id,
                   warrantyDays: warrantyDays,

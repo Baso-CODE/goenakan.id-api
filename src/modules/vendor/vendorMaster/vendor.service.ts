@@ -890,6 +890,7 @@ export class VendorService {
           companyName: true,
           trackingUrl: true,
           city: true,
+          type: true,
           vendorItems: {
             include: {
               item: { include: { category: true } },
