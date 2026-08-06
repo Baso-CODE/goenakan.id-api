@@ -23,6 +23,8 @@ export class VendorService {
   // === CREATE VENDOR ===
   async createVendor(data: CreateVendorDTO) {
     try {
+      console.log("ini adalah data", data);
+
       const slug = this.slug.create(data.companyName);
       const existing = await this.prisma.vendor.findFirst({
         where: { companyName: data.companyName },
@@ -32,6 +34,7 @@ export class VendorService {
         throw new ApiError("Vendor with this company name already exists", 400);
       }
 
+      // Validasi Kategori
       if (data.type === "SERVICE") {
         const categoryExists = await this.prisma.vendorCategory.findUnique({
           where: { id: data.categoryId },
@@ -48,16 +51,27 @@ export class VendorService {
         }
       }
 
+      // ✨ PERBAIKAN 1: Validasi item berdasarkan tipe vendor
       if (data.itemIds?.length) {
-        const items = await this.prisma.vendorItem.findMany({
-          where: { id: { in: data.itemIds } },
-        });
-
-        if (items.length !== data.itemIds.length) {
-          throw new ApiError("One or more vendor items not found", 400);
+        if (data.type === "SERVICE") {
+          const items = await this.prisma.vendorItem.findMany({
+            where: { id: { in: data.itemIds } },
+          });
+          if (items.length !== data.itemIds.length) {
+            throw new ApiError("One or more service items not found", 400);
+          }
+        } else if (data.type === "PRODUCT") {
+          // Ganti 'itemCategory' dengan nama model Prisma untuk item produkmu
+          const items = await this.prisma.itemCategory.findMany({
+            where: { id: { in: data.itemIds } },
+          });
+          if (items.length !== data.itemIds.length) {
+            throw new ApiError("One or more product items not found", 400);
+          }
         }
       }
 
+      // Membuat Data Vendor
       const vendor = await this.prisma.vendor.create({
         data: {
           companyName: data.companyName,
@@ -78,13 +92,24 @@ export class VendorService {
         },
       });
 
+      // ✨ PERBAIKAN 2: Simpan relasi item ke tabel yang tepat berdasarkan tipe
       if (data.itemIds?.length) {
-        await this.prisma.vendorVendorItem.createMany({
-          data: data.itemIds.map((itemId) => ({
-            vendorId: vendor.id,
-            itemId,
-          })),
-        });
+        if (data.type === "SERVICE") {
+          await this.prisma.vendorVendorItem.createMany({
+            data: data.itemIds.map((itemId) => ({
+              vendorId: vendor.id,
+              itemId: itemId,
+            })),
+          });
+        } else if (data.type === "PRODUCT") {
+          // Ganti 'vendorItemCategory' dan 'itemCategoryId' sesuai dengan schema Prisma-mu
+          await this.prisma.vendorItemCategory.createMany({
+            data: data.itemIds.map((itemCategoryId) => ({
+              vendorId: vendor.id,
+              itemCategoryId: itemCategoryId,
+            })),
+          });
+        }
       }
 
       if (data.contacts?.length) {
@@ -103,6 +128,8 @@ export class VendorService {
           serviceCategory: true,
           productCategory: true,
           vendorItems: { include: { item: true } },
+          // Pastikan untuk meng-include relasi produk jika ingin dikembalikan ke frontend
+          productItemCategories: { include: { itemCategory: true } },
           contacts: { include: { platform: true } },
         },
       });
@@ -842,7 +869,6 @@ export class VendorService {
         },
       };
 
-      // 2. Filter CUKUP berdasarkan Kategori Transaksi (Expense Category) di PO
       if (type === "PRODUCT") {
         poWhereCondition.expenseCategory = {
           in: ["PRODUCT", "PACKAGING"],
@@ -851,7 +877,6 @@ export class VendorService {
         poWhereCondition.expenseCategory = "LOGISTIC";
       }
 
-      // 3. Eksekusi Query
       const vendors = await this.prisma.vendor.findMany({
         where: {
           isActive: true,
@@ -863,7 +888,8 @@ export class VendorService {
         select: {
           id: true,
           companyName: true,
-          trackingUrl: true, // Diperlukan untuk tracking ekspedisi
+          trackingUrl: true,
+          city: true,
           vendorItems: {
             include: {
               item: { include: { category: true } },
