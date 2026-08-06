@@ -23,6 +23,15 @@ export enum ShippingMethod {
   AIR = "AIR",
 }
 
+export enum ShipmentStatusEnum {
+  PENDING = "PENDING",
+  PREPARED = "PREPARED",
+  DISPATCHED = "DISPATCHED",
+  IN_TRANSIT = "IN_TRANSIT",
+  ARRIVED = "ARRIVED",
+  CANCELLED = "CANCELLED",
+}
+
 // --- SUB-DTO: SHIPMENT NOTES ---
 export class ShipmentNoteInputDTO {
   @IsNotEmpty()
@@ -53,9 +62,13 @@ export class ShipmentItemInputDTO {
 
 // --- MAIN DTO: CREATE SHIPMENT HEADER ---
 export class CreateShipmentDTO {
-  @IsNotEmpty()
+  @IsOptional()
   @IsUUID()
-  orderId!: string;
+  orderId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  replacementOrderId?: string;
 
   @IsOptional()
   @IsUUID()

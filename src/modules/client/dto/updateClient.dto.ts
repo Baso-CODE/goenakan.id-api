@@ -1,6 +1,7 @@
 import { Type } from "class-transformer";
 import {
   IsArray,
+  IsDateString,
   IsEnum,
   IsOptional,
   IsString,
@@ -43,6 +44,16 @@ export class UpdateClientDTO {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @IsOptional()
+  @IsDateString(
+    {},
+    {
+      message:
+        "Format tanggal joinedDate tidak valid (Gunakan format YYYY-MM-DD)",
+    },
+  )
+  joinedDate?: string;
 
   // ============================
   // B2B FIELDS

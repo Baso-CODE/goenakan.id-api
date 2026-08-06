@@ -4,8 +4,10 @@ import { injectable } from "tsyringe";
 import { ApiError } from "../../../utils/api-error";
 import { SlugService } from "../../../utils/genereateSlug";
 import { CloudinaryService } from "../../cloudinary/cloudinary.service";
+import { CurrencyConversionService } from "../../currency/convertionCurrency.service";
 import { PaginationService } from "../../pagination/pagination.service";
 import { PrismaService } from "../../prisma/prisma.service";
+import { BatchPriceModifierDTO } from "./dto/batchPriceModifier.dto";
 import { CreatePriceTierDTO, CreateProductDTO } from "./dto/createProduct.dto";
 import { ProductSeoDTO } from "./dto/productSEO.dto";
 import { UpdateProductAttributesDTO } from "./dto/updateAttributes.dto";
@@ -16,8 +18,6 @@ import {
   UpdateProductVariantFiles,
   UpdateProductVariantsDTO,
 } from "./dto/updateVariantsProduct.dto";
-import { BatchPriceModifierDTO } from "./dto/batchPriceModifier.dto";
-import { CurrencyConversionService } from "../../currency/convertionCurrency.service";
 
 export interface ProductExportQuery {
   startDate?: string;
@@ -149,7 +149,8 @@ export class ProductService {
           if (meta.url) {
             uploadedImages.push({
               url: meta.url,
-              publicId: meta.publicId || `fe_link_${Date.now()}_${Math.random()}`,
+              publicId:
+                meta.publicId || `fe_link_${Date.now()}_${Math.random()}`,
               isFeatured: meta.isFeatured || false,
               altText: meta.altText || data.name || "Product Image",
             });
@@ -158,7 +159,7 @@ export class ProductService {
       }
 
       if (files.images) {
-        const fileMetadataList = (imagesMetadata || []).filter(m => !m.url);
+        const fileMetadataList = (imagesMetadata || []).filter((m) => !m.url);
         for (let i = 0; i < files.images.length; i++) {
           const file = files.images[i];
           const metadata = fileMetadataList[i] || {};
@@ -189,10 +190,19 @@ export class ProductService {
             sku: data.sku,
             description: data.description,
             basePrice: data.basePrice,
-            foreignPrice: data.foreignPrice !== undefined && data.foreignPrice !== null ? data.foreignPrice.toString() : null,
+            foreignPrice:
+              data.foreignPrice !== undefined && data.foreignPrice !== null
+                ? data.foreignPrice.toString()
+                : null,
             currencyCode: data.currencyCode || "IDR",
-            exchangeRate: data.exchangeRate !== undefined && data.exchangeRate !== null ? data.exchangeRate.toString() : null,
-            additionalFee: data.additionalFee !== undefined && data.additionalFee !== null ? data.additionalFee.toString() : null,
+            exchangeRate:
+              data.exchangeRate !== undefined && data.exchangeRate !== null
+                ? data.exchangeRate.toString()
+                : null,
+            additionalFee:
+              data.additionalFee !== undefined && data.additionalFee !== null
+                ? data.additionalFee.toString()
+                : null,
             isCustom: data.isCustom,
             isMadeByOrder: data.isMadeByOrder || false,
             materialTypeId: data.materialTypeId,
@@ -676,10 +686,19 @@ export class ProductService {
           basePrice: basePrice.toString(),
           activeVendorPriceRecordId: activeVendorPriceRecordId || null,
           activePriceFreightMode: activePriceFreightMode || null,
-          foreignPrice: foreignPrice !== undefined && foreignPrice !== null ? foreignPrice.toString() : null,
+          foreignPrice:
+            foreignPrice !== undefined && foreignPrice !== null
+              ? foreignPrice.toString()
+              : null,
           currencyCode: currencyCode || "IDR",
-          exchangeRate: exchangeRate !== undefined && exchangeRate !== null ? exchangeRate.toString() : null,
-          additionalFee: additionalFee !== undefined && additionalFee !== null ? additionalFee.toString() : null,
+          exchangeRate:
+            exchangeRate !== undefined && exchangeRate !== null
+              ? exchangeRate.toString()
+              : null,
+          additionalFee:
+            additionalFee !== undefined && additionalFee !== null
+              ? additionalFee.toString()
+              : null,
         },
       });
 
@@ -762,12 +781,17 @@ export class ProductService {
     const totalCbm = cbmPerCtn * totalCtn;
     const totalSeaCbmAlloc = Math.max(0.1, totalCbm);
 
-    const totalAirWeightAlloc = Math.max(totalSeaCbmAlloc, (weight + 2) * totalCtn);
+    const totalAirWeightAlloc = Math.max(
+      totalSeaCbmAlloc,
+      (weight + 2) * totalCtn,
+    );
 
-    const seaFreightCostPcs = importType === "RESMI"
-      ? (seaFreightRate / safeQtyPcs)
-      : ((totalSeaCbmAlloc * seaFreightRate) / safeQtyPcs);
-    const airFreightCostPcs = (totalAirWeightAlloc * airFreightRate) / safeQtyPcs;
+    const seaFreightCostPcs =
+      importType === "RESMI"
+        ? seaFreightRate / safeQtyPcs
+        : (totalSeaCbmAlloc * seaFreightRate) / safeQtyPcs;
+    const airFreightCostPcs =
+      (totalAirWeightAlloc * airFreightRate) / safeQtyPcs;
 
     const gzDeliveryCostPcs = gzDeliveryCost * exchangeRate;
     const baseCostPcs = foreignPrice * exchangeRate;
@@ -779,8 +803,18 @@ export class ProductService {
       const formECostPcs = (formECost * exchangeRate) / safeQtyPcs;
       const insuranceCostPcs = (insurancePercent / 100) * baseCostPcs;
 
-      const cifSeaPcs = baseCostPcs + gzDeliveryCostPcs + formECostPcs + seaFreightCostPcs + insuranceCostPcs;
-      const cifAirPcs = baseCostPcs + gzDeliveryCostPcs + formECostPcs + airFreightCostPcs + insuranceCostPcs;
+      const cifSeaPcs =
+        baseCostPcs +
+        gzDeliveryCostPcs +
+        formECostPcs +
+        seaFreightCostPcs +
+        insuranceCostPcs;
+      const cifAirPcs =
+        baseCostPcs +
+        gzDeliveryCostPcs +
+        formECostPcs +
+        airFreightCostPcs +
+        insuranceCostPcs;
 
       const bmSeaPcs = (beaMasukPercent / 100) * cifSeaPcs;
       const bmAirPcs = (beaMasukPercent / 100) * cifAirPcs;
@@ -797,19 +831,29 @@ export class ProductService {
       const handlingCostPcs = handlingCost / safeQtyPcs;
       const otherCostPcs = otherCost / safeQtyPcs;
 
-      cogsSea = cifSeaPcs + taxSeaPcs + handlingCostPcs + otherCostPcs + localFreight;
-      cogsAir = cifAirPcs + taxAirPcs + handlingCostPcs + otherCostPcs + localFreight;
+      cogsSea =
+        cifSeaPcs + taxSeaPcs + handlingCostPcs + otherCostPcs + localFreight;
+      cogsAir =
+        cifAirPcs + taxAirPcs + handlingCostPcs + otherCostPcs + localFreight;
     } else {
-      cogsSea = baseCostPcs + gzDeliveryCostPcs + seaFreightCostPcs + localFreight;
-      cogsAir = baseCostPcs + gzDeliveryCostPcs + airFreightCostPcs + localFreight;
+      cogsSea =
+        baseCostPcs + gzDeliveryCostPcs + seaFreightCostPcs + localFreight;
+      cogsAir =
+        baseCostPcs + gzDeliveryCostPcs + airFreightCostPcs + localFreight;
     }
 
-    const sponsorMultiplier = 1 + (sponsorPercent / 100);
-    const rawSellSea = (cogsSea * sponsorMultiplier) + margin;
-    const rawSellAir = (cogsAir * sponsorMultiplier) + margin;
+    const sponsorMultiplier = 1 + sponsorPercent / 100;
+    const rawSellSea = cogsSea * sponsorMultiplier + margin;
+    const rawSellAir = cogsAir * sponsorMultiplier + margin;
 
-    const sellPriceSea = roundUpTo > 1 ? Math.ceil(rawSellSea / roundUpTo) * roundUpTo : Math.round(rawSellSea);
-    const sellPriceAir = roundUpTo > 1 ? Math.ceil(rawSellAir / roundUpTo) * roundUpTo : Math.round(rawSellAir);
+    const sellPriceSea =
+      roundUpTo > 1
+        ? Math.ceil(rawSellSea / roundUpTo) * roundUpTo
+        : Math.round(rawSellSea);
+    const sellPriceAir =
+      roundUpTo > 1
+        ? Math.ceil(rawSellAir / roundUpTo) * roundUpTo
+        : Math.round(rawSellAir);
 
     return { sellPriceSea, sellPriceAir };
   }
@@ -819,9 +863,10 @@ export class ProductService {
     const products = await this.prisma.product.findMany({
       where: {
         currencyCode: data.targetCurrency,
-        ...(data.productIds && data.productIds.length > 0 && {
-          id: { in: data.productIds },
-        }),
+        ...(data.productIds &&
+          data.productIds.length > 0 && {
+            id: { in: data.productIds },
+          }),
       },
       include: {
         category: true,
@@ -867,7 +912,11 @@ export class ProductService {
       const idrOffset = offsetVal * offsetRate;
       
       let basePriceCalculated = Number(p.basePrice) || 0;
-      let calculatedTiers: { minQuantity: number; maxQuantity: number | null; price: number }[] = [];
+      let calculatedTiers: {
+        minQuantity: number;
+        maxQuantity: number | null;
+        price: number;
+      }[] = [];
 
       if (activeQuote) {
         const qtyPerCtn = activeQuote.qtyPerCtn || 1;
@@ -910,7 +959,10 @@ export class ProductService {
               roundUpTo: roundUpToVal,
             });
 
-            const finalPrice = p.activePriceFreightMode === "SEA" ? calc.sellPriceSea : calc.sellPriceAir;
+            const finalPrice =
+              p.activePriceFreightMode === "SEA"
+                ? calc.sellPriceSea
+                : calc.sellPriceAir;
             return {
               minQuantity,
               maxQuantity,
@@ -924,13 +976,22 @@ export class ProductService {
         } else {
           // Handle VARIABLE mode tiers from activeQuote.tiers
           const quoteTiers = activeQuote.tiers;
-          if (quoteTiers && Array.isArray(quoteTiers) && quoteTiers.length > 0) {
-            const sorted = [...quoteTiers].sort((a: any, b: any) => (Number(a.totalPcs) || 0) - (Number(b.totalPcs) || 0));
+          if (
+            quoteTiers &&
+            Array.isArray(quoteTiers) &&
+            quoteTiers.length > 0
+          ) {
+            const sorted = [...quoteTiers].sort(
+              (a: any, b: any) =>
+                (Number(a.totalPcs) || 0) - (Number(b.totalPcs) || 0),
+            );
 
             calculatedTiers = sorted.map((item: any, idx: number) => {
               const minQuantity = Number(item.totalPcs) || 1;
               const nextItem = sorted[idx + 1] as any;
-              const maxQuantity = nextItem ? (Number(nextItem.totalPcs) || 0) - 1 : null;
+              const maxQuantity = nextItem
+                ? (Number(nextItem.totalPcs) || 0) - 1
+                : null;
 
               const calc = this.calculateCogsAndSellingPrice({
                 importType: activeQuote.importType as "BORONGAN" | "RESMI",
@@ -942,7 +1003,10 @@ export class ProductService {
                 handlingCost: Number(activeQuote.handlingCost) || 0,
                 otherCost: Number(activeQuote.otherCost) || 0,
                 foreignPrice: Number(item.pricePcs) || 0,
-                gzDeliveryCost: Number(item.gzCost) || Number(activeQuote.gzDeliveryCost) || 0,
+                gzDeliveryCost:
+                  Number(item.gzCost) ||
+                  Number(activeQuote.gzDeliveryCost) ||
+                  0,
                 exchangeRate: rate,
                 qtyPcs: minQuantity,
                 qtyPerCtn,
@@ -958,7 +1022,10 @@ export class ProductService {
                 roundUpTo: roundUpToVal,
               });
 
-              const finalPrice = p.activePriceFreightMode === "SEA" ? calc.sellPriceSea : calc.sellPriceAir;
+              const finalPrice =
+                p.activePriceFreightMode === "SEA"
+                  ? calc.sellPriceSea
+                  : calc.sellPriceAir;
               return {
                 minQuantity,
                 maxQuantity,
@@ -974,14 +1041,22 @@ export class ProductService {
       } else {
         // CUSTOM Mode or Local Product
         if (p.currencyCode && p.currencyCode !== "IDR") {
-          basePriceCalculated = (Number(p.foreignPrice) * rate) + (Number(p.additionalFee) || 0) + idrOffset;
+          basePriceCalculated =
+            Number(p.foreignPrice) * rate +
+            (Number(p.additionalFee) || 0) +
+            idrOffset;
         } else {
           basePriceCalculated = (Number(p.basePrice) || 0) + idrOffset;
         }
       }
 
-      const roundUp = p.activeVendorPriceRecord ? Number((p.activeVendorPriceRecord as any).roundUpTo) || 1000 : 1000;
-      const finalPriceRounded = roundUp > 1 ? Math.ceil(basePriceCalculated / roundUp) * roundUp : Math.round(basePriceCalculated);
+      const roundUp = p.activeVendorPriceRecord
+        ? Number((p.activeVendorPriceRecord as any).roundUpTo) || 1000
+        : 1000;
+      const finalPriceRounded =
+        roundUp > 1
+          ? Math.ceil(basePriceCalculated / roundUp) * roundUp
+          : Math.round(basePriceCalculated);
 
       return {
         productId: p.id,
@@ -994,7 +1069,10 @@ export class ProductService {
         priceTiers: calculatedTiers.map((t) => ({
           minQuantity: t.minQuantity,
           maxQuantity: t.maxQuantity,
-          price: roundUp > 1 ? Math.ceil(t.price / roundUp) * roundUp : Math.round(t.price),
+          price:
+            roundUp > 1
+              ? Math.ceil(t.price / roundUp) * roundUp
+              : Math.round(t.price),
         })),
       };
     });
@@ -1032,7 +1110,9 @@ export class ProductService {
 
         // Update price tiers if generated/recalculated
         if (item.priceTiers && item.priceTiers.length > 0) {
-          await tx.priceTier.deleteMany({ where: { productId: item.productId } });
+          await tx.priceTier.deleteMany({
+            where: { productId: item.productId },
+          });
           await tx.priceTier.createMany({
             data: item.priceTiers.map((t) => ({
               productId: item.productId,
@@ -1045,7 +1125,10 @@ export class ProductService {
       }
     });
 
-    return { success: true, message: `Successfully updated ${preview.previewItems.length} product prices.` };
+    return {
+      success: true,
+      message: `Successfully updated ${preview.previewItems.length} product prices.`,
+    };
   }
 
   // === ADD IMAGE ===
@@ -1099,7 +1182,7 @@ export class ProductService {
   async deleteImage(imageId: string) {
     const img = await this.prisma.productImage.findUnique({
       where: { id: imageId },
-      include: { product: true }
+      include: { product: true },
     });
     if (!img) throw new ApiError("Image not found", 404);
     const productId = img.productId;
@@ -3247,7 +3330,6 @@ export class ProductService {
   }
 
   async getProductFilterOptions() {
-    // ✨ 1. Ambil Kategori secara bersarang (Nested)
     const categories = await this.prisma.productCategory.findMany({
       select: {
         id: true,

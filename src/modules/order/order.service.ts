@@ -2,6 +2,7 @@ import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
 import { getErrorMessage } from "../../middleware/getErrorMessage";
 import { ApiError } from "../../utils/api-error";
+import { CounterService } from "../../utils/counter.service";
 import { PaginationService } from "../pagination/pagination.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { WhatsappNotificationService } from "../whatsapp/notification/whatsapp-notification.service";
@@ -21,48 +22,37 @@ export class OrderService {
     private readonly prisma: PrismaService,
     private readonly pagination: PaginationService,
     private whatsappNotification: WhatsappNotificationService,
+    private readonly counterService: CounterService,
   ) {}
 
   // ====================================================================
-  // HELPER: GENERATE ORDER NUMBER (Format: GI-SOxxxx atau GI-SNxxxx)
+  // HELPER: GENERATE ORDER NUMBER (Format: GI-SO260700001 atau GI-SN260700001)
   // ====================================================================
   private async generateOrderNumber(
     tx: any,
     category: "SALES" | "SAMPLE",
   ): Promise<string> {
-    const prefix = category === "SALES" ? "GI-SO" : "GI-SN";
+    // Tentukan kode form (SO untuk Sales, SN untuk Sample)
+    const formCode = category === "SALES" ? "SO" : "SN";
 
-    // Cari order terakhir berdasarkan prefix tersebut
-    const lastOrder = await tx.order.findFirst({
-      where: {
-        orderNumber: {
-          startsWith: prefix,
-        },
-      },
-      orderBy: {
-        createdAt: "desc", // Mengambil yang terbaru
-      },
-      select: {
-        orderNumber: true,
-      },
-    });
+    // Ambil periode tahun dan bulan saat ini (Contoh: "2607" untuk Juli 2026)
+    const periodYYMM = this.counterService.getCurrentPeriodYYMM();
 
-    let nextIncrement = 1;
+    // Tipe counter di database akan menjadi "SO_2607" atau "SN_2607"
+    // agar nomor urut otomatis mereset setiap bulan baru.
+    const counterType = `${formCode}_${periodYYMM}`;
 
-    if (lastOrder && lastOrder.orderNumber) {
-      const lastNumberStr = lastOrder.orderNumber.replace(prefix, "");
-      const lastIncrement = parseInt(lastNumberStr, 10);
+    // Ambil nomor urut berikutnya secara aman (Atomic Increment) dengan 5 digit (XXXXX)
+    const sequence = await this.counterService.getNextFormattedNumber(
+      tx,
+      counterType,
+      periodYYMM,
+      5,
+    );
 
-      if (!isNaN(lastIncrement)) {
-        nextIncrement = lastIncrement + 1;
-      }
-    }
-
-    const incrementStr = String(nextIncrement).padStart(4, "0");
-
-    return `${prefix}${incrementStr}`;
+    // Gabungkan menjadi format akhir: GI-XXYYMMXXXXX
+    return `GI-${formCode}${periodYYMM}${sequence}`;
   }
-
   // ====================================================================
   // MAIN METHOD: CREATE ORDER
   // ====================================================================
@@ -161,8 +151,6 @@ export class OrderService {
         variant: item.variantId
           ? { connect: { id: item.variantId } }
           : undefined,
-        // ALASAN: Prisma mendukung penyimpanan objek langsung ke field berjenis Json.
-        // Jika dari frontend ada data selectedAttributes, kita simpan. Jika tidak, abaikan.
         selectedAttributes: item.selectedAttributes
           ? item.selectedAttributes
           : undefined,
@@ -257,6 +245,17 @@ export class OrderService {
           },
         },
       });
+      const clientRecord = await tx.client.findUnique({
+        where: { id: orderCore.clientId },
+        select: { status: true },
+      });
+
+      if (clientRecord && clientRecord.status === "POTENTIAL") {
+        await tx.client.update({
+          where: { id: orderCore.clientId },
+          data: { status: "OFFICIAL" },
+        });
+      }
 
       if (isSampleOrder && sampleFollowUps && sampleFollowUps.length > 0) {
         await tx.orderSampleFollowUp.createMany({
@@ -435,6 +434,9 @@ export class OrderService {
           unitPrice: finalPrice,
           variant: item.variantId
             ? { connect: { id: item.variantId } }
+            : undefined,
+          selectedAttributes: item.selectedAttributes
+            ? item.selectedAttributes
             : undefined,
         };
 
@@ -618,19 +620,26 @@ export class OrderService {
             b2c: true,
           },
         },
-        sales: true,
+        createdBy: true,
         products: {
           include: {
             product: true,
             variant: true,
           },
         },
-
         purchaseOrderItems: {
           include: {
             purchaseOrder: {
               include: {
-                vendor: true,
+                vendor: {
+                  include: {
+                    contacts: {
+                      include: {
+                        platform: true,
+                      },
+                    },
+                  },
+                },
               },
             },
           },
@@ -658,6 +667,7 @@ export class OrderService {
 
     const activeInvoiceIds = activeInvoices.map((inv) => inv.id);
     const billedAmountByProduct = new Map<string, number>();
+
     for (const invoice of activeInvoices) {
       const invoiceItemsTotal = invoice.items.reduce(
         (sum, item) => sum + Number(item.price) * item.quantity,
@@ -765,21 +775,37 @@ export class OrderService {
       };
     });
 
+    // Mapping Vendor dari Purchase Order
     const uniqueVendorsMap = new Map();
-    order.purchaseOrderItems.forEach((poi) => {
-      const po = poi.purchaseOrder;
 
-      if (po.vendor && !uniqueVendorsMap.has(po.vendor.id)) {
-        uniqueVendorsMap.set(po.vendor.id, {
-          id: po.vendor.id,
-          companyName: po.vendor.companyName,
-          picName: po.vendor.picName || "Unknown",
-          picPhone: "-",
-          role: "Supplier (via PO)",
-          poRefNumber: po.poNumber,
-        });
-      }
-    });
+    if (order.purchaseOrderItems && order.purchaseOrderItems.length > 0) {
+      order.purchaseOrderItems.forEach((poi) => {
+        const po = poi.purchaseOrder;
+
+        if (po && po.vendor && !uniqueVendorsMap.has(po.vendor.id)) {
+          const vendorData = po.vendor as any;
+
+          let contactDisplay = "-";
+
+          if (vendorData.contacts && vendorData.contacts.length > 0) {
+            const primaryContact =
+              vendorData.contacts.find((c: any) => c.isPrimary) ||
+              vendorData.contacts[0];
+
+            const platformName = primaryContact.platform?.name || "Kontak";
+            contactDisplay = `${primaryContact.contactId} (${platformName})`;
+          }
+
+          uniqueVendorsMap.set(vendorData.id, {
+            id: vendorData.id,
+            companyName: vendorData.companyName,
+            picName: vendorData.picName || "-",
+            picPhone: contactDisplay,
+            role: "Supplier (via PO)",
+          });
+        }
+      });
+    }
     const vendorsDetail = Array.from(uniqueVendorsMap.values());
 
     // 6. Invoices Mapping
@@ -808,14 +834,14 @@ export class OrderService {
         ? order.purchaseChannel.name
         : "-",
       clientInfo: clientInfo,
+
       sales: {
-        name: order.sales?.name || "-",
-        phone: order.sales?.phone || "-",
+        name: order.createdBy?.name || "System",
+        phone: (order.createdBy as any)?.phone || "-",
       },
+
       products: productsDetail,
-
       vendors: vendorsDetail,
-
       invoices: invoicesDetail,
       sampleFollowUps: order.sampleFollowUps.map((fu) => ({
         id: fu.id,
@@ -826,7 +852,6 @@ export class OrderService {
       })),
     };
   }
-
   async getAllOrders(query: {
     page?: number;
     take?: number;
@@ -1670,5 +1695,278 @@ export class OrderService {
     } catch (error) {
       console.error("❌ [CRON ERROR] Gagal mengecek garansi expired:", error);
     }
+  }
+
+  // =================================================================
+  // GET ORDER FOR REPLACEMENT AUTO-FILL
+  // =================================================================
+  async getOrderForReplacement(id: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        orderNumber: true,
+        clientId: true,
+        currencyCode: true,
+        products: {
+          select: {
+            productId: true,
+            variantId: true,
+            quantity: true,
+            unitPrice: true,
+            customization: true,
+            selectedAttributes: true,
+            remarks: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new ApiError(`Order with ID ${id} not found`, 404);
+    }
+
+    return order;
+  }
+
+  // =================================================================
+  // GET ALL COMBINED ORDERS (SALES, SAMPLE, & REPLACEMENT)
+  // =================================================================
+  async getAllCombinedOrders(query: {
+    page?: number;
+    take?: number;
+    search?: string;
+    startDate?: string;
+    endDate?: string;
+  }) {
+    const { page = 1, take = 10, search, startDate, endDate } = query;
+    const skip = (Number(page) - 1) * Number(take);
+
+    // 1. Siapkan Filter Pencarian
+    const orderWhere: any = {};
+    const replacementWhere: any = {};
+
+    if (search) {
+      const searchTerm = search.trim();
+
+      orderWhere.OR = [
+        { orderNumber: { contains: searchTerm, mode: "insensitive" } },
+        { clientPoNumber: { contains: searchTerm, mode: "insensitive" } },
+        {
+          client: {
+            b2b: { companyName: { contains: searchTerm, mode: "insensitive" } },
+          },
+        },
+        {
+          client: {
+            b2c: { name: { contains: searchTerm, mode: "insensitive" } },
+          },
+        },
+        { pic: { name: { contains: searchTerm, mode: "insensitive" } } },
+        { createdBy: { name: { contains: searchTerm, mode: "insensitive" } } },
+      ];
+
+      replacementWhere.OR = [
+        { replacementNumber: { contains: searchTerm, mode: "insensitive" } },
+        {
+          referenceOrder: {
+            orderNumber: { contains: searchTerm, mode: "insensitive" },
+          },
+        },
+        {
+          client: {
+            b2b: { companyName: { contains: searchTerm, mode: "insensitive" } },
+          },
+        },
+        {
+          client: {
+            b2c: { name: { contains: searchTerm, mode: "insensitive" } },
+          },
+        },
+        { pic: { name: { contains: searchTerm, mode: "insensitive" } } },
+        { createdBy: { name: { contains: searchTerm, mode: "insensitive" } } },
+      ];
+    }
+
+    // 2. Siapkan Filter Tanggal
+    if (startDate || endDate) {
+      const dateFilter: any = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        if (!isNaN(start.getTime())) dateFilter.gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        if (!isNaN(end.getTime())) {
+          end.setDate(end.getDate() + 1);
+          dateFilter.lt = end;
+        }
+      }
+      if (Object.keys(dateFilter).length > 0) {
+        orderWhere.dateOrder = dateFilter;
+        replacementWhere.replacementDate = dateFilter;
+      }
+    }
+
+    const [orders, replacements] = await Promise.all([
+      // Ambil Semua Order
+      this.prisma.order.findMany({
+        where: orderWhere,
+        include: {
+          client: {
+            include: {
+              b2c: true,
+              b2b: { include: { pics: { select: { name: true } } } },
+            },
+          },
+          pic: { select: { name: true } },
+          createdBy: { select: { name: true } },
+          updatedBy: { select: { name: true } },
+          referenceQuotation: { select: { quotationNumber: true } },
+          referenceSample: { select: { orderNumber: true } },
+          shipments: {
+            where: { type: "OUTBOUND" },
+            orderBy: { updatedAt: "desc" },
+            take: 1,
+            select: { createdAt: true, departureDate: true, arrivalDate: true },
+          },
+          _count: { select: { products: true } },
+        },
+      }),
+
+      // Ambil Semua Replacement
+      this.prisma.replacementOrder.findMany({
+        where: replacementWhere,
+        include: {
+          client: {
+            include: {
+              b2c: true,
+              b2b: { include: { pics: { select: { name: true } } } },
+            },
+          },
+          pic: { select: { name: true } },
+          createdBy: { select: { name: true } },
+          updatedBy: { select: { name: true } },
+          referenceOrder: {
+            select: {
+              orderNumber: true,
+              shippingAddress: true,
+              currencyCode: true,
+            },
+          },
+          _count: { select: { items: true } },
+        },
+      }),
+    ]);
+
+    let combinedData: any[] = [];
+
+    // Format Order
+    orders.forEach((order) => {
+      let clientName = "-";
+      let picCustomer = order.pic?.name || "-";
+
+      if (order.client?.b2b) {
+        clientName = order.client.b2b.companyName;
+        if (picCustomer === "-" && order.client.b2b.pics?.length > 0)
+          picCustomer = order.client.b2b.pics[0].name;
+      } else if (order.client?.b2c) {
+        clientName = order.client.b2c.name;
+      }
+
+      const lastShipment =
+        order.shipments.length > 0 ? order.shipments[0] : null;
+
+      combinedData.push({
+        id: order.id,
+        type: "ORDER",
+        orderDate: order.dateOrder,
+        orderNumber: order.orderNumber || "-",
+        customerName: clientName,
+        picCustomer: picCustomer,
+        status: order.status,
+        clientPoNumber: order.clientPoNumber || "-",
+        totalAmount: Number(order.totalAmount),
+        currencyCode: order.currencyCode,
+        totalItems: order._count.products,
+        salesName: order.createdBy?.name || "-",
+        sampleReference: order.referenceSample?.orderNumber || "-",
+        quotationReference: order.referenceQuotation?.quotationNumber || "-",
+        sendToCustDate: lastShipment?.departureDate || null,
+        arrivalInCustDate: lastShipment?.arrivalDate || null,
+        shippingAddress: order.shippingAddress || "-",
+        remark: order.remark || "-",
+        createdBy: order.createdBy?.name || "System",
+        createdTime: order.createdAt,
+        updatedBy: order.updatedBy?.name || "-",
+        updatedTime: order.updatedAt,
+        salesCategory: order.salesCategory,
+      });
+    });
+
+    // Format Replacement Order (Khusus Pencatatan Internal)
+    replacements.forEach((rep) => {
+      let clientName = "-";
+      let picCustomer = rep.pic?.name || "-";
+
+      if (rep.client?.b2b) {
+        clientName = rep.client.b2b.companyName;
+        if (picCustomer === "-" && rep.client.b2b.pics?.length > 0)
+          picCustomer = rep.client.b2b.pics[0].name;
+      } else if (rep.client?.b2c) {
+        clientName = rep.client.b2c.name;
+      }
+
+      combinedData.push({
+        id: rep.id,
+        type: "REPLACEMENT",
+        orderDate: rep.replacementDate,
+        orderNumber: rep.replacementNumber || "-",
+        customerName: clientName,
+        picCustomer: picCustomer,
+        status: "REPLACEMENT",
+
+        clientPoNumber: "-",
+
+        totalAmount: 0,
+        currencyCode: rep.referenceOrder?.currencyCode || "IDR",
+
+        totalItems: rep._count?.items || 0,
+
+        salesName: rep.createdBy?.name || "-",
+        sampleReference: "-",
+        quotationReference: "-",
+        sendToCustDate: rep.sendToCustDate || null,
+        arrivalInCustDate: rep.arrivalInCustDate || null,
+        shippingAddress: rep.referenceOrder?.shippingAddress || "-",
+        remark: rep.replacementReason
+          ? `${rep.replacementReason} - ${rep.remarks || ""}`
+          : rep.remarks || "-",
+        createdBy: rep.createdBy?.name || "System",
+        createdTime: rep.createdAt,
+        updatedBy: rep.updatedBy?.name || "-",
+        updatedTime: rep.updatedAt,
+        salesCategory: "REPLACEMENT",
+      });
+    });
+
+    combinedData.sort(
+      (a, b) =>
+        new Date(b.createdTime).getTime() - new Date(a.createdTime).getTime(),
+    );
+
+    const total = combinedData.length;
+    const paginatedData = combinedData.slice(skip, skip + Number(take));
+
+    const meta = {
+      page: Number(page),
+      take: Number(take),
+      total,
+      hasPrevious: page > 1,
+      hasNext: skip + Number(take) < total,
+      perPage: Number(take),
+    };
+
+    return { data: paginatedData, meta };
   }
 }

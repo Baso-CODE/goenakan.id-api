@@ -51,7 +51,7 @@ export class ArticleCategoryService {
         where,
         skip,
         take,
-        orderBy: { createdAt: "desc" }, // Menambahkan urutan terbaru
+        orderBy: { createdAt: "desc" },
       });
 
       // === Metadata pagination ===
@@ -75,24 +75,29 @@ export class ArticleCategoryService {
 
   // === CREATE CATEGORY ===
   async createCategory(data: CreateArticleCategoryDTO) {
-    const slug = this.slug.create(data.name);
+    // 1. Membuat slug menggunakan nama kategori versi bahasa Indonesia
+    const slug = this.slug.create(data.name_id);
 
-    // Pengecekan nama atau slug duplikat
+    // 2. Pengecekan nama_id atau slug duplikat
     const existing = await this.prisma.articleCategory.findFirst({
       where: {
-        OR: [{ name: data.name }, { slug: slug }],
+        OR: [{ name_id: data.name_id }, { slug: slug }],
       },
     });
 
+    // 3. Jika sudah ada, lemparkan error
     if (existing) {
-      throw new ApiError("Category name or slug already exists", 400);
+      throw new ApiError("Category name (ID) or slug already exists", 400);
     }
 
+    // 4. Menyimpan kategori baru ke database dengan struktur bilingual
     const category = await this.prisma.articleCategory.create({
       data: {
-        name: data.name,
+        name_id: data.name_id,
+        description_id: data.description_id,
+        name_en: data.name_en,
+        description_en: data.description_en,
         slug: slug,
-        description: data.description,
         isActive: data.isActive ?? true,
       },
     });
@@ -105,7 +110,12 @@ export class ArticleCategoryService {
     const category = await this.prisma.articleCategory.findUnique({
       where: { id },
     });
-    if (!category) throw new ApiError("Article Category not found", 404);
+
+    // Jika ID tidak ditemukan di database
+    if (!category) {
+      throw new ApiError("Article Category not found", 404);
+    }
+
     return category;
   }
 
@@ -115,22 +125,26 @@ export class ArticleCategoryService {
       where: { id },
     });
 
-    if (!existing) throw new ApiError("Article Category not found", 404);
-
-    // Update slug hanya jika nama berubah
-    const slug =
-      data.name && data.name !== existing.name
-        ? this.slug.create(data.name)
-        : existing.slug;
-
-    // Jika nama berubah, pastikan tidak bentrok dengan kategori lain
-    if (data.name && data.name !== existing.name) {
-      const duplicate = await this.prisma.articleCategory.findFirst({
-        where: { name: data.name, id: { not: id } },
-      });
-      if (duplicate) throw new ApiError("Category name already exists", 400);
+    if (!existing) {
+      throw new ApiError("Article Category not found", 404);
     }
 
+    const slug =
+      data.name_id && data.name_id !== existing.name_id
+        ? this.slug.create(data.name_id)
+        : existing.slug;
+
+    if (data.name_id && data.name_id !== existing.name_id) {
+      const duplicate = await this.prisma.articleCategory.findFirst({
+        where: { name_id: data.name_id, id: { not: id } },
+      });
+
+      if (duplicate) {
+        throw new ApiError("Category name (ID) already exists", 400);
+      }
+    }
+
+    // 4. Simpan perubahan ke database
     const updated = await this.prisma.articleCategory.update({
       where: { id },
       data: {
@@ -160,15 +174,17 @@ export class ArticleCategoryService {
   async getAllCategoriesList() {
     try {
       const categories = await this.prisma.articleCategory.findMany({
-        where: { isActive: true }, // Hanya ambil yang aktif untuk pilihan Form
+        where: { isActive: true },
         orderBy: {
-          name: "asc",
+          name_id: "asc",
         },
         select: {
           id: true,
-          name: true,
+          name_id: true,
+          name_en: true,
         },
       });
+
       return categories;
     } catch (error) {
       console.error("❌ Error in Get All Article Categories List:", error);
@@ -205,9 +221,11 @@ export class ArticleCategoryService {
       where,
       select: {
         id: true,
-        name: true,
+        name_id: true,
+        name_en: true,
         slug: true,
-        description: true,
+        description_id: true,
+        description_en: true,
         isActive: true,
         createdAt: true,
       },
@@ -232,9 +250,11 @@ export class ArticleCategoryService {
     categories.forEach((category) => {
       worksheet.addRow({
         id: category.id,
-        name: category.name,
+        name_id: category.name_id,
+        name_en: category.name_en,
         slug: category.slug,
-        description: category.description || "-",
+        description_id: category.description_id || "-",
+        description_en: category.description_en || "-",
         status: category.isActive ? "Aktif" : "Tidak Aktif",
         createdAt: category.createdAt.toLocaleString("id-ID", {
           year: "numeric",

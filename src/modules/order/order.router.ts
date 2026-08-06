@@ -25,6 +25,12 @@ export class OrderRouter {
       verifyRole(["SUPER_ADMIN"]),
       this.orderController.getAllOrder,
     );
+    this.router.get(
+      "/combined",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.orderController.getAllCombinedOrders,
+    );
 
     this.router.get(
       "/samples",
@@ -93,6 +99,13 @@ export class OrderRouter {
       this.nextAuthMiddleware.verifyNextAuthToken,
       verifyRole(["SUPER_ADMIN"]),
       this.orderController.getOrderByIdUpdate,
+    );
+
+    this.router.get(
+      "/:id/replacement-data",
+      this.nextAuthMiddleware.verifyNextAuthToken,
+      verifyRole(["SUPER_ADMIN"]),
+      this.orderController.getOrderByIdReplacement,
     );
 
     this.router.get(

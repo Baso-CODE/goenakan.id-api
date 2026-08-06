@@ -64,6 +64,10 @@ export class ClientService {
       isUnique = !existing;
     } while (!isUnique);
 
+    const parsedJoinedDate = data.joinedDate
+      ? new Date(data.joinedDate)
+      : undefined;
+
     // ==================================================
     // ====================== B2B ========================
     // ==================================================
@@ -94,6 +98,7 @@ export class ClientService {
           custCode,
           type: data.type,
           status: clientStatus,
+          joinedDate: parsedJoinedDate,
           b2b: {
             create: {
               companyName: data.companyName!,
@@ -262,6 +267,7 @@ export class ClientService {
           custCode: true,
           type: true,
           status: true,
+          joinedDate: true,
           createdAt: true,
 
           b2b: {
@@ -307,7 +313,8 @@ export class ClientService {
             id: c.id,
             custCode: c.custCode,
             type: c.type,
-            status: c.status, // ✨ TAMBAHAN: Mengirim status ke objek B2B
+            status: c.status,
+            joinedDate: c.joinedDate,
             createdAt: c.createdAt,
             companyName: c.b2b.companyName,
             department: c.b2b.department?.name ?? "-",
@@ -325,7 +332,8 @@ export class ClientService {
             id: c.id,
             custCode: c.custCode,
             type: c.type,
-            status: c.status, // ✨ TAMBAHAN: Mengirim status ke objek B2C
+            status: c.status,
+            joinedDate: c.joinedDate,
             createdAt: c.createdAt,
             name: c.b2c.name,
             phone: c.b2c.phone,
@@ -337,7 +345,8 @@ export class ClientService {
           id: c.id,
           custCode: c.custCode,
           type: c.type,
-          status: c.status, // ✨ TAMBAHAN: Mengirim status sebagai fallback
+          joinedDate: c.joinedDate,
+          status: c.status,
           createdAt: c.createdAt,
           name: "-",
           phone: "-",
@@ -362,6 +371,7 @@ export class ClientService {
       throw new Error("Failed to fetch clients. See server log for details.");
     }
   }
+
   // === GET CLIENT BY ID ===
   async getClientById(id: string) {
     const client = await this.prisma.client.findUnique({
@@ -371,6 +381,7 @@ export class ClientService {
           include: {
             department: true,
             pics: true,
+            brandClients: true,
           },
         },
         b2c: {
@@ -394,6 +405,9 @@ export class ClientService {
     });
 
     if (!existing) throw new ApiError("Client not found", 404);
+    const parsedJoinedDate = data.joinedDate
+      ? new Date(data.joinedDate)
+      : undefined;
 
     // ====================================================
     // ======================= B2B ========================
@@ -403,6 +417,7 @@ export class ClientService {
       return await this.prisma.client.update({
         where: { id },
         data: {
+          joinedDate: parsedJoinedDate ?? existing.joinedDate,
           b2b: {
             update: {
               companyName: data.companyName ?? existing.b2b?.companyName,
@@ -448,6 +463,7 @@ export class ClientService {
       return await this.prisma.client.update({
         where: { id },
         data: {
+          joinedDate: parsedJoinedDate ?? existing.joinedDate,
           b2c: {
             update: {
               prefix: data.prefix ?? existing.b2c?.prefix,
@@ -509,65 +525,6 @@ export class ClientService {
 
     return { message: "Client deleted successfully" };
   }
-
-  // === GET ALL CLIENTS FOR ORDER (tanpa pagination) ===
-  // async getAllClientsForOrder() {
-  //   try {
-  //     const clients = await this.prisma.client.findMany({
-  //       select: {
-  //         id: true,
-  //         type: true,
-  //         b2b: {
-  //           select: {
-  //             companyName: true,
-  //             pics: true,
-  //           },
-  //         },
-  //         b2c: {
-  //           select: {
-  //             name: true,
-  //             phone: true,
-  //           },
-  //         },
-  //       },
-  //       orderBy: { createdAt: "desc" },
-  //     });
-
-  //     const formatted = clients.map((c) => {
-  //       if (c.type === "B2B" && c.b2b) {
-  //         const primaryPic = c.b2b.pics?.[0];
-
-  //         return {
-  //           id: c.id,
-  //           type: c.type,
-  //           name: primaryPic
-  //             ? `${c.b2b.companyName} - PIC: ${primaryPic.name}`
-  //             : c.b2b.companyName,
-  //         };
-  //       }
-
-  //       if (c.type === "B2C" && c.b2c) {
-  //         return {
-  //           id: c.id,
-  //           type: c.type,
-  //           name: `${c.b2c.name} (${c.b2c.phone})`,
-  //         };
-  //       }
-
-  //       return {
-  //         id: c.id,
-  //         type: c.type,
-  //         name: "Unknown",
-  //       };
-  //     });
-
-  //     return formatted;
-  //   } catch (error) {
-  //     console.error("❌ Error in getAllClientsForOrder:", error);
-  //     throw new Error("Failed to fetch clients for order.");
-  //   }
-  // }
-  // client.service.ts
 
   async getAllClientsForOrder() {
     const clients = await this.prisma.client.findMany({

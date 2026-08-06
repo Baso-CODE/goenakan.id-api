@@ -233,4 +233,46 @@ export class OrderController {
       next(error);
     }
   };
+
+  getOrderByIdReplacement = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { id } = req.params;
+      const result = await this.orderService.getOrderForReplacement(id);
+
+      res.status(200).send({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // =================================================================
+  // GET ALL COMBINED ORDERS (SALES, SAMPLE, & REPLACEMENT)
+  // =================================================================
+  getAllCombinedOrders = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { page, take, search, startDate, endDate } = req.query;
+
+      const result = await this.orderService.getAllCombinedOrders({
+        page: page && !isNaN(Number(page)) ? Number(page) : 1,
+        take: take && !isNaN(Number(take)) ? Number(take) : 10,
+
+        search: search ? String(search) : undefined,
+
+        startDate: startDate ? String(startDate) : undefined,
+        endDate: endDate ? String(endDate) : undefined,
+      });
+
+      res.status(200).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
 }

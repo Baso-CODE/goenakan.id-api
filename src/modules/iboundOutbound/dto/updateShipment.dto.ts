@@ -8,13 +8,13 @@ import {
   IsString,
   ValidateNested,
 } from "class-validator";
-import { ShipmentNoteInputDTO } from "./createShipment.dto"; // Import dari file sebelah
+import { ShipmentNoteInputDTO } from "./createShipment.dto";
 
-// 🔄 UPDATE: Status Enum disesuaikan dengan skema database terbaru
 export enum ShipmentStatus {
   PENDING = "PENDING",
   PREPARED = "PREPARED",
   DISPATCHED = "DISPATCHED",
+  IN_TRANSIT = "IN_TRANSIT",
   ARRIVED = "ARRIVED",
   CANCELLED = "CANCELLED",
 }
@@ -22,16 +22,15 @@ export enum ShipmentStatus {
 // === DTO UTAMA: MENAMBAH HISTORY / STEP BARU ===
 export class AddShipmentHistoryDTO {
   @IsNotEmpty()
-  // 🔄 UPDATE: Sekarang hanya akan menerima 5 status dari enum baru di atas
   @IsEnum(ShipmentStatus, {
     message:
-      "Status tidak valid. Gunakan PENDING, PREPARED, DISPATCHED, ARRIVED, atau CANCELLED.",
+      "Status tidak valid. Gunakan PENDING, PREPARED, DISPATCHED, IN_TRANSIT, ARRIVED, atau CANCELLED.",
   })
   status!: ShipmentStatus;
 
   @IsNotEmpty()
   @IsDateString()
-  date!: string; // Tanggal kejadian
+  date!: string;
 
   @IsNotEmpty()
   @IsString()
@@ -52,7 +51,7 @@ export class AddShipmentHistoryDTO {
   trackingNumber?: string;
 }
 
-// === DTO UNTUK EDIT INFO HEADER (TYPO RESI, DLL) ===
+// === DTO UNTUK EDIT INFO HEADER ===
 export class UpdateShipmentInfoDTO {
   @IsOptional()
   @IsString()
