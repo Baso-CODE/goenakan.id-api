@@ -7,7 +7,7 @@ export class BatchPriceModifierDTO {
 
   @IsNotEmpty()
   @IsNumber()
-  newExchangeRate!: number;
+  exchangeRateDiff!: number;
 
   @IsOptional()
   @IsNumber()
