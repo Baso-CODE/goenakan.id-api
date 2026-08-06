@@ -880,32 +880,37 @@ export class ProductService {
 
     const offsetVal = data.offsetValue || 0;
     const offsetCurr = data.offsetCurrency || "IDR";
-    let offsetRate = 1;
-    if (offsetCurr !== "IDR") {
-      if (offsetCurr === data.targetCurrency) {
-        offsetRate = data.newExchangeRate;
-      } else {
-        try {
-          const res = await this.currencyConversion.convertCurrency({
-            fromCurrency: offsetCurr,
-            toCurrency: "IDR",
-            amount: 1,
-          });
-          offsetRate = res.rate;
-        } catch (e) {
-          offsetRate = 1;
-        }
+    
+    // Resolve offset conversion rate for non-target currencies outside the loop
+    let baseOffsetRate = 1;
+    if (offsetCurr !== "IDR" && offsetCurr !== data.targetCurrency) {
+      try {
+        const res = await this.currencyConversion.convertCurrency({
+          fromCurrency: offsetCurr,
+          toCurrency: "IDR",
+          amount: 1,
+        });
+        baseOffsetRate = res.rate;
+      } catch (e) {
+        baseOffsetRate = 1;
       }
     }
-    const idrOffset = offsetVal * offsetRate;
 
     const previewItems = products.map((p) => {
       const activeQuote = p.activeVendorPriceRecord;
-      const rate =
-        p.currencyCode === data.targetCurrency
-          ? data.newExchangeRate
-          : Number(p.exchangeRate) || 1;
+      
+      // Calculate rate as current rate + diff for target currency
+      const rate = p.currencyCode === data.targetCurrency 
+        ? (Number(p.exchangeRate) || 0) + data.exchangeRateDiff 
+        : (Number(p.exchangeRate) || 1);
 
+      // Compute product-specific offset if offsetCurrency matches targetCurrency
+      let offsetRate = baseOffsetRate;
+      if (offsetCurr === data.targetCurrency) {
+        offsetRate = rate;
+      }
+      const idrOffset = offsetVal * offsetRate;
+      
       let basePriceCalculated = Number(p.basePrice) || 0;
       let calculatedTiers: {
         minQuantity: number;
@@ -1076,8 +1081,9 @@ export class ProductService {
       summary: {
         totalProducts: products.length,
         targetCurrency: data.targetCurrency,
-        newExchangeRate: data.newExchangeRate,
-        rupiahOffset: idrOffset,
+        exchangeRateDiff: data.exchangeRateDiff,
+        offsetValue: offsetVal,
+        offsetCurrency: offsetCurr,
       },
       previewItems,
     };
@@ -1089,15 +1095,16 @@ export class ProductService {
 
     await this.prisma.$transaction(async (tx) => {
       for (const item of preview.previewItems) {
+        const currentProduct = await tx.product.findUnique({ where: { id: item.productId } });
+        const newExchangeRateVal = currentProduct?.currencyCode === data.targetCurrency
+          ? (Number(currentProduct.exchangeRate) || 0) + data.exchangeRateDiff
+          : undefined;
+
         await tx.product.update({
           where: { id: item.productId },
           data: {
             basePrice: item.newPrice.toString(),
-            exchangeRate:
-              (await tx.product.findUnique({ where: { id: item.productId } }))
-                ?.currencyCode === data.targetCurrency
-                ? data.newExchangeRate.toString()
-                : undefined,
+            exchangeRate: newExchangeRateVal !== undefined ? newExchangeRateVal.toString() : undefined,
           },
         });
 
