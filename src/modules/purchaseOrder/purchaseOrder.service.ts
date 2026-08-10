@@ -62,6 +62,7 @@ export class PurchaseOrderService {
       grandTotalAmount += itemTotalAmount;
 
       const connectRelations: any = {};
+
       if (item.productId) {
         connectRelations.product = { connect: { id: item.productId } };
       }
@@ -74,6 +75,13 @@ export class PurchaseOrderService {
         connectRelations.order = { connect: { id: item.orderId } };
       }
 
+      // Menyambungkan Item PO ke Replacement Order jika data ID-nya dikirim
+      if (item.replacementOrderId) {
+        connectRelations.replacementOrder = {
+          connect: { id: item.replacementOrderId },
+        };
+      }
+
       poItemsData.push({
         itemName: item.itemName,
         quantityOrder: item.quantityOrder,
@@ -83,7 +91,14 @@ export class PurchaseOrderService {
         unitPrice: item.unitPrice,
         totalAmount: itemTotalAmount,
         remarks: item.remarks || null,
-        ...connectRelations,
+
+        // ✨ TAMBAHAN BARU: Memasukkan selectedAttributes ke payload database
+        // Jika ada datanya maka simpan sebagai JSON, jika tidak ada biarkan undefined (kosong)
+        selectedAttributes: item.selectedAttributes
+          ? item.selectedAttributes
+          : undefined,
+
+        ...connectRelations, // Objek penghubung dilebur ke sini secara otomatis
       });
     }
 
@@ -121,6 +136,7 @@ export class PurchaseOrderService {
               product: true,
               variant: true,
               order: true,
+              replacementOrder: true,
             },
           },
         },
@@ -180,13 +196,18 @@ export class PurchaseOrderService {
         connectRelations.product = { connect: { id: item.productId } };
       }
 
-      // ✨ TAMBAHAN: Hubungkan relasi variant jika variantId dikirimkan saat update
       if (item.variantId) {
         connectRelations.variant = { connect: { id: item.variantId } };
       }
 
       if (item.orderId) {
         connectRelations.order = { connect: { id: item.orderId } };
+      }
+
+      if (item.replacementOrderId) {
+        connectRelations.replacementOrder = {
+          connect: { id: item.replacementOrderId },
+        };
       }
 
       poItemsData.push({
@@ -198,19 +219,26 @@ export class PurchaseOrderService {
         unitPrice: item.unitPrice,
         totalAmount: itemTotalAmount,
         remarks: item.remarks || null,
+
+        // ✨ TAMBAHAN BARU: Memastikan varian tersimpan saat diedit
+        selectedAttributes: item.selectedAttributes
+          ? item.selectedAttributes
+          : undefined,
+
         ...connectRelations,
       });
     }
 
     // 4. Proses Update ke Database menggunakan Transaction
     const updatedPO = await this.prisma.$transaction(async (tx) => {
-      // Hapus item lama, lalu buat ulang dengan data yang baru (termasuk variantId)
+      // Menghapus item lama
       await tx.purchaseOrderItem.deleteMany({
         where: { purchaseOrderId: id },
       });
 
       const currencyCode = poCore.currencyCode || "IDR";
 
+      // Membuat ulang data PO beserta item barunya
       const po = await tx.purchaseOrder.update({
         where: { id },
         data: {
@@ -233,8 +261,9 @@ export class PurchaseOrderService {
           items: {
             include: {
               product: true,
-              variant: true, // ✨ TAMBAHKAN INI AGAR DETAIL VARIAN IKUT MUNCUL DI RESPONSE
+              variant: true,
               order: true,
+              replacementOrder: true,
             },
           },
         },
@@ -313,11 +342,13 @@ export class PurchaseOrderService {
         updatedBy: { select: { name: true } },
         approvedBy: { select: { name: true } },
 
-        // Ambil relasi items untuk mendapatkan SO / SN Reference
         items: {
           select: {
             order: {
               select: { orderNumber: true },
+            },
+            replacementOrder: {
+              select: { replacementNumber: true },
             },
           },
         },
@@ -326,15 +357,23 @@ export class PurchaseOrderService {
 
     // === Format Ulang Data (Data Mapping) ===
     const formattedData = purchaseOrders.map((po) => {
-      const soReferences = Array.from(
-        new Set(
-          po.items
-            .map((item) => item.order?.orderNumber)
-            .filter((num) => num != null),
-        ),
-      );
+      // ✨ TAMBAHAN BARU: Mengumpulkan referensi dari SO Reguler dan Replacement Order
+      const rawReferences = po.items
+        .map((item) => {
+          const refs = [];
+          if (item.order?.orderNumber) refs.push(item.order.orderNumber);
+          if (item.replacementOrder?.replacementNumber)
+            refs.push(item.replacementOrder.replacementNumber);
+          return refs;
+        })
+        .flat(); // Gabungkan array di dalam array menjadi satu daftar panjang
+
+      // Hapus data yang kosong/null dan jadikan unik (agar tidak ada duplikat)
+      const validReferences = rawReferences.filter(Boolean);
+      const uniqueReferences = Array.from(new Set(validReferences));
+
       const referenceString =
-        soReferences.length > 0 ? soReferences.join(", ") : "-";
+        uniqueReferences.length > 0 ? uniqueReferences.join(", ") : "-";
 
       return {
         id: po.id,
@@ -346,6 +385,7 @@ export class PurchaseOrderService {
         vendorName: po.vendor?.companyName || "-",
         vendorAddress: po.vendorAddress || "-",
 
+        // Masukkan referensi gabungan ke sini
         salesOrderReference: referenceString,
         currency: po.currencyCode,
         totalAmount: Number(po.totalAmount),
@@ -393,7 +433,9 @@ export class PurchaseOrderService {
         items: {
           include: {
             product: { select: { name: true } },
+            variant: true,
             order: { select: { orderNumber: true } },
+            replacementOrder: { select: { replacementNumber: true } },
           },
           orderBy: { createdAt: "asc" },
         },

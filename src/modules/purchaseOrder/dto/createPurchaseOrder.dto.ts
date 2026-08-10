@@ -5,6 +5,7 @@ import {
   IsEnum,
   IsNotEmpty,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Min,
@@ -51,10 +52,19 @@ class PurchaseOrderItemDTO {
   @IsString()
   variantId?: string;
 
-  // Opsional: Referensi SO/SN dari Order tabel
+  @IsOptional()
+  @IsObject({ message: "Selected attributes must be a valid object" })
+  selectedAttributes?: Record<string, string>;
+
+  // Opsional: Referensi SO/SN dari Order tabel (Pesanan Reguler)
   @IsOptional()
   @IsString()
   orderId?: string;
+
+  // ✨ TAMBAHAN BARU: Referensi untuk Replacement Order
+  @IsOptional()
+  @IsString()
+  replacementOrderId?: string;
 
   @IsNumber()
   @Min(1, { message: "Quantity order must be at least 1" })
@@ -81,6 +91,7 @@ class PurchaseOrderItemDTO {
   @IsString()
   remarks?: string;
 }
+
 // ==========================================
 // MAIN DTO UNTUK CREATE PURCHASE ORDER
 // ==========================================

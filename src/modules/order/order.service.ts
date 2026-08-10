@@ -767,6 +767,7 @@ export class OrderService {
         totalPrice: Number(p.unitPrice) * p.quantity,
         customization: customizationDetail,
         remarks: p.remarks || "-",
+        selectedAttributes: p.selectedAttributes || {},
 
         billedQuantity: currentBilledQty,
         remainingQuantity: remainingQty,
@@ -852,6 +853,7 @@ export class OrderService {
       })),
     };
   }
+
   async getAllOrders(query: {
     page?: number;
     take?: number;

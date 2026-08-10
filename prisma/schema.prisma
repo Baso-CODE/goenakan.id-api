@@ -1207,7 +1207,8 @@ model ReplacementOrder {
   arrivalInCustDate DateTime?
 
   // === ITEMS ===
-  items ReplacementOrderProduct[]
+  items              ReplacementOrderProduct[]
+  purchaseOrderItems PurchaseOrderItem[]
 
   // === AUDIT TRAIL ===
   createdById String?
@@ -1281,12 +1282,13 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderItem {
-  id              String        @id @default(uuid())
-  purchaseOrderId String
-  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  itemName        String
-  productId       String?
-  product         Product?      @relation(fields: [productId], references: [id])
+  id                 String        @id @default(uuid())
+  purchaseOrderId    String
+  purchaseOrder      PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  itemName           String
+  productId          String?
+  product            Product?      @relation(fields: [productId], references: [id])
+  selectedAttributes Json?
 
   variantId String?
   variant   ProductVariant? @relation(fields: [variantId], references: [id])
@@ -1294,6 +1296,9 @@ model PurchaseOrderItem {
   // === REFERENSI SO / SN ===
   orderId String?
   order   Order?  @relation(fields: [orderId], references: [id])
+
+  replacementOrderId String?
+  replacementOrder   ReplacementOrder? @relation(fields: [replacementOrderId], references: [id])
 
   // === KALKULASI KUANTITAS ===
   quantityOrder    Int
