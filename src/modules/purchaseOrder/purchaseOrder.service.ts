@@ -425,7 +425,26 @@ export class PurchaseOrderService {
     const po = await this.prisma.purchaseOrder.findUnique({
       where: { id },
       include: {
-        vendor: { select: { companyName: true, address: true } },
+        vendor: {
+          select: {
+            companyName: true,
+            picName: true,
+            // Mengambil semua pecahan alamat:
+            address: true,
+            subDistrict: true,
+            district: true,
+            city: true,
+            province: true,
+            country: true,
+            postalCode: true,
+            // Memanggil relasi platform di dalam contacts:
+            contacts: {
+              include: {
+                platform: true,
+              },
+            },
+          },
+        },
         currency: { select: { code: true, symbol: true } },
         createdBy: { select: { name: true } },
         updatedBy: { select: { name: true } },
