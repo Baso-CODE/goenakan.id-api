@@ -1,0 +1,516 @@
+// src/modules/invoice/invoice.service.ts
+import { Prisma } from "@prisma/client";
+import { eachDayOfInterval, endOfMonth, format, startOfMonth } from "date-fns";
+import { injectable } from "tsyringe";
+
+import { ApiError } from "../../../utils/api-error";
+import { PaginationService } from "../../pagination/pagination.service";
+import { PrismaService } from "../../prisma/prisma.service";
+import { CreateInvoiceDTO, InvoiceCategory } from "./dto/createInvoice.dto";
+import { PayInvoiceDTO } from "./dto/updateInvoice.dto";
+
+@injectable()
+export class InvoiceService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pagination: PaginationService,
+  ) {}
+
+  async createInvoice(userId: string, data: CreateInvoiceDTO) {
+    const {
+      orderId,
+      category,
+      status,
+      method,
+      dpPercentage,
+      customAmount,
+      dueDate,
+
+      paymentDate,
+      paidAt,
+      selectedItems,
+      notes,
+    } = data;
+
+    const userExists = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!userExists) {
+      throw new ApiError("User tidak valid. Silakan login ulang.", 401);
+    }
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        products: true,
+        client: true,
+        invoices: true,
+      },
+    });
+
+    if (!order) {
+      throw new ApiError("Order not found", 404);
+    }
+
+    const lastInvoice = await this.prisma.invoice.findFirst({
+      orderBy: { id: "desc" },
+      select: { invoiceNumber: true },
+    });
+
+    let nextSequence = 1;
+    if (lastInvoice?.invoiceNumber) {
+      const parts = lastInvoice.invoiceNumber.split("_");
+      const lastNum = parseInt(parts[1], 10);
+      if (!isNaN(lastNum)) nextSequence = lastNum + 1;
+    }
+    const sequence = String(nextSequence).padStart(4, "0");
+
+    const clientCode = order.client.custCode || "NOC";
+    const now = new Date();
+    const year = now.getFullYear();
+    const romanMonths = [
+      "I",
+      "II",
+      "III",
+      "IV",
+      "V",
+      "VI",
+      "VII",
+      "VIII",
+      "IX",
+      "X",
+      "XI",
+      "XII",
+    ];
+    const romanMonth = romanMonths[now.getMonth()];
+    const formattedInvoiceNumber = `INV_${sequence}_${clientCode}_${romanMonth}_${year}`;
+
+    let invoiceAmount = 0;
+    let targetOrderProducts: any[] = [];
+
+    if (selectedItems && selectedItems.length > 0) {
+      targetOrderProducts = order.products
+        .filter((op) =>
+          selectedItems.some(
+            (sel) => sel.productId === op.productId || sel.productId === op.id,
+          ),
+        )
+        .map((op) => {
+          const selected = selectedItems.find(
+            (sel) => sel.productId === op.productId || sel.productId === op.id,
+          );
+          const quantityToBill = selected
+            ? Number(selected.quantity)
+            : op.quantity;
+          return { ...op, quantityToBill };
+        });
+
+      const baseAmount = targetOrderProducts.reduce((sum, item) => {
+        return sum + Number(item.unitPrice) * item.quantityToBill;
+      }, 0);
+
+      if (category === InvoiceCategory.FULL_PAYMENT) {
+        invoiceAmount = baseAmount;
+      } else if (category === InvoiceCategory.DP) {
+        if (!dpPercentage)
+          throw new ApiError("dpPercentage required for DP", 400);
+        invoiceAmount = Math.floor(baseAmount * (dpPercentage / 100));
+      } else if (category === InvoiceCategory.INSTALLMENT) {
+        if (!customAmount)
+          throw new ApiError("customAmount required for INSTALLMENT", 400);
+        if (customAmount > baseAmount)
+          throw new ApiError(
+            `Nominal cicilan (${customAmount}) melebihi total item (${baseAmount})`,
+            400,
+          );
+        invoiceAmount = customAmount;
+      } else if (category === InvoiceCategory.REMAINING_BALANCE) {
+        const totalInvoiced = order.invoices.reduce((sum, inv) => {
+          if (inv.status !== "CANCELLED") return sum + Number(inv.totalAmount);
+          return sum;
+        }, 0);
+        invoiceAmount = baseAmount - totalInvoiced;
+        if (invoiceAmount <= 0)
+          throw new ApiError("Item ini sudah lunas.", 400);
+      } else {
+        invoiceAmount = baseAmount;
+      }
+    } else {
+      targetOrderProducts = order.products.map((op) => ({
+        ...op,
+        quantityToBill: op.quantity,
+      }));
+
+      const totalOrderAmount = Number(order.totalAmount);
+
+      if (category === InvoiceCategory.FULL_PAYMENT) {
+        invoiceAmount = totalOrderAmount;
+      } else if (category === InvoiceCategory.DP) {
+        if (!dpPercentage)
+          throw new ApiError("dpPercentage required for DP", 400);
+        invoiceAmount = Math.floor(totalOrderAmount * (dpPercentage / 100));
+      } else if (category === InvoiceCategory.REMAINING_BALANCE) {
+        const totalInvoiced = order.invoices.reduce((sum, inv) => {
+          if (inv.status !== "CANCELLED") return sum + Number(inv.totalAmount);
+          return sum;
+        }, 0);
+        invoiceAmount = totalOrderAmount - totalInvoiced;
+        if (invoiceAmount <= 0) throw new ApiError("Order sudah lunas.", 400);
+      } else if (category === InvoiceCategory.INSTALLMENT) {
+        if (!customAmount) throw new ApiError("customAmount required", 400);
+        invoiceAmount = customAmount;
+      }
+    }
+
+    // Mapping Data ke InvoiceItem
+    const invoiceItemsData = targetOrderProducts.map((op) => {
+      const customData = op.customization
+        ? (op.customization as Prisma.InputJsonValue)
+        : Prisma.JsonNull;
+
+      return {
+        productId: op.productId,
+        quantity: op.quantityToBill,
+        price: op.unitPrice,
+        variantId: op.variantId,
+        remarks: op.remarks,
+        customization: customData,
+      };
+    });
+
+    // TRANSACTION
+    const result = await this.prisma.$transaction(async (tx) => {
+      const createdInvoice = await tx.invoice.create({
+        data: {
+          invoiceNumber: formattedInvoiceNumber,
+          orderId: order.id,
+          clientId: order.clientId,
+          userId: userId,
+          totalAmount: invoiceAmount,
+          status: status || undefined,
+          category: category,
+          method: method || undefined,
+          dueDate: dueDate ? new Date(dueDate) : undefined,
+          // 🔥 Simpan paymentDate dan paidAt jika dikirim
+          paymentDate: paymentDate ? new Date(paymentDate) : undefined,
+          paidAt: paidAt ? new Date(paidAt) : undefined,
+          items: {
+            createMany: {
+              data: invoiceItemsData,
+            },
+          },
+          notes:
+            notes && notes.length > 0
+              ? {
+                  createMany: {
+                    data: notes.flatMap((note) =>
+                      note.contents.map((text) => ({
+                        categoryId: note.categoryId,
+                        content: text,
+                      })),
+                    ),
+                  },
+                }
+              : undefined,
+        },
+        include: {
+          items: {
+            include: {
+              product: { select: { name: true, sku: true } },
+            },
+          },
+          client: { select: { id: true, custCode: true, type: true } },
+          order: { select: { orderNumber: true } },
+        },
+      });
+
+      return createdInvoice;
+    });
+
+    return result;
+  }
+
+  async payInvoice(invoiceId: number, data: PayInvoiceDTO) {
+    // 1. Cek Invoice
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+    });
+
+    if (!invoice) throw new ApiError("Invoice not found", 404);
+    if (invoice.status === "PAID")
+      throw new ApiError("Invoice is already paid", 400);
+    if (invoice.status === "CANCELLED")
+      throw new ApiError("Cannot pay cancelled invoice", 400);
+
+    // 2. Update Status, Method, dan paidAt
+    const updatedInvoice = await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        status: "PAID",
+        method: data.method,
+        paidAt: new Date(data.paymentDate),
+        paymentDate: new Date(data.paymentDate),
+      },
+    });
+
+    return updatedInvoice;
+  }
+
+  async getAllInvoices(query: {
+    page?: number;
+    take?: number;
+    search?: string;
+    status?: string;
+    category?: string;
+    startDate?: string;
+    endDate?: string;
+  }) {
+    const where: any = {};
+
+    if (query.search && query.search.trim() !== "") {
+      const searchTerm = query.search.trim();
+      where.OR = [
+        { invoiceNumber: { contains: searchTerm } },
+        {
+          client: {
+            b2b: { is: { companyName: { contains: searchTerm } } },
+          },
+        },
+        {
+          client: {
+            b2c: { is: { name: { contains: searchTerm } } },
+          },
+        },
+        { order: { is: { orderNumber: { contains: searchTerm } } } },
+      ];
+    }
+
+    // 2. Filter Status & Kategori
+    if (query.status && query.status !== "ALL") {
+      where.status = query.status;
+    }
+
+    if (query.category && query.category !== "ALL") {
+      where.category = query.category;
+    }
+
+    // 3. Filter Tanggal (Berdasarkan CreatedAt)
+    if (query.startDate || query.endDate) {
+      const dateFilter: any = {};
+
+      if (query.startDate) {
+        const start = new Date(query.startDate);
+        if (!isNaN(start.getTime())) {
+          dateFilter.gte = start;
+        }
+      }
+
+      if (query.endDate) {
+        const end = new Date(query.endDate);
+        if (!isNaN(end.getTime())) {
+          end.setDate(end.getDate() + 1);
+          dateFilter.lt = end;
+        }
+      }
+
+      if (Object.keys(dateFilter).length > 0) {
+        where.createdAt = dateFilter;
+      }
+    }
+
+    // === Pagination & Query Data ===
+    const count = await this.prisma.invoice.count({ where });
+
+    const invoices = await this.prisma.invoice.findMany({
+      where,
+      skip: (Number(query.page || 1) - 1) * Number(query.take || 10),
+      take: Number(query.take || 10),
+      orderBy: { createdAt: "desc" },
+      include: {
+        client: {
+          include: { b2b: true, b2c: true },
+        },
+        order: {
+          select: {
+            orderNumber: true,
+            currencyCode: true,
+            salesCategory: true,
+          },
+        },
+        _count: {
+          select: { items: true },
+        },
+      },
+    });
+
+    const formattedData = invoices.map((inv) => {
+      let clientName = "-";
+      if (inv.client?.b2b) {
+        clientName = inv.client.b2b.companyName;
+      } else if (inv.client?.b2c) {
+        clientName = inv.client.b2c.name;
+      }
+
+      return {
+        id: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        invoiceDate: inv.createdAt,
+        dueDate: inv.dueDate,
+        orderNumber: inv.order?.orderNumber || "-",
+        clientName: clientName,
+        category: inv.category,
+        totalAmount: Number(inv.totalAmount),
+        currencyCode: inv.order?.currencyCode || "IDR",
+        status: inv.status,
+        method: inv.method || "-",
+        totalItems: inv._count.items,
+      };
+    });
+
+    const meta = this.pagination.generateMeta({
+      page: Number(query.page || 1),
+      take: Number(query.take || 10),
+      count,
+    });
+
+    return { data: formattedData, meta };
+  }
+
+  async getInvoiceDetail(id: number) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id },
+      include: {
+        client: {
+          include: {
+            b2b: { include: { department: true, pics: true } },
+            b2c: true,
+          },
+        },
+        order: {
+          select: {
+            id: true,
+            orderNumber: true,
+            dateOrder: true,
+            totalAmount: true,
+            currencyCode: true,
+            salesCategory: true,
+            invoices: {
+              select: {
+                id: true,
+                invoiceNumber: true,
+                category: true,
+                status: true,
+                totalAmount: true,
+                paidAt: true,
+              },
+            },
+            // ✨ PERBAIKAN: Mengganti 'sales' menjadi 'createdBy' (User)
+            createdBy: {
+              select: {
+                name: true,
+                phone: true,
+                image: true, // Kita gunakan image sebagai profil/tanda tangan
+              },
+            },
+          },
+        },
+        items: {
+          include: {
+            product: {
+              select: { name: true, sku: true, materialType: true },
+            },
+            variant: {
+              select: { variantName: true, sku: true },
+            },
+          },
+        },
+        notes: {
+          include: {
+            category: true,
+          },
+        },
+      },
+    });
+
+    if (!invoice) throw new ApiError("Invoice not found", 404);
+
+    let previousInvoice = null;
+    let totalPreviousPaid = 0;
+
+    if (invoice.orderId) {
+      previousInvoice = await this.prisma.invoice.findFirst({
+        where: {
+          orderId: invoice.orderId,
+          id: { lt: invoice.id },
+        },
+        orderBy: {
+          id: "desc",
+        },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          totalAmount: true,
+          status: true,
+          category: true,
+          paidAt: true,
+        },
+      });
+
+      const pastInvoices = invoice.order!.invoices.filter(
+        (inv) => inv.id < invoice.id && inv.status === "PAID",
+      );
+
+      totalPreviousPaid = pastInvoices.reduce(
+        (sum, inv) => sum + Number(inv.totalAmount),
+        0,
+      );
+    }
+
+    return {
+      ...invoice,
+      previousInvoice,
+      totalPreviousPaid,
+    };
+  }
+  async getMonthlyRevenueChart(month: number, year: number) {
+    // 1. Tentukan Range Tanggal (Awal s/d Akhir Bulan)
+    const startDate = startOfMonth(new Date(year, month - 1));
+    const endDate = endOfMonth(new Date(year, month - 1));
+
+    // 2. Ambil Invoice yang sudah PAID di range tersebut
+    const invoices = await this.prisma.invoice.findMany({
+      where: {
+        status: "PAID",
+        updatedAt: {
+          // Gunakan updatedAt (tanggal bayar) bukan createdAt
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+      select: {
+        updatedAt: true,
+        totalAmount: true,
+      },
+    });
+
+    // 3. Generate semua tanggal dalam bulan tersebut (1, 2, 3... 30/31)
+    const allDays = eachDayOfInterval({ start: startDate, end: endDate });
+
+    // 4. Mapping Data (Gabungkan tanggal kosong dengan data invoice)
+    const chartData = allDays.map((day) => {
+      const dateStr = format(day, "yyyy-MM-dd");
+
+      // Cari invoice yang dibayar pada tanggal ini
+      const dailyTotal = invoices
+        .filter((inv) => format(inv.updatedAt, "yyyy-MM-dd") === dateStr)
+        .reduce((sum, inv) => sum + Number(inv.totalAmount), 0);
+
+      return {
+        date: format(day, "dd MMM"), // Format tampilan: "01 Jan"
+        revenue: dailyTotal,
+      };
+    });
+
+    return chartData;
+  }
+}

@@ -10,63 +10,67 @@ import { env } from "./config";
 import { errorMiddleware } from "./middleware/error.middleware";
 
 import { AuthRouter } from "./modules/auth/auth.router";
-import { CashflowRouter } from "./modules/cashflow/cashflow.router";
-import { ClientRouter } from "./modules/client/client.router";
-import { ContactMessageRouter } from "./modules/contact-message/contact-message.router";
 
+import { syncPermissionsToDatabase } from "./helpers/syncPermissions";
 import {
   authLimiter,
   globalLimiter,
   publicLimiter,
 } from "./middleware/rateLimiter.middleware";
-import { AnalyticsRouter } from "./modules/analytics/analytics.router";
-import { CurrencyRouter } from "./modules/currency/currency.router";
-import { DepartmentRouter } from "./modules/department/department.router";
-import { FinanceRouter } from "./modules/finance/finance.router";
-import { LogisticsRouter } from "./modules/iboundOutbound/logistic.router";
-import { InvoiceRouter } from "./modules/invoice/invoice.router";
-import { NoteRouter } from "./modules/notes/notes.router";
-import { ShipmentNoteCategoryRouter } from "./modules/notesShipment/notesShipmentCategory.router";
-import { OrderRouter } from "./modules/order/order.router";
-import { AttributeRouter } from "./modules/product/attributes/attributes.router";
-import { ProductCategoryRouter } from "./modules/product/category/categoryProduct.router";
-import { ItemCategoryRouter } from "./modules/product/item-category/item-category.router";
-import { ItemNameRouter } from "./modules/product/item-names/item-names.router";
-import { ProductRouter } from "./modules/product/masterProduct/product.router";
-import { MaterialTypeRouter } from "./modules/product/material-type/material-type.router";
-import { SupplierCogsRouter } from "./modules/product/supplier-cogs/supplier-cogs.router";
-import { ProductTagRouter } from "./modules/product/tags/tags.router";
-import { PurchaseChannelRouter } from "./modules/purchaseChannel/purchaseChannel.router";
-import { PurchaseOrderRouter } from "./modules/purchaseOrder/purchaseOrder.router";
-import { QuotationRouter } from "./modules/quotation/quotation.router";
-import { QuotationNoteCategoryRouter } from "./modules/quotation/quotationNoteCategory/quotationNoteCategory.router";
-import { ReplacementOrderRouter } from "./modules/replacementOrder/replacementOrder.router";
-import { RoleRouter } from "./modules/roles/roles.router";
-import { SalesRouter } from "./modules/sales/sales.router";
-import { UserRouter } from "./modules/userManagement/userManagement.router";
-import { VendorCategoryRouter } from "./modules/vendor/categoryVendor/categoryVendor.router";
-import { ItemVendorRouter } from "./modules/vendor/itemVendor/itemVendor.router";
-import { ContactPlatformRouter } from "./modules/vendor/platform/platform.route";
-import { VendorRouter } from "./modules/vendor/vendorMaster/vendor.router";
+
+import { AnalyticsRouter } from "./modules/admin/analytics/analytics.router";
+import { CashflowRouter } from "./modules/admin/cashflow/cashflow.router";
+import { ClientRouter } from "./modules/admin/client/client.router";
+import { ContactMessageRouter } from "./modules/admin/contact-message/contact-message.router";
+import { CurrencyRouter } from "./modules/admin/currency/currency.router";
+import { DepartmentRouter } from "./modules/admin/department/department.router";
+import { FinanceRouter } from "./modules/admin/finance/finance.router";
+import { LogisticsRouter } from "./modules/admin/inbound-outbound/logistic.router";
+import { InvoiceRouter } from "./modules/admin/invoice/invoice.router";
+import { NoteRouter } from "./modules/admin/notes-invoice/notes.router";
+import { ShipmentNoteCategoryRouter } from "./modules/admin/notes-shipment/notesShipmentCategory.router";
+import { OrderRouter } from "./modules/admin/order/order.router";
+import { AttributeRouter } from "./modules/admin/product/attributes-product/attributes.router";
+import { ProductCategoryRouter } from "./modules/admin/product/category-product/categoryProduct.router";
+import { ItemCategoryRouter } from "./modules/admin/product/item-category-product/item-category.router";
+import { ItemNameRouter } from "./modules/admin/product/item-names-product/item-names.router";
+import { ProductRouter } from "./modules/admin/product/master-product/product.router";
+import { MaterialTypeRouter } from "./modules/admin/product/material-type-product/material-type.router";
+import { SupplierCogsRouter } from "./modules/admin/product/supplier-cogs/supplier-cogs.router";
+import { ProductTagRouter } from "./modules/admin/product/tags-product/tags.router";
+import { PurchaseChannelRouter } from "./modules/admin/purchase-channel/purchaseChannel.router";
+import { PurchaseOrderRouter } from "./modules/admin/purchase-order/purchaseOrder.router";
+import { QuotationNoteCategoryRouter } from "./modules/admin/quotation/quotation-note-category/quotationNoteCategory.router";
+import { QuotationRouter } from "./modules/admin/quotation/quotation.router";
+import { ReplacementOrderRouter } from "./modules/admin/replacement-order/replacementOrder.router";
+import { RoleRouter } from "./modules/admin/roles/roles.router";
+import { SalesRouter } from "./modules/admin/sales/sales.router";
+import { UserRouter } from "./modules/admin/user/userManagement.router";
+import { VendorCategoryRouter } from "./modules/admin/vendor/category-vendor/categoryVendor.router";
+import { ItemVendorRouter } from "./modules/admin/vendor/item-vendor/itemVendor.router";
+import { ContactPlatformRouter } from "./modules/admin/vendor/platform/platform.route";
+import { VendorRouter } from "./modules/admin/vendor/vendo-master/vendor.router";
+import { PrismaService } from "./modules/prisma/prisma.service";
 import { CustomerAddressRouter } from "./modules/web-clients/address/customer-address.router";
-import { ArticleRouter } from "./modules/web-clients/article/article.router";
-import { ArticleBannerRouter } from "./modules/web-clients/article/banner/articleBanner.router";
-import { ArticleCategoryRouter } from "./modules/web-clients/article/category/articleCategory.router";
-import { ArticleSeoRouter } from "./modules/web-clients/article/seo/articleSEO.router";
-import { ArticleTagRouter } from "./modules/web-clients/article/tag-article/tag-article.router";
-import { BannerProductRouter } from "./modules/web-clients/banner-product/banner-product.router";
+
+import { ArticleRouter } from "./modules/admin/content/article/article.router";
+import { ArticleBannerRouter } from "./modules/admin/content/article/banner-article/articleBanner.router";
+import { ArticleCategoryRouter } from "./modules/admin/content/article/category-article/articleCategory.router";
+import { ArticleSeoRouter } from "./modules/admin/content/article/seo/articleSEO.router";
+import { ArticleTagRouter } from "./modules/admin/content/article/tag-article/tag-article.router";
+import { BannerProductRouter } from "./modules/admin/content/banner-product/banner-product.router";
+import { PopupBannerRouter } from "./modules/admin/content/banner/banner.router";
+import { BestPriceGuaranteeRouter } from "./modules/admin/content/best-pric-guarantee/bestPriceGuarantee.router";
+import { BrandClientRouter } from "./modules/admin/content/brand-client/brandClient.router";
+import { ClientLogoRouter } from "./modules/admin/content/clien-logo/clientLogo.router";
+import { EventCategoryRouter } from "./modules/admin/content/event-category/event-category.router";
+import { FaqRouter } from "./modules/admin/content/faq/faq.router";
+import { HeroRouter } from "./modules/admin/content/hero/hero.router";
+import { PolicyRouter } from "./modules/admin/content/policy/policy.router";
+import { PortfolioRouter } from "./modules/admin/content/portfolio/portfolio.router";
+import { AppSettingRouter } from "./modules/admin/content/setting/setting.router";
 import { CartRouter } from "./modules/web-clients/cart/cart.router";
-import { PopupBannerRouter } from "./modules/web-clients/content/banner/banner.router";
-import { BestPriceGuaranteeRouter } from "./modules/web-clients/content/bestPriceGuarantee/bestPriceGuarantee.router";
-import { BrandClientRouter } from "./modules/web-clients/content/brandClient/brandClient.router";
-import { ClientLogoRouter } from "./modules/web-clients/content/clientLogo/clientLogo.router";
-import { FaqRouter } from "./modules/web-clients/content/faq/faq.router";
-import { HeroRouter } from "./modules/web-clients/content/hero/hero.router";
-import { PolicyRouter } from "./modules/web-clients/content/policy/policy.router";
-import { PortfolioRouter } from "./modules/web-clients/content/portfolio/portfolio.router";
-import { AppSettingRouter } from "./modules/web-clients/content/setting/setting.router";
 import { CustomerProfileRouter } from "./modules/web-clients/customer-profile/customer-profile.router";
-import { EventCategoryRouter } from "./modules/web-clients/event-category/event-category.router";
 import { AuthWebClientRouter } from "./modules/web-clients/register-user/register-user.router";
 import { WebOrderRouter } from "./modules/web-clients/web-order/web-order.router";
 import { WhatsappCronService } from "./modules/whatsapp/notification/whatsapp-cron.service";
@@ -248,17 +252,16 @@ export default class App {
     this.app.use(errorMiddleware);
   }
   public async start(): Promise<void> {
-    // try {
-    //   const whatsappService = container.resolve(WhatsappService);
-    //   await whatsappService.initialize();
-    //   console.log("✅ WhatsApp service ready");
-    // } catch (error) {
-    //   console.error("❌ WhatsApp init error:", error);
-    // }
+    try {
+      const prismaService = container.resolve(PrismaService);
 
-    // const whatsappCronService = container.resolve(WhatsappCronService);
-    // whatsappCronService.startJobs();
+      await syncPermissionsToDatabase(prismaService);
+      console.log("✅ Sinkronisasi permissions berhasil dijalankan!");
+    } catch (error) {
+      console.error("❌ Gagal menjalankan sinkronisasi permissions:", error);
+    }
 
+    // Melanjutkan menyalakan server Express
     this.app.listen(env().PORT, () => {
       console.log(`  ➜  [API] Local:   http://localhost:${env().PORT}`);
       try {

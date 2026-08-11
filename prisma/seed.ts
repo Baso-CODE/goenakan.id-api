@@ -1,83 +1,76 @@
 import * as argon2 from "argon2";
 import "dotenv/config";
-import "reflect-metadata"; // Wajib untuk tsyringe
+import "reflect-metadata";
 import { container } from "tsyringe";
 import { PrismaService } from "../src/modules/prisma/prisma.service";
 
 async function main() {
   const prisma = container.resolve(PrismaService);
 
-  // --- 1. SEED DATA ROLE TERLEBIH DAHULU ---
-  console.log("⏳ Syncing roles to database...");
-  const defaultRoles = [
-    "SUPER_ADMIN",
-    "ADMIN_ARTICLE",
-    "ADMIN_INVOICE",
-    "CUSTOMER",
+  // 1. Sinkronisasi Roles
+  await prisma.role.upsert({
+    where: { name: "SUPER_ADMIN" },
+    update: {},
+    create: { name: "SUPER_ADMIN" },
+  });
+
+  // 2. ✨ TAMBAHKAN PERMISSIONS (Agar sistem bisa memvalidasi login)
+  const permissions = [
+    "read_purchase_order",
+    "create_purchase_order",
+    "update_purchase_order",
+    "read_invoice",
+    "read_article",
+    "read_user",
+    "delete_user",
   ];
 
-  for (const roleName of defaultRoles) {
-    await prisma.role.upsert({
-      where: { name: roleName },
+  for (const perm of permissions) {
+    await prisma.permission.upsert({
+      where: { name: perm },
       update: {},
-      create: { name: roleName },
+      create: { name: perm },
     });
   }
-  console.log("✅ Roles synced successfully.");
 
-  // --- 2. CEK EXISTING SUPER ADMIN ---
-  const existingSuperAdmin = await prisma.user.findFirst({
-    where: {
-      role: {
-        name: "SUPER_ADMIN",
+  // 3. Hubungkan semua permission ke role SUPER_ADMIN
+  const allPermissions = await prisma.permission.findMany();
+  await prisma.role.update({
+    where: { name: "SUPER_ADMIN" },
+    data: {
+      permissions: {
+        set: allPermissions.map((p) => ({ id: p.id })),
       },
     },
   });
 
-  if (existingSuperAdmin) {
-    console.log("✅ SUPER_ADMIN already exists. Skipping user seed.");
-    return;
-  }
-
-  const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD;
-
-  if (!superAdminPassword) {
-    throw new Error(
-      "❌ SUPER_ADMIN_PASSWORD is not defined in .env file. Please add it before seeding.",
-    );
-  }
+  // 4. Update/Upsert User Super Admin
+  const superAdminPassword = "superadmin123";
 
   const hashedPassword = await argon2.hash(superAdminPassword, {
     type: argon2.argon2id,
   });
 
-  // --- 3. BUAT USER DAN HUBUNGKAN DENGAN ROLE ---
   await prisma.user.upsert({
     where: { email: "superadmin@goenakan.id" },
     update: {
       password: hashedPassword,
-      name: "Super Admin",
-      role: {
-        connect: { name: "SUPER_ADMIN" },
-      },
+      role: { connect: { name: "SUPER_ADMIN" } },
     },
     create: {
       name: "Super Admin",
       email: "superadmin@goenakan.id",
       password: hashedPassword,
-      role: {
-        connect: { name: "SUPER_ADMIN" },
-      },
+      role: { connect: { name: "SUPER_ADMIN" } },
     },
   });
 
-  // Jangan mencetak password aslinya ke terminal demi keamanan
-  console.log("🚀 SUPER_ADMIN seeded successfully with password from .env");
+  console.log("✅ Permissions synced and Super Admin updated successfully!");
 }
 
 main()
   .catch((e) => {
-    console.error("❌ Seed error:", e);
+    console.error(e);
     process.exit(1);
   })
   .finally(async () => {
