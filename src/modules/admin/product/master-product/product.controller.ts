@@ -93,8 +93,8 @@ export class ProductController {
         isCustom:
           typeof isCustom === "string" ? isCustom === "true" : undefined,
         category: category as string,
-        itemCategory: itemCategory as string, // ✨ BARU: Teruskan ke service
-        itemName: itemName as string, // ✨ BARU: Teruskan ke service
+        itemCategory: itemCategory as string,
+        itemName: itemName as string,
         minPrice: minPrice as string,
         maxPrice: maxPrice as string,
         availability: availability as string,
@@ -107,6 +107,7 @@ export class ProductController {
       next(error);
     }
   };
+
   // === GET PRODUCT BY ID ===
   getProductById = async (req: Request, res: Response, next: NextFunction) => {
     try {
