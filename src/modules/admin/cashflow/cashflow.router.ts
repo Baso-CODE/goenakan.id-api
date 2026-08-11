@@ -2,7 +2,8 @@ import { Router } from "express";
 import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
-import { verifyRole } from "../../../middleware/role.middleware";
+// ✨ Hapus verifyRole dan ganti dengan autoVerifyPermission
+import { autoVerifyPermission } from "../../../middleware/permission.middleware";
 import { validateBody } from "../../../middleware/validation.middleware";
 import { CashflowController } from "./cashflow.controller";
 import { SaveCashflowDTO } from "./dto/cashflow.dto";
@@ -19,29 +20,28 @@ export class CashflowRouter {
   }
 
   private initializeRoutes = (): void => {
-    this.router.get(
-      "/",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
-      this.cashflowController.getAll,
-    );
-    this.router.get(
-      "/detail",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
-      this.cashflowController.getDetailByOrder,
-    );
+    // ==========================================
+    // 🛡️ GATEKEEPER LEVEL ROUTER
+    // Pasang pelindung token dan permission dinamis di sini satu kali saja.
+    // Semua rute di bawahnya akan otomatis terlindungi.
+    // ==========================================
+    this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
 
-    this.router.get(
-      "/:id/vendors",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_INVOICE"]),
-      this.cashflowController.getVendorsForOrder,
-    );
+    // ✨ Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
+    this.router.use(autoVerifyPermission());
+
+    // ==========================================
+    // === PROTECTED ADMIN ROUTES ===
+    // ==========================================
+
+    this.router.get("/", this.cashflowController.getAll);
+
+    this.router.get("/detail", this.cashflowController.getDetailByOrder);
+
+    this.router.get("/:id/vendors", this.cashflowController.getVendorsForOrder);
+
     this.router.post(
       "/",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
       validateBody(SaveCashflowDTO),
       this.cashflowController.save,
     );

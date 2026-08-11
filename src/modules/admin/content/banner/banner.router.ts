@@ -5,7 +5,7 @@ import multer from "multer";
 import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../../middleware/nextAuth.middleware";
-import { verifyRole } from "../../../../middleware/role.middleware";
+import { autoVerifyPermission } from "../../../../middleware/permission.middleware";
 import { validateBody } from "../../../../middleware/validation.middleware";
 import { PopupBannerController } from "./banner.controller";
 import { CreatePopupBannerDTO, UpdatePopupBannerDTO } from "./dto/banner.dto";
@@ -24,27 +24,32 @@ export class PopupBannerRouter {
   }
 
   private initializeRoutes = (): void => {
+    // ====================================================================
+    // 1. PUBLIC ROUTE (Bebas diakses tanpa login)
+    // ====================================================================
     this.router.get("/active", this.popupBannerController.getActive);
 
-    this.router.get(
-      "/admin/list",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
-      this.popupBannerController.getAllAdmin,
-    );
+    // ====================================================================
+    // 🛡️ GATEKEEPER LEVEL ROUTER
+    // Pasang pelindung token dan permission dinamis di sini satu kali saja.
+    // ====================================================================
+    this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
+
+    // ✨ Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
+    this.router.use(autoVerifyPermission());
+
+    // ====================================================================
+    // 2. ADMIN ROUTES (TERLINDUNGI OTOMATIS)
+    // ====================================================================
+
+    this.router.get("/admin/list", this.popupBannerController.getAllAdmin);
 
     // Get By ID
-    this.router.get(
-      "/:id",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
-      this.popupBannerController.getById,
-    );
+    this.router.get("/:id", this.popupBannerController.getById);
 
+    // Create Banner
     this.router.post(
       "/",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
       upload.fields([
         { name: "desktopImage", maxCount: 1 },
         { name: "mobileImage", maxCount: 1 },
@@ -56,8 +61,6 @@ export class PopupBannerRouter {
     // Update Banner
     this.router.patch(
       "/:id",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
       upload.fields([
         { name: "desktopImage", maxCount: 1 },
         { name: "mobileImage", maxCount: 1 },
@@ -67,12 +70,7 @@ export class PopupBannerRouter {
     );
 
     // Delete Banner
-    this.router.delete(
-      "/:id",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
-      this.popupBannerController.delete,
-    );
+    this.router.delete("/:id", this.popupBannerController.delete);
   };
 
   getRouter(): Router {

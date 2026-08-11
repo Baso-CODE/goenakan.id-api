@@ -2,7 +2,7 @@ import { Router } from "express";
 import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../../middleware/nextAuth.middleware";
-import { verifyRole } from "../../../../middleware/role.middleware";
+import { autoVerifyPermission } from "../../../../middleware/permission.middleware";
 import { validateBody } from "../../../../middleware/validation.middleware";
 import { UpdateAppSettingDTO } from "./dto/setting.dto";
 import { AppSettingController } from "./setting.controller";
@@ -19,16 +19,27 @@ export class AppSettingRouter {
   }
 
   private initializeRoutes = (): void => {
-    // === PUBLIC ROUTE ===
+    // ==========================================
+    // === PUBLIC ROUTE (Tanpa Autentikasi)
+    // ==========================================
     // Frontend perlu mengambil ID ini untuk dipasang di <head> (Google Ads, Pixel, dll)
     this.router.get("/", this.appSettingController.getSettings);
 
-    // === PROTECTED ROUTE (ADMIN ONLY) ===
-    // Update atau Create Settings (Hanya Super Admin)
+    // ==========================================
+    // 🛡️ GATEKEEPER LEVEL ROUTER
+    // Pasang pelindung token dan permission dinamis di sini satu kali saja.
+    // ==========================================
+    this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
+
+    // ✨ Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
+    this.router.use(autoVerifyPermission());
+
+    // ==========================================
+    // === PROTECTED ROUTE (ADMIN ONLY) (Otomatis Terlindungi)
+    // ==========================================
+    // Update atau Create Settings
     this.router.patch(
       "/",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN"]),
       validateBody(UpdateAppSettingDTO),
       this.appSettingController.saveSettings,
     );

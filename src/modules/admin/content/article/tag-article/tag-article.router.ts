@@ -2,7 +2,8 @@ import { Router } from "express";
 import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../../../middleware/nextAuth.middleware";
-import { verifyRole } from "../../../../../middleware/role.middleware";
+// ✨ Hapus verifyRole dan gunakan autoVerifyPermission
+import { autoVerifyPermission } from "../../../../../middleware/permission.middleware";
 import { validateBody } from "../../../../../middleware/validation.middleware";
 import {
   CreateArticleTagDTO,
@@ -22,53 +23,46 @@ export class ArticleTagRouter {
   }
 
   private initializeRoutes = (): void => {
-    // === PUBLIC/LIST ROUTES (Untuk Dropdown di Form Artikel) ===
+    // ==========================================
+    // === PUBLIC ROUTES (Bebas diakses tanpa login)
+    // ==========================================
+    // (Untuk Dropdown di Form Artikel)
     this.router.get("/list", this.articleTagController.getTagList);
 
-    // === PROTECTED ADMIN ROUTES ===
-    this.router.get(
-      "/",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      this.articleTagController.getAllTags,
-    );
+    // ==========================================
+    // 🛡️ GATEKEEPER LEVEL ROUTER
+    // Mulai baris ini ke bawah, semua route wajib login & punya permission dinamis.
+    // ==========================================
+    this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
 
-    this.router.get(
-      "/export/excel",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      this.articleTagController.exportTags,
-    );
+    // ✨ Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
+    this.router.use(autoVerifyPermission());
 
-    this.router.get(
-      "/:id",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      this.articleTagController.getTagById,
-    );
+    // ==========================================
+    // === ADMIN PROTECTED ROUTES ===
+    // ==========================================
 
+    this.router.get("/", this.articleTagController.getAllTags);
+
+    this.router.get("/export/excel", this.articleTagController.exportTags);
+
+    this.router.get("/:id", this.articleTagController.getTagById);
+
+    // Endpoint POST tetap membutuhkan middleware validateBody untuk memvalidasi input
     this.router.post(
       "/",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       validateBody(CreateArticleTagDTO),
       this.articleTagController.createTag,
     );
 
+    // Endpoint PATCH juga tetap membutuhkan middleware validateBody
     this.router.patch(
       "/:id",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       validateBody(UpdateArticleTagDTO),
       this.articleTagController.updateTag,
     );
 
-    this.router.delete(
-      "/:id",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      this.articleTagController.deleteTag,
-    );
+    this.router.delete("/:id", this.articleTagController.deleteTag);
   };
 
   getRouter(): Router {

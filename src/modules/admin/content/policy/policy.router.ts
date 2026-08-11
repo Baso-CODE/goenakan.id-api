@@ -2,7 +2,7 @@ import { Router } from "express";
 import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../../middleware/nextAuth.middleware";
-import { verifyRole } from "../../../../middleware/role.middleware";
+import { autoVerifyPermission } from "../../../../middleware/permission.middleware";
 import { validateBody } from "../../../../middleware/validation.middleware";
 import {
   CreatePolicyCategoryDTO,
@@ -24,95 +24,8 @@ export class PolicyRouter {
 
   private initializeRoutes = (): void => {
     // ==========================================
-    // SECTION 1: POLICY CATEGORIES ROUTES
-    // ==========================================
-
-    this.router.get(
-      "/categories/export/excel",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      this.policyController.exportCategory,
-    );
-
-    this.router.get(
-      "/categories",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      this.policyController.getAllCategories,
-    );
-
-    this.router.get(
-      "/categories/:id",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      this.policyController.getCategoryById,
-    );
-
-    this.router.post(
-      "/categories",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      validateBody(CreatePolicyCategoryDTO),
-      this.policyController.createCategory,
-    );
-
-    this.router.patch(
-      "/categories/:id",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      validateBody(UpdatePolicyCategoryDTO),
-      this.policyController.updateCategory,
-    );
-
-    this.router.delete(
-      "/categories/:id",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      this.policyController.deleteCategory,
-    );
-    // ==========================================
-    // SECTION 2: POLICY ITEMS (CONTENTS) ROUTES
-    // ==========================================
-
-    this.router.get(
-      "/items",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      this.policyController.getAllPolicies,
-    );
-
-    this.router.post(
-      "/items",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      validateBody(CreatePolicyDTO),
-      this.policyController.createPolicy,
-    );
-
-    this.router.get(
-      "/items/:id",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      this.policyController.getPolicyById,
-    );
-
-    this.router.patch(
-      "/items/:id",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      validateBody(UpdatePolicyDTO),
-      this.policyController.updatePolicy,
-    );
-
-    this.router.delete(
-      "/items/:id",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      this.policyController.deletePolicy,
-    );
-
-    // ==========================================
-    // SECTION 3: PUBLIC ROUTES (FOR FRONTEND/CLIENT)
+    // SECTION 1: PUBLIC ROUTES (FOR FRONTEND/CLIENT)
+    // Diletakkan di atas agar bebas diakses tanpa login
     // ==========================================
 
     // Get semua kategori beserta seluruh kebijakan di dalamnya
@@ -123,6 +36,65 @@ export class PolicyRouter {
 
     // Get detail kebijakan berdasarkan slug kategori
     this.router.get("/public/:slug", this.policyController.getPolicyBySlug);
+
+    // ==========================================
+    // 🛡️ GATEKEEPER LEVEL ROUTER
+    // Pasang pelindung token dan permission dinamis di sini satu kali saja.
+    // Semua rute di bawahnya (/categories dan /items) akan otomatis terlindungi.
+    // ==========================================
+    this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
+
+    // ✨ Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
+    this.router.use(autoVerifyPermission());
+
+    // ==========================================
+    // SECTION 2: POLICY CATEGORIES ROUTES
+    // ==========================================
+
+    this.router.get(
+      "/categories/export/excel",
+      this.policyController.exportCategory,
+    );
+
+    this.router.get("/categories", this.policyController.getAllCategories);
+
+    this.router.get("/categories/:id", this.policyController.getCategoryById);
+
+    this.router.post(
+      "/categories",
+      validateBody(CreatePolicyCategoryDTO),
+      this.policyController.createCategory,
+    );
+
+    this.router.patch(
+      "/categories/:id",
+      validateBody(UpdatePolicyCategoryDTO),
+      this.policyController.updateCategory,
+    );
+
+    this.router.delete("/categories/:id", this.policyController.deleteCategory);
+
+    // ==========================================
+    // SECTION 3: POLICY ITEMS (CONTENTS) ROUTES
+    // ==========================================
+
+    this.router.get("/items", this.policyController.getAllPolicies);
+
+    this.router.post(
+      "/items",
+      validateBody(CreatePolicyDTO),
+      this.policyController.createPolicy,
+    );
+
+    this.router.get("/items/:id", this.policyController.getPolicyById);
+
+    this.router.patch(
+      "/items/:id",
+      validateBody(UpdatePolicyDTO),
+      this.policyController.updatePolicy,
+    );
+
+    this.router.delete("/items/:id", this.policyController.deletePolicy);
   };
 
   getRouter(): Router {

@@ -3,7 +3,7 @@ import multer from "multer";
 import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../../middleware/nextAuth.middleware";
-import { verifyRole } from "../../../../middleware/role.middleware";
+import { autoVerifyPermission } from "../../../../middleware/permission.middleware";
 import { EventCategoryController } from "./event-category.controller";
 
 const upload = multer({
@@ -23,9 +23,6 @@ export class EventCategoryRouter {
   }
 
   private initializeRoutes = (): void => {
-    const auth = this.nextAuthMiddleware.verifyNextAuthToken;
-    const adminRole = verifyRole(["SUPER_ADMIN"]);
-
     // ==========================================
     // 1. PUBLIC ROUTES (Tanpa Autentikasi)
     // ==========================================
@@ -42,30 +39,27 @@ export class EventCategoryRouter {
     );
 
     // ==========================================
-    // 2. ADMIN ROUTES (Gunakan Auth & Role)
+    // 🛡️ GATEKEEPER LEVEL ROUTER
+    // Pasang pelindung token dan permission dinamis di sini satu kali saja.
+    // ==========================================
+    this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
+
+    // ✨ Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
+    this.router.use(autoVerifyPermission());
+
+    // ==========================================
+    // 2. ADMIN ROUTES (Otomatis Terlindungi)
     // ==========================================
 
     // GET ALL EVENT CATEGORIES (With Pagination & Search)
-    this.router.get(
-      "/",
-      auth,
-      adminRole,
-      this.eventCategoryController.getAllEventCategories,
-    );
+    this.router.get("/", this.eventCategoryController.getAllEventCategories);
 
     // GET BY ID
-    this.router.get(
-      "/:id",
-      auth,
-      adminRole,
-      this.eventCategoryController.getEventCategoryById,
-    );
+    this.router.get("/:id", this.eventCategoryController.getEventCategoryById);
 
     // CREATE EVENT CATEGORY
     this.router.post(
       "/",
-      auth,
-      adminRole,
       upload.single("image"),
       this.eventCategoryController.createEventCategory,
     );
@@ -73,8 +67,6 @@ export class EventCategoryRouter {
     // UPDATE EVENT CATEGORY
     this.router.patch(
       "/:id",
-      auth,
-      adminRole,
       upload.single("image"),
       this.eventCategoryController.updateEventCategory,
     );
@@ -82,8 +74,6 @@ export class EventCategoryRouter {
     // DELETE EVENT CATEGORY
     this.router.delete(
       "/:id",
-      auth,
-      adminRole,
       this.eventCategoryController.deleteEventCategory,
     );
   };

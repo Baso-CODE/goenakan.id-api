@@ -3,7 +3,7 @@ import multer from "multer";
 import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../../middleware/nextAuth.middleware";
-import { verifyRole } from "../../../../middleware/role.middleware";
+import { autoVerifyPermission } from "../../../../middleware/permission.middleware";
 import { ArticleController } from "./article.controller";
 
 const upload = multer({
@@ -12,6 +12,7 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024, // 10 MB
   },
 });
+
 @autoInjectable()
 export class ArticleRouter {
   private readonly router: Router = Router();
@@ -24,61 +25,56 @@ export class ArticleRouter {
   }
 
   private initializeRoutes = (): void => {
-    // === AUTH & ROLE SETUP ===
-    const auth = this.nextAuthMiddleware.verifyNextAuthToken;
-    const requiredRole = ["SUPER_ADMIN", "ADMIN_ARTICLE"];
+    // ==========================================
+    // === PUBLIC ROUTES (Bebas diakses tanpa login)
+    // ==========================================
 
+    // List artikel untuk publik
     this.router.get("/list", this.articleController.getArticleList);
 
-    this.router.get(
-      "/",
-      auth,
-      verifyRole(requiredRole),
-      this.articleController.getAllArticles,
-    );
+    // GET ARTICLE BY SLUG (Untuk Tampilan User/Frontend Publik)
+    this.router.get("/slug/:slug", this.articleController.getArticleBySlug);
+
+    // ==========================================
+    // 🛡️ GATEKEEPER LEVEL ROUTER
+    // Mulai baris ini ke bawah, semua route wajib login & punya permission dinamis.
+    // ==========================================
+    this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
+
+    // ✨ Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
+    this.router.use(autoVerifyPermission());
+
+    // ==========================================
+    // === ADMIN PROTECTED ROUTES ===
+    // ==========================================
+
+    this.router.get("/", this.articleController.getAllArticles);
 
     this.router.get(
       "/simple-list",
-      auth,
-      verifyRole(requiredRole),
       this.articleController.getArticleSimpleList,
     );
 
     // ====================================================================
-    // 2. TIPTAP IMAGE UPLOAD (HARUS DI ATAS /:id)
+    // TIPTAP IMAGE UPLOAD (HARUS DI ATAS /:id)
     // ====================================================================
-
-    // Upload image directly from Tiptap Editor
     this.router.post(
       "/upload-image",
-      auth,
-      verifyRole(requiredRole),
       upload.single("image"),
       this.articleController.uploadTiptapImage,
     );
 
     // ====================================================================
-    // 3. DYNAMIC ROUTES (/:id atau /:slug)
+    // DYNAMIC ROUTES (/:id)
     // ====================================================================
-
     // GET ARTICLE BY ID (Untuk Backoffice/Admin)
-    this.router.get(
-      "/:id",
-      auth,
-      verifyRole(requiredRole),
-      this.articleController.getArticleById,
-    );
-
-    // GET ARTICLE BY SLUG (Untuk Tampilan User/Frontend Publik)
-    this.router.get("/slug/:slug", this.articleController.getArticleBySlug);
+    this.router.get("/:id", this.articleController.getArticleById);
 
     // =========================================================================
     // CREATE ARTICLE
     // =========================================================================
     this.router.post(
       "/",
-      auth,
-      verifyRole(requiredRole),
       upload.fields([
         { name: "coverFile", maxCount: 1 },
         { name: "coverMobileFile", maxCount: 1 },
@@ -87,25 +83,21 @@ export class ArticleRouter {
     );
 
     // =========================================================================
-    // UPDATE ARTICLE (Pastikan kamu memperbarui rute ini juga ya!)
+    // UPDATE ARTICLE
     // =========================================================================
     this.router.patch(
       "/:id",
-      auth,
-      verifyRole(requiredRole),
       upload.fields([
         { name: "coverFile", maxCount: 1 },
         { name: "coverMobileFile", maxCount: 1 },
       ]),
       this.articleController.updateArticle,
     );
+
+    // =========================================================================
     // DELETE ARTICLE
-    this.router.delete(
-      "/:id",
-      auth,
-      verifyRole(requiredRole),
-      this.articleController.deleteArticle,
-    );
+    // =========================================================================
+    this.router.delete("/:id", this.articleController.deleteArticle);
   };
 
   getRouter(): Router {

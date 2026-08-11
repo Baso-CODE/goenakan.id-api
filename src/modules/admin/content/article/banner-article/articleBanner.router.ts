@@ -2,7 +2,7 @@ import { Router } from "express";
 import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../../../middleware/nextAuth.middleware";
-import { verifyRole } from "../../../../../middleware/role.middleware";
+import { autoVerifyPermission } from "../../../../../middleware/permission.middleware";
 import { validateBody } from "../../../../../middleware/validation.middleware";
 import {
   CreateArticleBannerDTO,
@@ -23,8 +23,8 @@ export class ArticleBannerRouter {
 
   private initializeRoutes = (): void => {
     // ====================================================================
-    // 1. PUBLIC ROUTE (TIDAK ADA AUTH)
-    // diletakkan di atas agar tidak bentrok dengan /:id
+    // 1. PUBLIC ROUTE (Bebas diakses tanpa login)
+    // diletakkan di atas agar tidak bentrok dengan rute dinamis /:id
     // ====================================================================
     this.router.get(
       "/public",
@@ -32,32 +32,28 @@ export class ArticleBannerRouter {
     );
 
     // ====================================================================
-    // 2. ADMIN ROUTES (WAJIB LOGIN & SUPER_ADMIN)
+    // 🛡️ GATEKEEPER LEVEL ROUTER
+    // Pasang pelindung token dan permission dinamis di sini satu kali saja.
+    // Seluruh rute di bawahnya otomatis diwajibkan login dan memiliki akses.
     // ====================================================================
-    const auth = this.nextAuthMiddleware.verifyNextAuthToken;
-    const requireAdmin = verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]);
+    this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
+
+    // ✨ Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
+    this.router.use(autoVerifyPermission());
+
+    // ====================================================================
+    // 2. ADMIN ROUTES (TERLINDUNGI OTOMATIS)
+    // ====================================================================
 
     // Get All Banners (Pagination & Filter)
-    this.router.get(
-      "/",
-      auth,
-      requireAdmin,
-      this.articleBannerController.getAllBanners,
-    );
+    this.router.get("/", this.articleBannerController.getAllBanners);
 
     // Get Banner By ID
-    this.router.get(
-      "/:id",
-      auth,
-      requireAdmin,
-      this.articleBannerController.getBannerById,
-    );
+    this.router.get("/:id", this.articleBannerController.getBannerById);
 
-    // Create Banner
+    // Create Banner (Tetap menggunakan validateBody untuk memastikan data benar)
     this.router.post(
       "/",
-      auth,
-      requireAdmin,
       validateBody(CreateArticleBannerDTO),
       this.articleBannerController.createBanner,
     );
@@ -65,19 +61,12 @@ export class ArticleBannerRouter {
     // Update Banner
     this.router.patch(
       "/:id",
-      auth,
-      requireAdmin,
       validateBody(UpdateArticleBannerDTO),
       this.articleBannerController.updateBanner,
     );
 
     // Delete Banner
-    this.router.delete(
-      "/:id",
-      auth,
-      requireAdmin,
-      this.articleBannerController.deleteBanner,
-    );
+    this.router.delete("/:id", this.articleBannerController.deleteBanner);
   };
 
   getRouter(): Router {

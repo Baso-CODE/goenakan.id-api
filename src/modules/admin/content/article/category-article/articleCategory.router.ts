@@ -2,7 +2,7 @@ import { Router } from "express";
 import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../../../middleware/nextAuth.middleware";
-import { verifyRole } from "../../../../../middleware/role.middleware";
+import { autoVerifyPermission } from "../../../../../middleware/permission.middleware";
 import { validateBody } from "../../../../../middleware/validation.middleware";
 import {
   CreateArticleCategoryDTO,
@@ -22,52 +22,48 @@ export class ArticleCategoryRouter {
   }
 
   private initializeRoutes = (): void => {
-    // === PUBLIC/LIST ROUTES ===
-    this.router.get(
-      "/",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      this.articleCategoryController.getAllCategories,
-    );
-
+    // ==========================================
+    // === PUBLIC ROUTES (Bebas diakses tanpa login)
+    // ==========================================
+    // Endpoint untuk list dropdown kategori di form
     this.router.get("/list", this.articleCategoryController.getCategoryList);
+
+    // ==========================================
+    // 🛡️ GATEKEEPER LEVEL ROUTER
+    // Pasang pelindung token dan permission dinamis di sini satu kali saja.
+    // ==========================================
+    this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
+
+    // ✨ Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL (misal: category_article)
+    this.router.use(autoVerifyPermission());
+
+    // ==========================================
+    // === ADMIN PROTECTED ROUTES ===
+    // ==========================================
+
+    this.router.get("/", this.articleCategoryController.getAllCategories);
 
     this.router.get(
       "/export/excel",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       this.articleCategoryController.exportCategory,
     );
 
-    this.router.get(
-      "/:id",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      this.articleCategoryController.getCategoryById,
-    );
+    this.router.get("/:id", this.articleCategoryController.getCategoryById);
 
+    // Tetap gunakan validateBody untuk memastikan data yang dikirim user sesuai standar DTO
     this.router.post(
       "/",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       validateBody(CreateArticleCategoryDTO),
       this.articleCategoryController.createCategory,
     );
 
     this.router.patch(
       "/:id",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
       validateBody(UpdateArticleCategoryDTO),
       this.articleCategoryController.updateCategory,
     );
 
-    this.router.delete(
-      "/:id",
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(["SUPER_ADMIN", "ADMIN_ARTICLE"]),
-      this.articleCategoryController.deleteCategory,
-    );
+    this.router.delete("/:id", this.articleCategoryController.deleteCategory);
   };
 
   getRouter(): Router {

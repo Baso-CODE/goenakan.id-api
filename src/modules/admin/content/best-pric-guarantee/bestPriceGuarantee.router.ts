@@ -2,7 +2,7 @@ import { Router } from "express";
 import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../../middleware/nextAuth.middleware";
-import { verifyRole } from "../../../../middleware/role.middleware";
+import { autoVerifyPermission } from "../../../../middleware/permission.middleware";
 import { validateBody } from "../../../../middleware/validation.middleware";
 import { BestPriceGuaranteeController } from "./bestPriceGuarantee.controller";
 import {
@@ -26,8 +26,6 @@ export class BestPriceGuaranteeRouter {
   }
 
   private initializeRoutes = (): void => {
-    const adminRoles = ["SUPER_ADMIN", "ADMIN_ARTICLE"];
-
     // ==========================================
     // SECTION 1: PUBLIC ROUTES (CLIENT/FRONTEND)
     // Base Path: /public
@@ -40,13 +38,14 @@ export class BestPriceGuaranteeRouter {
     );
 
     // ==========================================
-    // GLOBAL ADMIN MIDDLEWARE
+    // 🛡️ GATEKEEPER LEVEL ROUTER
+    // Pasang pelindung token dan permission dinamis di sini satu kali saja.
+    // Semua rute di bawahnya (/categories dan /items) akan otomatis terlindungi.
     // ==========================================
-    this.router.use(
-      ["/categories", "/items"],
-      this.nextAuthMiddleware.verifyNextAuthToken,
-      verifyRole(adminRoles),
-    );
+    this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
+
+    // ✨ Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
+    this.router.use(autoVerifyPermission());
 
     // ==========================================
     // SECTION 2: BEST PRICE CATEGORIES ROUTES
@@ -96,6 +95,7 @@ export class BestPriceGuaranteeRouter {
 
     // ==========================================
     // SECTION 3: BEST PRICE ITEMS ROUTES
+    // Base Path: /items
     // ==========================================
 
     // 1. Export Excel Items

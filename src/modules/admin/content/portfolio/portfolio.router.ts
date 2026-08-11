@@ -3,7 +3,7 @@ import multer from "multer";
 import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../../middleware/nextAuth.middleware";
-import { verifyRole } from "../../../../middleware/role.middleware";
+import { autoVerifyPermission } from "../../../../middleware/permission.middleware";
 import { PortfolioController } from "./portfolio.controller";
 
 const upload = multer({
@@ -23,9 +23,6 @@ export class PortfolioRouter {
   }
 
   private initializeRoutes = (): void => {
-    const auth = this.nextAuthMiddleware.verifyNextAuthToken;
-    const adminRole = verifyRole(["SUPER_ADMIN"]);
-
     // ==========================================
     // 1. PUBLIC ROUTES (Tanpa Autentikasi)
     // ==========================================
@@ -34,30 +31,27 @@ export class PortfolioRouter {
     this.router.get("/public", this.portfolioController.getPublicPortfolios);
 
     // ==========================================
-    // 2. ADMIN ROUTES (Gunakan Auth & Role)
+    // 🛡️ GATEKEEPER LEVEL ROUTER
+    // Pasang pelindung token dan permission dinamis di sini satu kali saja.
+    // ==========================================
+    this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
+
+    // ✨ Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
+    this.router.use(autoVerifyPermission());
+
+    // ==========================================
+    // 2. ADMIN ROUTES (Otomatis Terlindungi)
     // ==========================================
 
     // GET ALL PORTFOLIOS (With Pagination & Search)
-    this.router.get(
-      "/",
-      auth,
-      adminRole,
-      this.portfolioController.getAllPortfolios,
-    );
+    this.router.get("/", this.portfolioController.getAllPortfolios);
 
     // GET BY ID
-    this.router.get(
-      "/:id",
-      auth,
-      adminRole,
-      this.portfolioController.getPortfolioById,
-    );
+    this.router.get("/:id", this.portfolioController.getPortfolioById);
 
     // CREATE PORTFOLIO
     this.router.post(
       "/",
-      auth,
-      adminRole,
       upload.single("image"),
       this.portfolioController.createPortfolio,
     );
@@ -65,19 +59,12 @@ export class PortfolioRouter {
     // UPDATE PORTFOLIO
     this.router.patch(
       "/:id",
-      auth,
-      adminRole,
       upload.single("image"),
       this.portfolioController.updatePortfolio,
     );
 
     // DELETE PORTFOLIO
-    this.router.delete(
-      "/:id",
-      auth,
-      adminRole,
-      this.portfolioController.deletePortfolio,
-    );
+    this.router.delete("/:id", this.portfolioController.deletePortfolio);
   };
 
   getRouter(): Router {

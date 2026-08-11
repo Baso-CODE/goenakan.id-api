@@ -3,7 +3,7 @@ import multer from "multer";
 import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../../middleware/nextAuth.middleware";
-import { verifyRole } from "../../../../middleware/role.middleware";
+import { autoVerifyPermission } from "../../../../middleware/permission.middleware";
 import { BrandClientController } from "./brandClient.controller";
 
 const upload = multer({
@@ -23,9 +23,6 @@ export class BrandClientRouter {
   }
 
   private initializeRoutes = (): void => {
-    const auth = this.nextAuthMiddleware.verifyNextAuthToken;
-    const adminRole = verifyRole(["SUPER_ADMIN"]);
-
     // ==========================================
     // 1. PUBLIC ROUTES (Tanpa Autentikasi)
     // ==========================================
@@ -34,30 +31,27 @@ export class BrandClientRouter {
     this.router.get("/public", this.brandClientController.getPublicClients);
 
     // ==========================================
-    // 2. ADMIN ROUTES (Gunakan Auth & Role)
+    // 🛡️ GATEKEEPER LEVEL ROUTER
+    // Pasang pelindung token dan permission dinamis di sini satu kali saja.
+    // ==========================================
+    this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
+
+    // ✨ Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
+    this.router.use(autoVerifyPermission());
+
+    // ==========================================
+    // 2. ADMIN ROUTES (Otomatis Terlindungi)
     // ==========================================
 
     // GET ALL CLIENTS (With Pagination)
-    this.router.get(
-      "/",
-      auth,
-      adminRole,
-      this.brandClientController.getAllBrandClients,
-    );
+    this.router.get("/", this.brandClientController.getAllBrandClients);
 
     // GET BY ID
-    this.router.get(
-      "/:id",
-      auth,
-      adminRole,
-      this.brandClientController.getBrandClientById,
-    );
+    this.router.get("/:id", this.brandClientController.getBrandClientById);
 
     // CREATE BRAND CLIENT
     this.router.post(
       "/",
-      auth,
-      adminRole,
       upload.single("logo"),
       this.brandClientController.createBrandClient,
     );
@@ -65,19 +59,12 @@ export class BrandClientRouter {
     // UPDATE BRAND CLIENT
     this.router.patch(
       "/:id",
-      auth,
-      adminRole,
       upload.single("logo"),
       this.brandClientController.updateBrandClient,
     );
 
     // DELETE BRAND CLIENT
-    this.router.delete(
-      "/:id",
-      auth,
-      adminRole,
-      this.brandClientController.deleteBrandClient,
-    );
+    this.router.delete("/:id", this.brandClientController.deleteBrandClient);
   };
 
   getRouter(): Router {

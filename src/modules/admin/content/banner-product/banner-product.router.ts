@@ -3,12 +3,12 @@ import multer from "multer";
 import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../../middleware/nextAuth.middleware";
-import { verifyRole } from "../../../../middleware/role.middleware";
+import { autoVerifyPermission } from "../../../../middleware/permission.middleware";
 import { BannerProductController } from "./banner-product.controller";
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // Limit 5MB
+  limits: { fileSize: 5 * 1024 * 1024 },
 });
 
 @autoInjectable()
@@ -23,10 +23,6 @@ export class BannerProductRouter {
   }
 
   private initializeRoutes = (): void => {
-    // Menyiapkan middleware keamanan
-    const auth = this.nextAuthMiddleware.verifyNextAuthToken;
-    const adminRole = verifyRole(["SUPER_ADMIN"]);
-
     // ==========================================
     // 1. PUBLIC ROUTES (Tanpa Autentikasi)
     // ==========================================
@@ -35,26 +31,27 @@ export class BannerProductRouter {
     this.router.get("/public", this.bannerController.getPublicBanners);
 
     // ==========================================
-    // 2. ADMIN ROUTES (Gunakan Auth & Role)
+    // 🛡️ GATEKEEPER LEVEL ROUTER
+    // Pasang pelindung token dan permission dinamis di sini satu kali saja.
+    // ==========================================
+    this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
+
+    // ✨ Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
+    this.router.use(autoVerifyPermission());
+
+    // ==========================================
+    // 2. ADMIN ROUTES (Otomatis menggunakan Auth & Role)
     // ==========================================
 
     // GET ALL BANNERS (Table Admin dengan Pagination & Filter)
-    this.router.get("/", auth, adminRole, this.bannerController.getAllBanners);
+    this.router.get("/", this.bannerController.getAllBanners);
 
     // GET BY ID (Mendapatkan satu data banner spesifik)
-    this.router.get(
-      "/:id",
-      auth,
-      adminRole,
-      this.bannerController.getBannerById,
-    );
+    this.router.get("/:id", this.bannerController.getBannerById);
 
     // CREATE BANNER (Menambah banner baru beserta upload gambar)
-    // Perhatikan: "image" adalah nama field yang harus dikirim dari frontend (FormData)
     this.router.post(
       "/",
-      auth,
-      adminRole,
       upload.single("image"),
       this.bannerController.createBanner,
     );
@@ -62,19 +59,12 @@ export class BannerProductRouter {
     // UPDATE BANNER (Memperbarui data atau mengganti gambar banner)
     this.router.patch(
       "/:id",
-      auth,
-      adminRole,
       upload.single("image"),
       this.bannerController.updateBanner,
     );
 
     // DELETE BANNER (Menghapus banner dan gambarnya dari sistem)
-    this.router.delete(
-      "/:id",
-      auth,
-      adminRole,
-      this.bannerController.deleteBanner,
-    );
+    this.router.delete("/:id", this.bannerController.deleteBanner);
   };
 
   // Fungsi untuk mengekspor router agar bisa didaftarkan di aplikasi utama (app.ts)
