@@ -48,13 +48,14 @@ export class NextAuthMiddleware {
 
       const authReq = req as AuthenticatedRequest;
 
-      // Perubahan di sini:
-      // Karena Role bukan lagi enum, kita langsung pakai string "CUSTOMER"
-      // as fallback jika payload.role kosong.
+      // ✨ PERUBAHAN DI SINI:
+      // Kita menambahkan roleId untuk menyesuaikan dengan interface AuthenticatedUser terbaru.
+      // Kita tambahkan || "" sebagai pengaman jika seandainya payload.roleId belum terbaca dengan sempurna.
       authReq.user = {
         id: payload.id || payload.sub,
         email: payload.email,
         role: payload.role || "CUSTOMER",
+        roleId: payload.roleId || "",
       };
 
       next();

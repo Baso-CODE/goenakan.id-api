@@ -1,7 +1,7 @@
 // src/jobs/cron.ts
 import cron from "node-cron";
 import { container } from "tsyringe";
-import { OrderService } from "../modules/order/order.service";
+import { OrderService } from "../modules/admin/order/order.service";
 
 export function initializeCronJobs() {
   console.log("⏳ [CRON] Menginisialisasi Cron Jobs...");
