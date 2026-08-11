@@ -547,7 +547,9 @@ export class ProductController {
     next: NextFunction,
   ) => {
     try {
-      const result = await this.productService.getProductFilterOptions();
+      const lang = (req.query.lang as string) || "id";
+
+      const result = await this.productService.getProductFilterOptions(lang);
       res.status(200).json(result);
     } catch (error) {
       next(error);
@@ -555,11 +557,7 @@ export class ProductController {
   };
 
   // === SYNC MOCKUP AREAS FOR IMAGE ===
-  syncMockupAreas = async (
-    req: Request,
-    res: Response,
-    next: NextFunction,
-  ) => {
+  syncMockupAreas = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { imageId } = req.params;
       const data = req.body;

@@ -141,7 +141,9 @@ export class ProductCategoryController {
       const result =
         await this.productCategoryService.getPublicCategories(lang);
 
+      res.setHeader("Vary", "x-language");
       res.setHeader("Cache-Control", "public, s-maxage=3600");
+
       res.status(200).json({
         success: true,
         data: result,

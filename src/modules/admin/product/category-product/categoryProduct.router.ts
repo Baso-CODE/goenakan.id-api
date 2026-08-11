@@ -28,6 +28,7 @@ export class ProductCategoryRouter {
       "/public",
       this.productCategoryController.getPublicCategories,
     );
+    this.router.get("/list", this.productCategoryController.getCategoryList);
 
     // ==========================================
     // 🛡️ GATEKEEPER LEVEL ROUTER
@@ -44,7 +45,6 @@ export class ProductCategoryRouter {
     this.router.get("/", this.productCategoryController.getAllCategories);
 
     // === LIST FOR DROPDOWN (Otomatis butuh 'read') ===
-    this.router.get("/list", this.productCategoryController.getCategoryList);
 
     // === EXPORT EXCEL (Otomatis butuh 'read') ===
     this.router.get(

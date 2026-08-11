@@ -2641,9 +2641,9 @@ export class ProductService {
     take?: number;
     search?: string;
     categoryId?: string;
-    category?: string; // Menyaring berdasarkan slug atau name dari ProductCategory
-    itemCategory?: string; // ✨ BARU: Menyaring berdasarkan slug atau nama ItemCategory
-    itemName?: string; // ✨ BARU: Menyaring berdasarkan slug atau nama ItemName
+    category?: string;
+    itemCategory?: string;
+    itemName?: string;
     isCustom?: boolean | string;
     minPrice?: string;
     maxPrice?: string;
@@ -2653,11 +2653,19 @@ export class ProductService {
   }) {
     const where: any = {};
 
-    // 1. Filter Pencarian (Search)
+    // 1. Filter Pencarian (Search) ✨ PERBAIKAN DI SINI
     if (query.search) {
       where.OR = [
-        { name: { contains: query.search } },
-        { sku: { contains: query.search } },
+        {
+          name: {
+            contains: query.search,
+          },
+        },
+        {
+          sku: {
+            contains: query.search,
+          },
+        },
       ];
     }
 
@@ -3336,11 +3344,12 @@ export class ProductService {
     }
   }
 
-  async getProductFilterOptions() {
+  async getProductFilterOptions(lang: string = "id") {
     const categories = await this.prisma.productCategory.findMany({
       select: {
         id: true,
         name_id: true,
+        name_en: true,
         slug: true,
         itemCategories: {
           select: {
@@ -3365,22 +3374,26 @@ export class ProductService {
     });
 
     return {
-      // ✨ 2. Format data agar rapi dan hierarkis
-      categories: categories.map((c) => ({
-        label: c.name_id,
-        value: c.slug, // Pakai slug agar URL cantik
-        id: c.id,
-        itemCategories: c.itemCategories.map((ic) => ({
-          label: ic.name,
-          value: ic.slug,
-          id: ic.id,
-          itemNames: ic.itemNames.map((inm) => ({
-            label: inm.name,
-            value: inm.slug,
-            id: inm.id,
+      categories: categories.map((c) => {
+        const finalCategoryName =
+          lang === "en" && c.name_en ? c.name_en : c.name_id;
+
+        return {
+          label: finalCategoryName,
+          value: c.slug,
+          id: c.id,
+          itemCategories: c.itemCategories.map((ic) => ({
+            label: ic.name,
+            value: ic.slug,
+            id: ic.id,
+            itemNames: ic.itemNames.map((inm) => ({
+              label: inm.name,
+              value: inm.slug,
+              id: inm.id,
+            })),
           })),
-        })),
-      })),
+        };
+      }),
       attributes: attributes.map((attr) => ({
         name: attr.name,
         options: attr.values.map((v) => ({ label: v.value, value: v.value })),
