@@ -63,7 +63,7 @@ export class ProductController {
     }
   };
 
-  // === GET ALL PRODUCTS ===
+  // === GET ALL PRODUCTS (CONTROLLER) ===
   getAllProductsPublic = async (
     req: Request,
     res: Response,
@@ -85,28 +85,31 @@ export class ProductController {
         sort,
         attributes,
         country,
+        lang, // ✨ 1. Tangkap parameter lang dari query frontend
       } = req.query;
+
+      // ✨ 2. TAMBAHKAN CONSOLE.LOG UNTUK MENGECEK DATA MASUK
+      console.log("--- DEBUG QUERY DARI FRONTEND ---");
+      console.log("Country diterima:", country);
+      console.log("Lang diterima:", lang);
 
       let targetCurrency = "IDR";
 
       if (country && typeof country === "string") {
         const countryCode = country.toUpperCase();
 
-        // Paksa Indonesia ke IDR sebagai basis utama
         if (countryCode === "ID") {
           targetCurrency = "IDR";
         } else {
-          // Gunakan library untuk mengubah kode negara menjadi mata uang otomatis!
           const autoCurrency =
             countryToCurrency[countryCode as keyof typeof countryToCurrency];
-
-          // Jika library menemukan mata uangnya, gunakan itu.
-          // Jika tidak ditemukan, gunakan "USD" sebagai mata uang global.
           targetCurrency = autoCurrency || "USD";
         }
       }
 
-      // Teruskan semua parameter beserta targetCurrency ke Service
+      console.log("Target Currency hasil kalkulasi:", targetCurrency);
+
+      // Teruskan parameter beserta targetCurrency dan lang ke Service
       const products = await this.productService.getAllProductsPublic({
         page: page ? Number(page) : undefined,
         take: take ? Number(take) : undefined,
@@ -122,7 +125,8 @@ export class ProductController {
         availability: availability as string,
         sort: sort as string,
         attributes: attributes as string,
-        targetCurrency, // ✨ Teruskan mata uang ke service
+        targetCurrency,
+        lang: (lang as string) || "id", // ✨ 3. Teruskan lang ke service
       });
 
       res.status(200).json(products);
