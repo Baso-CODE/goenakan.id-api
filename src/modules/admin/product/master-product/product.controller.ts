@@ -1,3 +1,4 @@
+import countryToCurrency from "country-to-currency";
 import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
 import { CreateProductDTO } from "./dto/createProduct.dto";
@@ -83,8 +84,29 @@ export class ProductController {
         availability,
         sort,
         attributes,
+        country,
       } = req.query;
 
+      let targetCurrency = "IDR";
+
+      if (country && typeof country === "string") {
+        const countryCode = country.toUpperCase();
+
+        // Paksa Indonesia ke IDR sebagai basis utama
+        if (countryCode === "ID") {
+          targetCurrency = "IDR";
+        } else {
+          // Gunakan library untuk mengubah kode negara menjadi mata uang otomatis!
+          const autoCurrency =
+            countryToCurrency[countryCode as keyof typeof countryToCurrency];
+
+          // Jika library menemukan mata uangnya, gunakan itu.
+          // Jika tidak ditemukan, gunakan "USD" sebagai mata uang global.
+          targetCurrency = autoCurrency || "USD";
+        }
+      }
+
+      // Teruskan semua parameter beserta targetCurrency ke Service
       const products = await this.productService.getAllProductsPublic({
         page: page ? Number(page) : undefined,
         take: take ? Number(take) : undefined,
@@ -100,6 +122,7 @@ export class ProductController {
         availability: availability as string,
         sort: sort as string,
         attributes: attributes as string,
+        targetCurrency, // ✨ Teruskan mata uang ke service
       });
 
       res.status(200).json(products);
@@ -510,8 +533,35 @@ export class ProductController {
   ) => {
     try {
       const { slug } = req.params;
+      const { country, lang } = req.query;
 
-      const product = await this.productService.getProductBySlugPublic(slug);
+      // ✨ DEBUGGING: Cek data apa yang masuk dari frontend
+      console.log("🔍 [DEBUG DETAIL PRODUCT] Slug:", slug);
+      console.log("🔍 [DEBUG DETAIL PRODUCT] Country from Query:", country);
+      console.log("🔍 [DEBUG DETAIL PRODUCT] Lang from Query:", lang);
+
+      let targetCurrency = "IDR";
+      if (country && typeof country === "string") {
+        const countryCode = country.toUpperCase();
+        if (countryCode === "ID") {
+          targetCurrency = "IDR";
+        } else {
+          const autoCurrency =
+            countryToCurrency[countryCode as keyof typeof countryToCurrency];
+          targetCurrency = autoCurrency || "USD";
+        }
+      }
+
+      console.log(
+        "🔍 [DEBUG DETAIL PRODUCT] Target Currency Result:",
+        targetCurrency,
+      );
+
+      const product = await this.productService.getProductBySlugPublic(
+        slug,
+        targetCurrency,
+        typeof lang === "string" ? lang : "id",
+      );
 
       res.status(200).json({
         success: true,

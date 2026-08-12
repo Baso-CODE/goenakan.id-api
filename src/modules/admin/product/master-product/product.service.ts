@@ -1,3 +1,4 @@
+import { translate } from "@vitalets/google-translate-api";
 import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
 
@@ -75,6 +76,25 @@ export class ProductService {
       if (!itemNameData) {
         throw new ApiError("Item Name yang dipilih tidak ditemukan", 404);
       }
+    }
+    let translatedNameEn: string | null = null;
+    let translatedDescEn: string | null = null;
+
+    try {
+      if (data.name) {
+        const resName = await translate(data.name, { to: "en" });
+        translatedNameEn = resName.text;
+      }
+      if (data.description) {
+        const resDesc = await translate(data.description, { to: "en" });
+        translatedDescEn = resDesc.text;
+      }
+    } catch (translateError) {
+      console.warn(
+        "⚠️ Gagal melakukan auto-translate ke bahasa Inggris:",
+        translateError,
+      );
+      // Lanjutkan proses pembuatan produk meskipun terjemahan gagal
     }
 
     // --- Helper untuk Validasi Price Tiers (Bisa dipakai ulang) ---
@@ -187,8 +207,10 @@ export class ProductService {
         const product = await tx.product.create({
           data: {
             name: data.name,
+            name_en: translatedNameEn,
             sku: data.sku,
             description: data.description,
+            description_en: translatedDescEn,
             basePrice: data.basePrice,
             foreignPrice:
               data.foreignPrice !== undefined && data.foreignPrice !== null
@@ -449,6 +471,9 @@ export class ProductService {
     }
   }
 
+  // ====================================================================
+  // UPDATE PRODUCT CORE
+  // ====================================================================
   async updateProductCore(id: string, data: UpdateProductCoreDTO) {
     const existing = await this.prisma.product.findUnique({
       where: { id },
@@ -478,6 +503,29 @@ export class ProductService {
       }
     }
 
+    // ✨ TAMBAHAN BARU: Auto-translate ke bahasa Inggris jika nama/deskripsi diubah
+    let translatedNameEn: string | undefined = undefined;
+    let translatedDescEn: string | undefined = undefined;
+
+    try {
+      if (data.name !== undefined && data.name !== existing.name) {
+        const resName = await translate(data.name, { to: "en" });
+        translatedNameEn = resName.text;
+      }
+      if (
+        data.description !== undefined &&
+        data.description !== existing.description
+      ) {
+        const resDesc = await translate(data.description, { to: "en" });
+        translatedDescEn = resDesc.text;
+      }
+    } catch (translateError) {
+      console.warn(
+        "⚠️ Gagal melakukan auto-translate saat update product:",
+        translateError,
+      );
+    }
+
     const updateData: any = {
       slug,
       materialTypeId:
@@ -486,9 +534,20 @@ export class ProductService {
           : existing.materialTypeId,
     };
 
-    if (data.name !== undefined) updateData.name = data.name;
-    if (data.description !== undefined)
+    if (data.name !== undefined) {
+      updateData.name = data.name;
+      if (translatedNameEn !== undefined) {
+        updateData.name_en = translatedNameEn; // ✨ Masukkan terjemahan nama Inggris
+      }
+    }
+
+    if (data.description !== undefined) {
       updateData.description = data.description;
+      if (translatedDescEn !== undefined) {
+        updateData.description_en = translatedDescEn; // ✨ Masukkan terjemahan deskripsi Inggris
+      }
+    }
+
     if (data.sku !== undefined) updateData.sku = data.sku;
     if (data.basePrice !== undefined) updateData.basePrice = data.basePrice;
 
@@ -508,7 +567,6 @@ export class ProductService {
 
     if (data.categoryId !== undefined) updateData.categoryId = data.categoryId;
 
-    // ✨ BARU: Memasukkan update untuk Item Category dan Item Name
     if (data.itemCategoryId !== undefined)
       updateData.itemCategoryId = data.itemCategoryId;
     if (data.itemNameId !== undefined) updateData.itemNameId = data.itemNameId;
@@ -546,8 +604,8 @@ export class ProductService {
       data: updateData,
       include: {
         category: true,
-        itemCategory: true, // ✨ BARU: Mengembalikan data relasi Item Category
-        itemName: true, // ✨ BARU: Mengembalikan data relasi Item Name
+        itemCategory: true,
+        itemName: true,
         materialType: true,
         images: true,
         videos: true,
@@ -2129,6 +2187,7 @@ export class ProductService {
       throw new Error("Failed to fetch products for order.");
     }
   }
+
   // === EXPORT PRODUCTS TO EXCEL (DENGAN FILTERING) ===
   async exportProductsToExcel(query: ProductExportQuery): Promise<Buffer> {
     const { startDate, endDate, search, categoryId, isCustom } = query;
@@ -2635,6 +2694,7 @@ export class ProductService {
 
     return result;
   }
+
   // === GET ALL PRODUCTS PUBLIC (WITH PAGINATION, SEARCH, AND ADVANCED FILTERS) ===
   async getAllProductsPublic(query: {
     page?: number;
@@ -2647,25 +2707,20 @@ export class ProductService {
     isCustom?: boolean | string;
     minPrice?: string;
     maxPrice?: string;
-    attributes?: string; // Tetap dipertahankan untuk jaga-jaga
+    attributes?: string;
     availability?: string;
     sort?: string;
+    targetCurrency?: string;
+    lang?: string; // ✨ BARU: Parameter bahasa (id / en)
   }) {
     const where: any = {};
+    const lang = query.lang || "id";
 
-    // 1. Filter Pencarian (Search) ✨ PERBAIKAN DI SINI
     if (query.search) {
       where.OR = [
-        {
-          name: {
-            contains: query.search,
-          },
-        },
-        {
-          sku: {
-            contains: query.search,
-          },
-        },
+        { name: { contains: query.search } },
+        { name_en: { contains: query.search } },
+        { sku: { contains: query.search } },
       ];
     }
 
@@ -2678,22 +2733,19 @@ export class ProductService {
       }
     }
 
-    // 3. Filter Hirarki Kategori (Product Category, Item Category, Item Name)
-
-    // A. Product Category
+    // 3. Filter Hirarki Kategori
     if (query.categoryId) {
       where.categoryId = query.categoryId;
     } else if (query.category && query.category !== "all") {
-      // Kita pakai OR agar mendukung pencarian via Slug atau Name
       where.category = {
         OR: [
           { name_id: { equals: query.category } },
+          { name_en: { equals: query.category } },
           { slug: { equals: query.category } },
         ],
       };
     }
 
-    // B. Item Category (Anak Kategori)
     if (query.itemCategory && query.itemCategory !== "all") {
       where.itemCategory = {
         OR: [
@@ -2703,7 +2755,6 @@ export class ProductService {
       };
     }
 
-    // C. Item Name (Cucu Kategori)
     if (query.itemName && query.itemName !== "all") {
       where.itemName = {
         OR: [
@@ -2713,15 +2764,13 @@ export class ProductService {
       };
     }
 
-    // 4. LOGIKA LAMA: Filter Semua Atribut Secara Dinamis (Tetap Dipertahankan)
+    // 4. Filter Attributes
     if (query.attributes) {
       try {
         const parsedAttrs = JSON.parse(query.attributes);
-
         for (const [attrName, attrValue] of Object.entries(parsedAttrs)) {
           if (attrValue && attrValue !== "all") {
             if (!where.AND) where.AND = [];
-
             where.AND.push({
               OR: [
                 {
@@ -2757,29 +2806,22 @@ export class ProductService {
       }
     }
 
-    // 5. Filter Rentang Harga Spesifik (Min & Max Price)
+    // 5. Filter Harga
     if (query.minPrice || query.maxPrice) {
       where.basePrice = {};
-      if (query.minPrice) {
-        where.basePrice.gte = Number(query.minPrice); // Minimal
-      }
-      if (query.maxPrice) {
-        where.basePrice.lte = Number(query.maxPrice); // Maksimal
-      }
+      if (query.minPrice) where.basePrice.gte = Number(query.minPrice);
+      if (query.maxPrice) where.basePrice.lte = Number(query.maxPrice);
     }
 
-    // 6. Filter Ketersediaan (Availability / Stock)
+    // 6. Filter Ketersediaan
     if (query.availability && query.availability !== "all") {
-      if (query.availability === "in_stock") {
-        where.stock = { gt: 0 };
-      } else if (query.availability === "out_of_stock") {
+      if (query.availability === "in_stock") where.stock = { gt: 0 };
+      else if (query.availability === "out_of_stock")
         where.stock = { equals: 0 };
-      }
     }
 
-    // 7. Pengurutan Data (Sorting)
+    // 7. Pengurutan Data
     let orderBy: any = { createdAt: "desc" };
-
     if (query.sort) {
       switch (query.sort) {
         case "newest":
@@ -2796,7 +2838,7 @@ export class ProductService {
       }
     }
 
-    // === Pagination & Query Data ===
+    // === Pagination & Query Data Prisma ===
     const page = Number(query.page || 1);
     const take = Number(query.take || 6);
 
@@ -2809,39 +2851,66 @@ export class ProductService {
         orderBy,
         include: {
           category: true,
-          itemCategory: true, // ✨ BARU: Pastikan kita menyertakan data ini di response
-          itemName: true, // ✨ BARU: Pastikan kita menyertakan data ini di response
-          images: {
-            take: 1,
-            orderBy: { isFeatured: "desc" },
-          },
-          priceTiers: {
-            orderBy: { minQuantity: "asc" },
-          },
-          orderProducts: {
-            select: { quantity: true },
-          },
+          itemCategory: true,
+          itemName: true,
+          images: { take: 1, orderBy: { isFeatured: "desc" } },
+          priceTiers: { orderBy: { minQuantity: "asc" } },
+          orderProducts: { select: { quantity: true } },
         },
       }),
     ]);
 
-    // Format Data...
+    let conversionRate = 1;
+    let finalCurrency = "IDR";
+
+    if (query.targetCurrency && query.targetCurrency !== "IDR") {
+      try {
+        const conversionResult = await this.currencyConversion.convertCurrency({
+          fromCurrency: "IDR",
+          toCurrency: query.targetCurrency,
+          amount: 1,
+        });
+
+        conversionRate = conversionResult.rate;
+        finalCurrency = query.targetCurrency;
+      } catch (error) {
+        console.error(
+          "Gagal mengambil nilai tukar, harga akan fallback ke IDR",
+          error,
+        );
+      }
+    }
+
+    // ✨ Format Data & Terapkan Konversi Harga + Nama Bilingual
     const formattedData = rawData.map((product) => {
       const totalSold = product.orderProducts.reduce(
         (sum, order) => sum + (order.quantity || 1),
         0,
       );
 
-      const regularPrice = Number(product.basePrice);
-      let bulkPrice = regularPrice;
+      // ✨ PERBAIKAN: Pemilihan nama produk bilingual yang aman
+      let productName = product.name;
+      if (lang === "en") {
+        productName = product.name_en || product.name || "Unnamed Product";
+      } else {
+        productName = product.name || product.name_en || "Produk Tanpa Nama";
+      }
+
+      // ✨ PERBAIKAN: Nama kategori bilingual jika tersedia
+      let categoryName = product.category?.name_id || "Uncategorized";
+      if (lang === "en" && product.category?.name_en) {
+        categoryName = product.category.name_en;
+      }
+
+      const baseRegularPrice = Number(product.basePrice);
+      let baseBulkPrice = baseRegularPrice;
       let minOrder = 1;
 
       if (product.priceTiers && product.priceTiers.length > 0) {
         const cheapestTier = [...product.priceTiers].sort(
           (a, b) => Number(a.price) - Number(b.price),
         )[0];
-
-        bulkPrice = Number(cheapestTier.price);
+        baseBulkPrice = Number(cheapestTier.price);
         minOrder = cheapestTier.minQuantity;
       }
 
@@ -2852,16 +2921,21 @@ export class ProductService {
 
       return {
         id: product.id,
-        name: product.name,
+        name: productName, // ✨ Menggunakan nama produk bilingual
         image: imageUrl,
-        regularPrice: regularPrice,
-        bulkPrice: bulkPrice,
+
+        regularPrice: parseFloat(
+          (baseRegularPrice * conversionRate).toFixed(2),
+        ),
+        bulkPrice: parseFloat((baseBulkPrice * conversionRate).toFixed(2)),
+
+        currencyCode: finalCurrency,
+
         minOrder: minOrder,
         sold: totalSold,
         isCustom: product.isCustom,
         categoryId: product.categoryId,
-        categoryName: product.category?.name_id || "",
-        // ✨ BARU: Sisipkan nama kategori turunannya (Jika nanti dibutuhkan di frontend)
+        categoryName: categoryName, // ✨ Menggunakan kategori bilingual
         itemCategoryName: product.itemCategory?.name || null,
         itemNameString: product.itemName?.name || null,
         slug: product.slug,
@@ -2989,7 +3063,11 @@ export class ProductService {
   }
 
   // === GET PRODUCT BY SLUG (PUBLIC / CLIENT PAGE) ===
-  async getProductBySlugPublic(slug: string) {
+  async getProductBySlugPublic(
+    slug: string,
+    targetCurrency: string = "IDR",
+    lang: string = "id",
+  ) {
     try {
       const product = await this.prisma.product.findUnique({
         where: { slug },
@@ -2998,38 +3076,24 @@ export class ProductService {
           category: true,
           images: {
             orderBy: { isFeatured: "desc" },
-            include: {
-              mockupAreas: true,
-            },
+            include: { mockupAreas: true },
           },
-          videos: {
-            orderBy: { isFeatured: "desc" },
-          },
+          videos: { orderBy: { isFeatured: "desc" } },
           productVariants: {
             include: {
-              images: {
-                orderBy: { isFeatured: "desc" },
-              },
+              images: { orderBy: { isFeatured: "desc" } },
+              priceTiers: { orderBy: { minQuantity: "asc" } },
               attributeValues: {
                 include: {
-                  attributeValue: {
-                    include: { attribute: true },
-                  },
+                  attributeValue: { include: { attribute: true } },
                 },
               },
             },
           },
-          priceTiers: {
-            orderBy: { minQuantity: "asc" },
-          },
-          orderProducts: {
-            select: { quantity: true },
-          },
+          priceTiers: { orderBy: { minQuantity: "asc" } },
+          orderProducts: { select: { quantity: true } },
           attributeValues: {
-            include: {
-              attributeValue: true,
-              attribute: true,
-            },
+            include: { attributeValue: true, attribute: true },
           },
         },
       });
@@ -3038,28 +3102,48 @@ export class ProductService {
         throw new Error("Product not found");
       }
 
-      // Inject legacy mockup area if needed
       this.injectLegacyMockupArea(product);
 
-      // Hitung total terjual
+      let conversionRate = 1;
+      if (targetCurrency && targetCurrency !== "IDR") {
+        try {
+          const conversionResult =
+            await this.currencyConversion.convertCurrency({
+              fromCurrency: "IDR",
+              toCurrency: targetCurrency,
+              amount: 1,
+            });
+          conversionRate = conversionResult.rate;
+        } catch (error) {
+          console.error(
+            "Gagal mengambil nilai tukar untuk detail produk, fallback ke IDR",
+            error,
+          );
+        }
+      }
+
+      // 🛠️ ==========================================================
+      // ✨ PERBAIKAN DI SINI: Logika pemilihan bahasa yang lebih aman
+      // ==========================================================
+      let productName = product.name;
+      if (lang === "en") {
+        productName = product.name_en || product.name || "Unnamed Product";
+      } else {
+        productName = product.name || product.name_en || "Produk Tanpa Nama";
+      }
+
+      const productDescription =
+        lang === "en" && product.description_en
+          ? product.description_en
+          : product.description;
+      // 🛠️ ==========================================================
+
       const totalSold = product.orderProducts.reduce(
         (sum, order) => sum + (order.quantity || 1),
         0,
       );
 
-      const combinedMedia: {
-        id: string;
-        type: "image" | "video";
-        url: string;
-        mockupAreas?: any[];
-        altText?: string | null;
-        mockupSideName?: string | null;
-        printPositionValueId?: string | null;
-        attributeValueId?: string | null;
-        printSideValueId?: string | null;
-        isFeatured?: boolean;
-      }[] = [];
-
+      const combinedMedia: any[] = [];
       if (product.images && product.images.length > 0) {
         product.images.forEach((img) => {
           combinedMedia.push({
@@ -3076,7 +3160,6 @@ export class ProductService {
           });
         });
       }
-
       if (product.videos && product.videos.length > 0) {
         product.videos.forEach((vid) => {
           combinedMedia.push({
@@ -3087,7 +3170,6 @@ export class ProductService {
           });
         });
       }
-
       if (combinedMedia.length === 0) {
         combinedMedia.push({
           id: "placeholder",
@@ -3098,13 +3180,11 @@ export class ProductService {
       }
 
       const formattedVariants = product.productVariants.map((v) => {
-        // Jika varian kosong, pakai data induk
         const vWeight = v.weight ?? product.weight;
         const vWidth = v.width ?? product.width;
         const vHeight = v.height ?? product.height;
         const vLength = v.length ?? product.length;
 
-        // Format string untuk UI Varian
         const vDimensionParts = [vLength, vWidth, vHeight].filter(
           (val) => val !== null && val !== undefined,
         );
@@ -3113,7 +3193,6 @@ export class ProductService {
             ? `${vDimensionParts.join(" x ")} cm`
             : "-";
 
-        // Ambil atribut (contoh: Warna: Merah)
         const attributes = v.attributeValues
           .map((av) => ({
             name: av.attributeValue.attribute?.name || "",
@@ -3124,49 +3203,30 @@ export class ProductService {
             type: av.attributeValue.attribute?.type || "TEXT",
             parentValueId: av.attributeValue.attribute?.parentValueId || null,
           }))
-          .sort((a, b) => {
-            if (a.attributePosition !== b.attributePosition) {
-              return a.attributePosition - b.attributePosition;
-            }
-            return a.valuePosition - b.valuePosition;
-          })
-          .map(
-            ({
-              name,
-              value,
-              attributeValueId,
-              attributePosition,
-              valuePosition,
-              type,
-              parentValueId,
-            }) => ({
-              name,
-              value,
-              attributeValueId,
-              attributePosition,
-              valuePosition,
-              type,
-              parentValueId,
-            }),
+          .sort((a, b) =>
+            a.attributePosition !== b.attributePosition
+              ? a.attributePosition - b.attributePosition
+              : a.valuePosition - b.valuePosition,
           );
+
+        const rawVariantPrice = v.price ? Number(v.price) : null;
+        const convertedVariantPrice =
+          rawVariantPrice !== null
+            ? parseFloat((rawVariantPrice * conversionRate).toFixed(2))
+            : null;
 
         return {
           id: v.id,
           name: v.variantName || v.sku,
-          price: v.price ? Number(v.price) : null,
+          price: convertedVariantPrice,
           sku: v.sku,
           stock: v.stock || 0,
-
-          // Data mentah untuk payload Cart
           rawWeight: vWeight,
           width: vWidth,
           height: vHeight,
           length: vLength,
-
-          // Data format untuk UI
           weightString: vWeight ? `${vWeight} gram` : "-",
           dimensionsString: vDimensionsString,
-
           attributes,
           images: v.images.map((img) => ({
             id: img.id,
@@ -3178,7 +3238,6 @@ export class ProductService {
         };
       });
 
-      // Format Induk (Parent)
       const dimensionParts = [
         product.length,
         product.width,
@@ -3195,40 +3254,47 @@ export class ProductService {
           label = `≥ ${tier.minQuantity} pcs`;
         }
 
+        const convertedTierPrice = parseFloat(
+          (Number(tier.price) * conversionRate).toFixed(2),
+        );
+
         return {
           minQty: tier.minQuantity,
           maxQty: tier.maxQuantity,
-          pricePerPcs: Number(tier.price),
+          pricePerPcs: convertedTierPrice,
           label: label,
         };
       });
+
+      const convertedBasePrice = parseFloat(
+        (Number(product.basePrice) * conversionRate).toFixed(2),
+      );
 
       if (formattedTiers.length === 0) {
         formattedTiers.push({
           minQty: 1,
           maxQty: null,
-          pricePerPcs: Number(product.basePrice),
+          pricePerPcs: convertedBasePrice,
           label: "1+ pcs",
         });
       }
 
       return {
         id: product.id,
-        name: product.name,
+        name: productName,
         sku: product.sku,
         slug: product.slug,
-        basePrice: Number(product.basePrice),
+        basePrice: convertedBasePrice,
+        currencyCode: targetCurrency,
         category: product.category?.name_id || "Uncategorized",
         sold: totalSold,
         media: combinedMedia,
         variants: formattedVariants,
         priceTiers: formattedTiers,
-        description: product.description || "",
+        description: productDescription || "",
 
-        // Data Format untuk tampilan UI utama
         weight: product.weight ? `${product.weight} gram` : "-",
         dimensions: dimensionsString,
-
         rawWeight: product.weight,
         width: product.width,
         height: product.height,
@@ -3241,13 +3307,10 @@ export class ProductService {
         isMadeByOrder: product.isMadeByOrder,
         whatsappNumber: "6281234567890",
         accessories: [],
-
-        // Legacy coordinate fallback fields
         mockupAreaX: product.mockupAreaX,
         mockupAreaY: product.mockupAreaY,
         mockupAreaWidth: product.mockupAreaWidth,
         mockupAreaHeight: product.mockupAreaHeight,
-
         isMultiFace: product.isMultiFace,
         mockupFrontImageId: product.mockupFrontImageId,
         mockupBackImageId: product.mockupBackImageId,
@@ -3256,7 +3319,11 @@ export class ProductService {
             id: av.id,
             attributeId: av.attributeId,
             attributeValueId: av.attributeValueId,
-            priceModifier: av.priceModifier ? Number(av.priceModifier) : 0,
+            priceModifier: av.priceModifier
+              ? parseFloat(
+                  (Number(av.priceModifier) * conversionRate).toFixed(2),
+                )
+              : 0,
             weight: av.weight ? Number(av.weight) : null,
             width: av.width ? Number(av.width) : null,
             height: av.height ? Number(av.height) : null,
@@ -3268,12 +3335,11 @@ export class ProductService {
             valuePosition: av.attributeValue?.position ?? 0,
             parentValueId: av.attribute?.parentValueId || null,
           }))
-          .sort((a, b) => {
-            if (a.attributePosition !== b.attributePosition) {
-              return a.attributePosition - b.attributePosition;
-            }
-            return a.valuePosition - b.valuePosition;
-          })
+          .sort((a, b) =>
+            a.attributePosition !== b.attributePosition
+              ? a.attributePosition - b.attributePosition
+              : a.valuePosition - b.valuePosition,
+          )
           .map(({ attributePosition, valuePosition, ...rest }) => rest),
       };
     } catch (error) {

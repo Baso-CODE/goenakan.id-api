@@ -445,10 +445,12 @@ model ItemName {
 
 model Product {
   id              String                  @id @default(uuid())
-  name            String
+  name            String                  @default("") @map("name_id")
+  name_en         String?
   sku             String                  @unique
   slug            String                  @unique
-  description     String?                 @db.Text
+  description     String?                 @map("description_id") @db.Text
+  description_en  String?                 @db.Text
   uom             String                  @default("pcs")
   basePrice       Decimal
   foreignPrice    Decimal?
@@ -1924,9 +1926,9 @@ model CustomerProfile {
 
   // --- Kolom untuk CORPORATE (B2B) ---
   picName     String?
-  picPhone    String? // Di form namanya picNumbers
+  picPhone    String?
   companyName String?
-  department  String? // Contoh: "Marketing", "Procurement"
+  department  String?
 
   // Alamat & Data Tambahan
   avatarUrl String?
@@ -2010,6 +2012,7 @@ model WebOrder {
   customerNote    String?          @db.Text
   taxAmount       Decimal?         @default(0)
   totalAmount     Decimal
+  currencyCode    String?          @default("IDR")
   status          WebOrderStatus   @default(PENDING_PAYMENT)
   canceledReason  String?          @db.Text
   paymentMethod   String?

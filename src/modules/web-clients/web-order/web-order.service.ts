@@ -3,39 +3,89 @@ import { ClientType, SalesCategory, WebOrderStatus } from "@prisma/client";
 import { injectable } from "tsyringe";
 import { coreApi, snap } from "../../../lib/midtrans";
 import { ApiError } from "../../../utils/api-error";
+import { CounterService } from "../../../utils/counter.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateWebOrderDTO } from "./dto/web-order.dto";
 
 @injectable()
 export class WebOrderService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly counterService: CounterService,
+  ) {}
 
+  // ====================================================================
+  // HELPER: GENERATE ORDER NUMBER (Format: GI-SO260700001)
+  // ====================================================================
   private async generateOrderNumber(
     tx: any,
     category: "SALES" | "SAMPLE",
   ): Promise<string> {
-    const prefix = category === "SALES" ? "GI-SO" : "GI-SN";
+    const formCode = category === "SALES" ? "SO" : "SN";
+    const periodYYMM = this.counterService.getCurrentPeriodYYMM();
+    const counterType = `${formCode}_${periodYYMM}`;
 
-    const lastOrder = await tx.order.findFirst({
-      where: {
-        orderNumber: { startsWith: prefix },
-      },
-      orderBy: { createdAt: "desc" },
-      select: { orderNumber: true },
-    });
+    // Menggunakan CounterService untuk atomic increment yang aman dari race condition
+    const sequence = await this.counterService.getNextFormattedNumber(
+      tx,
+      counterType,
+      periodYYMM,
+      5,
+    );
 
-    let nextIncrement = 1;
-    if (lastOrder && lastOrder.orderNumber) {
-      const lastNumberStr = lastOrder.orderNumber.replace(prefix, "");
-      const lastIncrement = parseInt(lastNumberStr, 10);
-      if (!isNaN(lastIncrement)) {
-        nextIncrement = lastIncrement + 1;
-      }
-    }
-
-    const incrementStr = String(nextIncrement).padStart(4, "0");
-    return `${prefix}${incrementStr}`;
+    return `GI-${formCode}${periodYYMM}${sequence}`;
   }
+  // === CREATE NEW ORDER ===
+  async createOrder(data: CreateWebOrderDTO, profileId: string | null) {
+    const { form, items, note, subtotal, shippingCost, totalAmount } = data;
+
+    // Generate Order Number
+    const orderNumber = await this.prisma.$transaction(async (tx) => {
+      return await this.generateOrderNumber(tx, "SALES");
+    });
+    return await this.prisma.webOrder.create({
+      data: {
+        orderNumber: orderNumber,
+        profileId: profileId,
+        guestName: form.fullName,
+        guestEmail: form.email,
+        guestPhone: form.phone,
+        customerNote: note || null,
+
+        shippingAddress: {
+          recipient: form.fullName,
+          phone: form.phone,
+          country: form.country,
+          province: form.province,
+          city: form.city,
+          district: form.district,
+          postalCode: form.postalCode,
+          fullAddress: form.address,
+        },
+
+        subtotal: subtotal,
+        shippingCost: shippingCost,
+        totalAmount: totalAmount,
+        status: "PENDING_PAYMENT",
+
+        items: {
+          create: items.map((item) => ({
+            productId: item.productId,
+            variantId: item.variantId || null,
+            productName: item.name,
+            quantity: item.quantity,
+            price: item.price,
+            total: item.price * item.quantity,
+            customization: item.customization || null,
+          })),
+        },
+      },
+      include: {
+        items: true,
+      },
+    });
+  }
+
   async getMyOrders(profileId: string, query: any) {
     const { status } = query;
 
@@ -215,56 +265,6 @@ export class WebOrderService {
     }
   }
 
-  // === CREATE NEW ORDER ===
-  async createOrder(data: CreateWebOrderDTO, profileId: string | null) {
-    const { form, items, note, subtotal, shippingCost, totalAmount } = data;
-
-    // Generate Order Number
-    const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 100)}`;
-
-    return await this.prisma.webOrder.create({
-      data: {
-        orderNumber: orderNumber,
-        profileId: profileId,
-        guestName: form.fullName,
-        guestEmail: form.email,
-        guestPhone: form.phone,
-        customerNote: note || null,
-
-        shippingAddress: {
-          recipient: form.fullName,
-          phone: form.phone,
-          country: form.country,
-          province: form.province,
-          city: form.city,
-          district: form.district,
-          postalCode: form.postalCode,
-          fullAddress: form.address,
-        },
-
-        subtotal: subtotal,
-        shippingCost: shippingCost,
-        totalAmount: totalAmount,
-        status: "PENDING_PAYMENT",
-
-        items: {
-          create: items.map((item) => ({
-            productId: item.productId,
-            variantId: item.variantId || null,
-            productName: item.name,
-            quantity: item.quantity,
-            price: item.price,
-            total: item.price * item.quantity,
-            customization: item.customization || null,
-          })),
-        },
-      },
-      include: {
-        items: true,
-      },
-    });
-  }
-
   // === 5. HANDLE MIDTRANS WEBHOOK / NOTIFICATION ===
   async handleMidtransNotification(notificationRaw: any) {
     try {
@@ -413,7 +413,6 @@ export class WebOrderService {
 
       // ✨ GENERATE NOMOR ORDER DENGAN FORMAT GI-SOxxxx
       const generatedOrderNumber = await this.generateOrderNumber(tx, "SALES");
-
       // 4. Buat Order Utama
       await tx.order.create({
         data: {

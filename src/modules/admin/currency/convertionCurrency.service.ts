@@ -12,7 +12,7 @@ interface RatesCache {
 @injectable()
 export class CurrencyConversionService {
   private readonly EXCHANGERATE_API = "https://api.exchangerate.host/";
-  private readonly CACHE_DURATION = 30 * 60 * 1000; // 30 menit
+  private readonly CACHE_DURATION = 30 * 60 * 1000;
   private readonly ratesCache: RatesCache = {};
 
   async convertCurrency(data: ConvertCurrencyDTO): Promise<ConversionResult> {

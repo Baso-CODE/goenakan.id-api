@@ -19,6 +19,7 @@
         "cloudinary": "^2.5.1",
         "cookie-parser": "^1.4.7",
         "cors": "^2.8.5",
+        "country-to-currency": "^3.0.1",
         "date-fns": "^4.1.0",
         "dotenv": "^17.4.2",
         "dotenv-flow": "^4.1.0",
@@ -865,6 +866,8 @@
     "cosmiconfig": ["cosmiconfig@9.0.0", "", { "dependencies": { "env-paths": "^2.2.1", "import-fresh": "^3.3.0", "js-yaml": "^4.1.0", "parse-json": "^5.2.0" }, "peerDependencies": { "typescript": ">=4.9.5" }, "optionalPeers": ["typescript"] }, "sha512-itvL5h8RETACmOTFc4UfIyB2RfEHi71Ax6E/PivVxq9NseKbOWpeyHEOIbmAw1rs8Ak0VursQNww7lf7YtUwzg=="],
 
     "cosmiconfig-typescript-loader": ["cosmiconfig-typescript-loader@6.2.0", "", { "dependencies": { "jiti": "^2.6.1" }, "peerDependencies": { "@types/node": "*", "cosmiconfig": ">=9", "typescript": ">=5" } }, "sha512-GEN39v7TgdxgIoNcdkRE3uiAzQt3UXLyHbRHD6YoL048XAeOomyxaP+Hh/+2C6C2wYjxJ2onhJcsQp+L4YEkVQ=="],
+
+    "country-to-currency": ["country-to-currency@3.0.1", "", {}, "sha512-FAo2ga8296d0Ra6vj9TB4Kax36AmqrGEc0aoLflCx5ijMtifNwA8lCqQsFfTLP2lRVKHWh/DedSpqI6v9VHyjw=="],
 
     "cpx2": ["cpx2@8.0.0", "", { "dependencies": { "debounce": "^2.0.0", "debug": "^4.1.1", "duplexer": "^0.1.1", "fs-extra": "^11.1.0", "glob": "^11.0.0", "glob2base": "0.0.12", "ignore": "^6.0.2", "minimatch": "^10.0.1", "p-map": "^7.0.0", "resolve": "^1.12.0", "safe-buffer": "^5.2.0", "shell-quote": "^1.8.0", "subarg": "^1.0.0" }, "bin": { "cpx": "bin/index.js" } }, "sha512-RxD9jrSVNSOmfcbiPlr3XnKbUKH9K1w2HCv0skczUKhsZTueiDBecxuaSAKQkYSLQaGVA4ZQJZlTj5hVNNEvKg=="],
 

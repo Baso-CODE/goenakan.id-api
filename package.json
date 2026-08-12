@@ -29,6 +29,7 @@
     "cloudinary": "^2.5.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "country-to-currency": "^3.0.1",
     "date-fns": "^4.1.0",
     "dotenv": "^17.4.2",
     "dotenv-flow": "^4.1.0",

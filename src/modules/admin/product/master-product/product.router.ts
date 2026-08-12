@@ -37,25 +37,25 @@ export class ProductRouter {
     // ==========================================
     // === PUBLIC ROUTES (Bebas diakses tanpa login)
     // ==========================================
-    this.router.get("/public", this.productController.getAllProductsPublic);
     this.router.get(
       "/public/filters",
       this.productController.getFIlterProducts,
-    );
-    this.router.get(
-      "/public/:slug",
-      this.productController.getProductBySlugPublic,
-    );
-    this.router.get(
-      "/public/:slug/related",
-      this.productController.getRelatedProducts,
     );
     this.router.get(
       "/best-sellers",
       this.productController.getBestSellerProducts,
     );
     this.router.get("/order", this.productController.getAllProductsForOrder);
+    this.router.get("/public", this.productController.getAllProductsPublic);
 
+    this.router.get(
+      "/public/:slug/related",
+      this.productController.getRelatedProducts,
+    );
+    this.router.get(
+      "/public/:slug",
+      this.productController.getProductBySlugPublic,
+    );
     // ==========================================
     // 🛡️ GATEKEEPER LEVEL ROUTER
     // Mulai baris ini ke bawah, semua route wajib login & punya permission dinamis.
