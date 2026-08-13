@@ -2,6 +2,7 @@ import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
 
 import { ApiError } from "../../../utils/api-error";
+import { CounterService } from "../../../utils/counter.service";
 import { SlugService } from "../../../utils/genereateSlug";
 import { CloudinaryService } from "../../cloudinary/cloudinary.service";
 import { PaginationService } from "../../pagination/pagination.service";
@@ -17,64 +18,32 @@ export class ClientService {
     private readonly pagination: PaginationService,
     private readonly cloudinary: CloudinaryService,
     private readonly slugService: SlugService,
+    private readonly counterService: CounterService,
   ) {}
 
   // === CREATE CLIENT ===
   async createClient(data: CreateClientDTO, logoFile?: Express.Multer.File) {
-    const clientType = String(data.type).trim().toUpperCase();
+    try {
+      const clientType = String(data.type).trim().toUpperCase();
 
-    if (clientType !== "B2B" && clientType !== "B2C") {
-      throw new ApiError(`Invalid client type: received ${data.type}`, 400);
-    }
-
-    const clientStatus = data.status === "POTENTIAL" ? "POTENTIAL" : "OFFICIAL";
-    let prefix = "";
-    if (clientStatus === "POTENTIAL") {
-      prefix = clientType === "B2B" ? "PBB" : "PBC";
-    } else {
-      prefix = clientType === "B2B" ? "B" : "C";
-    }
-
-    // ==================================================
-    // 2. GENERATE CUSTOMER CODE (CUSTCODE)
-    // ==================================================
-    const allCustCodes = await this.prisma.client.findMany({
-      where: { custCode: { startsWith: prefix } },
-      select: { custCode: true },
-    });
-
-    let maxNumber = 0;
-    for (const client of allCustCodes) {
-      if (!client.custCode) continue;
-      const match = client.custCode.match(/(\d+)$/);
-      if (match) {
-        const num = parseInt(match[1]);
-        if (num > maxNumber) maxNumber = num;
+      // 1. Validasi Awal: Lempar ApiError 400 jika tipe salah
+      if (clientType !== "B2B" && clientType !== "B2C") {
+        throw new ApiError(`Invalid client type: received ${data.type}`, 400);
       }
-    }
 
-    let custCode: string;
-    let isUnique = false;
-    do {
-      maxNumber += 1;
-      custCode = `${prefix}${String(maxNumber).padStart(5, "0")}`;
-      const existing = await this.prisma.client.findUnique({
-        where: { custCode },
-      });
-      isUnique = !existing;
-    } while (!isUnique);
+      const clientStatus =
+        data.status === "POTENTIAL" ? "POTENTIAL" : "OFFICIAL";
+      const parsedJoinedDate = data.joinedDate
+        ? new Date(data.joinedDate)
+        : undefined;
 
-    const parsedJoinedDate = data.joinedDate
-      ? new Date(data.joinedDate)
-      : undefined;
-
-    // ==================================================
-    // ====================== B2B ========================
-    // ==================================================
-    if (data.type === ClientType.B2B) {
+      // ==================================================
+      // 2. PROSES UPLOAD FILE
+      // ==================================================
       let brandCreateInput: any = undefined;
 
-      if (data.brandName && logoFile) {
+      if (clientType === "B2B" && data.brandName && logoFile) {
+        // Jika upload gagal, akan masuk ke blok catch di bawah
         const uploadResult = await this.cloudinary.upload(logoFile, {
           folder: "brand-clients",
           resource_type: "image",
@@ -93,87 +62,120 @@ export class ClientService {
         };
       }
 
-      return await this.prisma.client.create({
-        data: {
-          custCode,
-          type: data.type,
-          status: clientStatus,
-          joinedDate: parsedJoinedDate,
-          b2b: {
-            create: {
-              companyName: data.companyName!,
-              departmentId: data.departmentId!,
-              phone: data.phone ?? "",
-              email: data.email ?? "",
-              website: data.website ?? "",
+      // ==================================================
+      // 3. DATABASE TRANSACTION
+      // ==================================================
+      return await this.prisma.$transaction(async (tx) => {
+        let prefix = "";
+        let counterType = "";
 
-              country: data.country ?? "",
-              province: data.province ?? "",
-              city: data.city ?? "",
-              district: data.district ?? "",
-              subDistrict: data.subDistrict ?? "",
-              postalCode: data.postalCode ?? "",
-              fullAddress: data.fullAddress ?? "",
+        if (clientStatus === "POTENTIAL") {
+          prefix = clientType === "B2B" ? "PBB" : "PBC";
+          counterType =
+            clientType === "B2B" ? "CLIENT_B2B_POT" : "CLIENT_B2C_POT";
+        } else {
+          prefix = clientType === "B2B" ? "B" : "C";
+          counterType =
+            clientType === "B2B" ? "CLIENT_B2B_OFF" : "CLIENT_B2C_OFF";
+        }
 
-              pics: data.pics?.length
-                ? {
-                    create: data.pics.map((pic) => ({
-                      prefix: pic.prefix ?? "",
-                      name: pic.name ?? "",
-                      email: pic.email ?? null,
-                      phone: pic.phone ?? null,
-                    })),
-                  }
-                : undefined,
+        // Generate nomor aman dengan CounterService
+        const sequence = await this.counterService.getNextFormattedNumber(
+          tx,
+          counterType,
+          "",
+          5,
+        );
 
-              brandClients: brandCreateInput,
+        const custCode = `${prefix}${sequence}`;
+
+        // ====================== B2B ========================
+        if (clientType === "B2B") {
+          return await tx.client.create({
+            data: {
+              custCode,
+              type: data.type,
+              status: clientStatus,
+              joinedDate: parsedJoinedDate,
+              b2b: {
+                create: {
+                  companyName: data.companyName!,
+                  departmentId: data.departmentId!,
+                  phone: data.phone ?? "",
+                  email: data.email ?? "",
+                  website: data.website ?? "",
+
+                  country: data.country ?? "",
+                  province: data.province ?? "",
+                  city: data.city ?? "",
+                  district: data.district ?? "",
+                  subDistrict: data.subDistrict ?? "",
+                  postalCode: data.postalCode ?? "",
+                  fullAddress: data.fullAddress ?? "",
+
+                  pics: data.pics?.length
+                    ? {
+                        create: data.pics.map((pic) => ({
+                          prefix: pic.prefix ?? "",
+                          name: pic.name ?? "",
+                          email: pic.email ?? null,
+                          phone: pic.phone ?? null,
+                        })),
+                      }
+                    : undefined,
+
+                  brandClients: brandCreateInput,
+                },
+              },
             },
-          },
-        },
-        include: {
-          b2b: {
             include: {
-              pics: true,
-              brandClients: true,
+              b2b: { include: { pics: true, brandClients: true } },
             },
-          },
-        },
-      });
-    }
+          });
+        }
 
-    // ==================================================
-    // ====================== B2C ========================
-    // ==================================================
-    if (data.type === ClientType.B2C) {
-      return await this.prisma.client.create({
-        data: {
-          custCode,
-          type: data.type,
-          status: clientStatus,
-          b2c: {
-            create: {
-              prefix: data.prefix ?? "",
-              name: data.name!,
-              phone: data.phone ?? "",
+        // ====================== B2C ========================
+        if (clientType === "B2C") {
+          return await tx.client.create({
+            data: {
+              custCode,
+              type: data.type,
+              status: clientStatus,
+              b2c: {
+                create: {
+                  prefix: data.prefix ?? "",
+                  name: data.name!,
+                  phone: data.phone ?? "",
 
-              // ---- NEW ADDRESS FIELDS ----
-              country: data.countryB2C ?? "",
-              province: data.provinceB2C ?? "",
-              city: data.cityB2C ?? "",
-              district: data.districtB2C ?? "",
-              subDistrict: data.subDistrictB2C ?? "",
-              postalCode: data.postalCodeB2C ?? "",
-              fullAddress: data.fullAddressB2C ?? data.fullAddress ?? "",
+                  country: data.countryB2C ?? "",
+                  province: data.provinceB2C ?? "",
+                  city: data.cityB2C ?? "",
+                  district: data.districtB2C ?? "",
+                  subDistrict: data.subDistrictB2C ?? "",
+                  postalCode: data.postalCodeB2C ?? "",
+                  fullAddress: data.fullAddressB2C ?? data.fullAddress ?? "",
+                },
+              },
             },
-          },
-        },
-        include: { b2c: true },
-      });
-    }
+            include: { b2c: true },
+          });
+        }
 
-    throw new ApiError("Invalid client type", 400);
+        // Fallback pengaman di dalam transaksi (seharusnya tidak akan pernah tersentuh)
+        throw new ApiError("Failed to create client within transaction", 500);
+      });
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      console.error("❌ Terjadi kesalahan pada createClient:", error);
+
+      throw new ApiError(
+        "Terjadi kesalahan pada server saat menyimpan data klien",
+        500,
+      );
+    }
   }
-
   // === GET ALL CLIENTS ===
   async getAllClients(query: {
     page?: number;

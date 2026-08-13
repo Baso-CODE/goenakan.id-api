@@ -248,13 +248,32 @@ export class OrderService {
       });
       const clientRecord = await tx.client.findUnique({
         where: { id: orderCore.clientId },
-        select: { status: true },
+        select: { status: true, type: true, custCode: true },
       });
 
       if (clientRecord && clientRecord.status === "POTENTIAL") {
+        const prefix = clientRecord.type === "B2B" ? "B" : "C";
+        const counterType =
+          clientRecord.type === "B2B" ? "CLIENT_B2B_OFF" : "CLIENT_B2C_OFF";
+
+        // Generate nomor urut secara aman tanpa race condition
+        // Karena ini bukan format tanggal, kita berikan string kosong "" pada parameter periodYYMM
+        const sequence = await this.counterService.getNextFormattedNumber(
+          tx,
+          counterType,
+          "",
+          5, // panjang digit 5 (Contoh: 00001)
+        );
+
+        const newCustCode = `${prefix}${sequence}`;
+
+        // Update status dan custCode pelanggan di database
         await tx.client.update({
           where: { id: orderCore.clientId },
-          data: { status: "OFFICIAL" },
+          data: {
+            status: "OFFICIAL",
+            custCode: newCustCode,
+          },
         });
       }
 

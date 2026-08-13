@@ -142,9 +142,9 @@ enum TransactionType {
 }
 
 enum PurchaseType {
-  DIRECT_MATERIAL // Pembelian produk berdasarkan SO
-  DIRECT_EXPENSES // Pembelian selain produk (ex: logistik) berdasarkan SO
-  STOCK // Pembelian produk bukan berdasarkan SO
+  DIRECT_MATERIAL
+  DIRECT_EXPENSES
+  STOCK
 }
 
 enum ExpenseCategory {
@@ -1640,6 +1640,8 @@ model QuotationItem {
   description String?         @db.Text
   quantity    Int             @default(1)
   unitPrice   Decimal         @default(0)
+
+  selectedAttributes Json?
 
   customization Json?
   discount      Decimal?            @default(0)
