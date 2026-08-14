@@ -237,7 +237,7 @@ export class QuotationService {
   }
 
   // ==========================================
-  // 3. CREATE QUOTATION
+  // 3. CREATE QUOTATION (DIPERBAIKI)
   // ==========================================
   async createQuotation(
     data: CreateQuotationDTO,
@@ -288,14 +288,20 @@ export class QuotationService {
       }
     }
 
-    // C. PERSIAPKAN DATA ITEMS & HITUNG TOTAL HARGA (Aman dari Database)
+    // C. PERSIAPKAN DATA ITEMS & HITUNG TOTAL HARGA
     let subTotal = 0;
     const itemsToCreate: any[] = [];
 
     for (let i = 0; i < data.items.length; i++) {
       const item = data.items[i];
       const img = uploadedImages[i];
-      const mainQty = item.quantity ? Number(item.quantity) : 1;
+
+      // ✨ PERBAIKAN UTAMA KUANTITAS: Pastikan dibaca sebagai angka dengan benar
+      const mainQty =
+        item.quantity !== undefined && item.quantity !== null
+          ? Number(item.quantity)
+          : 1;
+
       const itemDiscount = item.discount ? Number(item.discount) : 0;
 
       // 1. Pastikan productId tersedia
@@ -303,10 +309,20 @@ export class QuotationService {
         throw new ApiError(`Product ID diperlukan untuk item ke-${i + 1}`, 400);
       }
 
-      // 2. Ambil harga dasar produk dari DB
+      // 2. Ambil harga dasar produk beserta attributeValues dan priceModifier-nya dari database
       const productRecord = await this.prisma.product.findUnique({
         where: { id: item.productId },
-        select: { name: true, basePrice: true },
+        select: {
+          name: true,
+          basePrice: true,
+          // ✨ PERBAIKAN: Menggunakan 'attributeValues' sesuai skema Prisma kamu
+          attributeValues: {
+            select: {
+              attributeValueId: true,
+              priceModifier: true,
+            },
+          },
+        },
       });
 
       if (!productRecord) {
@@ -319,24 +335,48 @@ export class QuotationService {
       // Mulai perhitungan: Unit Price = Base Price
       let finalUnitPrice = Number(productRecord.basePrice);
 
-      // 3. Jika ada varian yang dipilih, ambil harga varian dari DB lalu tambahkan
+      // 3. Tambahkan harga dari atribut yang dipilih (Multi-Select Attributes)
+      if (
+        item.selectedAttributes &&
+        typeof item.selectedAttributes === "object"
+      ) {
+        const allSelectedValIds = Object.values(item.selectedAttributes)
+          .flat()
+          .filter(Boolean) as string[];
+
+        // ✨ PERBAIKAN: Mengambil data dari attributeValues
+        const productAttributes = productRecord.attributeValues as any[];
+
+        if (
+          productAttributes &&
+          productAttributes.length > 0 &&
+          allSelectedValIds.length > 0
+        ) {
+          productAttributes.forEach((attrVal: any) => {
+            if (allSelectedValIds.includes(attrVal.attributeValueId)) {
+              finalUnitPrice += Number(attrVal.priceModifier || 0);
+            }
+          });
+        }
+      }
+
+      // 4. Jika ada varian yang dipilih, ambil harga varian dari DB lalu tambahkan
       if (item.variantId) {
         const variantRecord = await this.prisma.productVariant.findUnique({
           where: { id: item.variantId },
           select: { price: true },
         });
 
-        //  Unit Price = Base Price + Variant Price (Jika ada harganya)
         if (variantRecord && variantRecord.price) {
           finalUnitPrice += Number(variantRecord.price);
         }
       }
 
-      // Hitung total harga per baris (Kuantitas * Harga Akhir - Diskon)
+      // ✨ Hitung total harga per baris menggunakan kuantitas yang benar (Kuantitas * Harga Akhir - Diskon)
       const lineTotal = mainQty * finalUnitPrice - itemDiscount;
       subTotal += lineTotal < 0 ? 0 : lineTotal;
 
-      // Siapkan Tiers (jika dikirim dari frontend, jika tidak akan berupa array kosong)
+      // Siapkan Tiers
       const tiersData = item.tiers && item.tiers.length > 0 ? item.tiers : [];
       const tiersToCreate = tiersData.map((tier: any) => ({
         minQuantity: tier.minQuantity ? Number(tier.minQuantity) : 1,
@@ -348,15 +388,15 @@ export class QuotationService {
           (tier.unitPrice ? Number(tier.unitPrice) : 0),
       }));
 
-      // Masukkan hasil data yang sudah disiapkan ke dalam array
+      // Masukkan hasil data dengan `quantity: mainQty` yang akurat
       itemsToCreate.push({
         productId: item.productId,
         variantId: item.variantId || null,
         productName: item.productName || productRecord.name,
         description: item.description,
-        quantity: mainQty,
-        unitPrice: finalUnitPrice, //  Menyimpan harga murni hasil hitungan DB
-        selectedAttributes: item.selectedAttributes ?? Prisma.JsonNull, //  Menyimpan Pilihan Multi-Atribut JSON
+        quantity: mainQty, // 👈 Terbaca sesuai inputan user (misal: 10)
+        unitPrice: finalUnitPrice, // 👈 Harga satuan sudah termasuk tambahan atribut/varian
+        selectedAttributes: item.selectedAttributes ?? Prisma.JsonNull,
         discount: itemDiscount,
         customization: item.customization ?? Prisma.JsonNull,
         remarks: item.remarks,
@@ -366,15 +406,13 @@ export class QuotationService {
       });
     }
 
-    // D. BUKA TRANSAKSI UNTUK MENYIMPAN KE DATABASE (Aman dari Race Condition)
+    // D. BUKA TRANSAKSI UNTUK MENYIMPAN KE DATABASE
     const newQuotation = await this.prisma.$transaction(async (tx) => {
-      // 1. Buat nomor Quotation menggunakan helper baru di dalam transaksi
       const quotationNumber = await this.generateQuotationNumber(
         tx,
         client.custCode || "000",
       );
 
-      // 2. Simpan data
       const quotation = await tx.quotation.create({
         data: {
           quotationNumber,
@@ -387,7 +425,7 @@ export class QuotationService {
           currencyCode: data.currencyCode || "IDR",
           paymentTerms: data.paymentTerms || null,
           subTotal,
-          totalAmount: subTotal, //  Total otomatis dari hitungan subTotal di atas
+          totalAmount: subTotal,
 
           notes:
             data.notes && data.notes.length > 0
@@ -419,7 +457,7 @@ export class QuotationService {
       });
 
       return quotation;
-    }); // Transaksi ditutup secara otomatis
+    });
 
     return newQuotation;
   }
@@ -459,10 +497,20 @@ export class QuotationService {
             );
           }
 
-          // 2. Ambil harga dasar produk dari database
+          // 2. Ambil harga dasar produk BESERTA attributeValues (Disamakan dengan Create)
           const productRecord = await tx.product.findUnique({
             where: { id: item.productId },
-            select: { name: true, basePrice: true },
+            select: {
+              name: true,
+              basePrice: true,
+              // ✨ PERBAIKAN: Mengambil modifier atribut dari database
+              attributeValues: {
+                select: {
+                  attributeValueId: true,
+                  priceModifier: true,
+                },
+              },
+            },
           });
 
           if (!productRecord) {
@@ -475,23 +523,49 @@ export class QuotationService {
           // ✨ Kalkulasi awal: Unit Price = Base Price
           let finalUnitPrice = Number(productRecord.basePrice);
 
-          // 3. Jika ada varian yang dipilih, ambil harga varian lalu tambahkan
+          // ✨ PERBAIKAN: 3. Tambahkan harga dari atribut yang dipilih (Multi-Select Attributes)
+          if (
+            item.selectedAttributes &&
+            typeof item.selectedAttributes === "object"
+          ) {
+            const allSelectedValIds = Object.values(item.selectedAttributes)
+              .flat()
+              .filter(Boolean) as string[];
+
+            const productAttributes = productRecord.attributeValues as any[];
+
+            if (
+              productAttributes &&
+              productAttributes.length > 0 &&
+              allSelectedValIds.length > 0
+            ) {
+              productAttributes.forEach((attrVal: any) => {
+                if (allSelectedValIds.includes(attrVal.attributeValueId)) {
+                  finalUnitPrice += Number(attrVal.priceModifier || 0);
+                }
+              });
+            }
+          }
+
+          // 4. Jika ada varian yang dipilih, ambil harga varian lalu tambahkan
           if (item.variantId) {
             const variantRecord = await tx.productVariant.findUnique({
               where: { id: item.variantId },
               select: { price: true },
             });
 
+            // Catatan: Jika di frontend harga varian tidak ditambah, pastikan di sini juga sesuai dengan kebutuhan bisnis kamu.
+            // Saat ini disamakan 100% dengan fungsi createQuotation.
             if (variantRecord && variantRecord.price) {
               finalUnitPrice += Number(variantRecord.price);
             }
           }
 
-          // 4. Hitung total baris berdasarkan harga hasil kalkulasi backend (Quantity x Final Unit Price - Discount)
+          // 5. Hitung total baris berdasarkan harga hasil kalkulasi backend (Quantity x Final Unit Price - Discount)
           const lineTotal = mainQty * finalUnitPrice - itemDiscount;
           calculatedSubTotal += lineTotal < 0 ? 0 : lineTotal;
 
-          // 5. Siapkan data tiers (bisa dikurangi atau diubah oleh admin dari frontend)
+          // 6. Siapkan data tiers (bisa dikurangi atau diubah oleh admin dari frontend)
           const tiersData =
             item.tiers && item.tiers.length > 0 ? item.tiers : [];
           const tiersToCreate = tiersData.map((tier: any) => ({
@@ -504,7 +578,7 @@ export class QuotationService {
               (tier.unitPrice ? Number(tier.unitPrice) : 0),
           }));
 
-          // 6. Simpan item baru dengan harga murni dan atribut multi-pilihan
+          // 7. Simpan item baru dengan harga murni dan atribut multi-pilihan
           await tx.quotationItem.create({
             data: {
               quotationId: id,
@@ -515,7 +589,7 @@ export class QuotationService {
               quantity: mainQty,
               unitPrice: finalUnitPrice, // ✨ Menggunakan harga kalkulasi yang aman
               discount: itemDiscount,
-              selectedAttributes: item.selectedAttributes ?? Prisma.JsonNull, // ✨ Menyimpan multi-atribut
+              selectedAttributes: item.selectedAttributes ?? Prisma.JsonNull,
               customization: item.customization ?? Prisma.JsonNull,
               remarks: item.remarks,
               tiers: {
@@ -582,7 +656,6 @@ export class QuotationService {
       });
     });
   }
-
   // ==========================================
   // 5. DELETE QUOTATION
   // ==========================================

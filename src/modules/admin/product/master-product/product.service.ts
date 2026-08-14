@@ -537,14 +537,14 @@ export class ProductService {
     if (data.name !== undefined) {
       updateData.name = data.name;
       if (translatedNameEn !== undefined) {
-        updateData.name_en = translatedNameEn; // ✨ Masukkan terjemahan nama Inggris
+        updateData.name_en = translatedNameEn;
       }
     }
 
     if (data.description !== undefined) {
       updateData.description = data.description;
       if (translatedDescEn !== undefined) {
-        updateData.description_en = translatedDescEn; // ✨ Masukkan terjemahan deskripsi Inggris
+        updateData.description_en = translatedDescEn;
       }
     }
 
@@ -2070,6 +2070,7 @@ export class ProductService {
             select: {
               id: true,
               minQuantity: true,
+              maxQuantity: true,
               price: true,
             },
             orderBy: { minQuantity: "asc" },
@@ -2159,6 +2160,7 @@ export class ProductService {
           priceTiers: p.priceTiers.map((tier) => ({
             id: tier.id,
             minQuantity: tier.minQuantity,
+            maxQuantity: tier.maxQuantity,
             price: Number(tier.price),
           })),
 
