@@ -1,6 +1,7 @@
 import { Type } from "class-transformer";
 import {
   IsArray,
+  IsBoolean,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -38,15 +39,25 @@ export class CashflowRevenueInputDTO {
   currency?: string = "IDR";
 
   @IsNumber()
-  @Min(1, { message: "Nilai tukar minimal 1" })
+  @Min(0.000001, { message: "Nilai tukar minimal lebih dari 0" })
   @IsOptional()
   exchangeRate?: number = 1;
+
+  // ✨ TAMBAHAN: Untuk mencatat kurs historis saat transaksi/save dilakukan
+  @IsNumber()
+  @Min(0.000001, { message: "Kurs historis minimal lebih dari 0" })
+  @IsOptional()
+  historicalExchangeRate?: number = 1;
 }
 
 // =================================================================
 // 2. DTO UNTUK ITEM PENGELUARAN (COST)
 // =================================================================
 export class CashflowCostInputDTO {
+  @IsBoolean()
+  @IsOptional()
+  isManual?: boolean = false;
+
   @IsString()
   @IsNotEmpty({ message: "Deskripsi tidak boleh kosong" })
   description!: string;
@@ -72,9 +83,14 @@ export class CashflowCostInputDTO {
   currency?: string = "IDR";
 
   @IsNumber()
-  @Min(1, { message: "Nilai tukar minimal 1" })
+  @Min(0.000001, { message: "Nilai tukar minimal lebih dari 0" })
   @IsOptional()
   exchangeRate?: number = 1;
+
+  @IsNumber()
+  @Min(0.000001, { message: "Kurs historis minimal lebih dari 0" })
+  @IsOptional()
+  historicalExchangeRate?: number = 1;
 }
 
 // =================================================================
@@ -93,7 +109,6 @@ export class SaveCashflowDTO {
   @IsOptional()
   orderNumber?: string;
 
-  // Menggunakan ValidateNested dan Type agar array of objects divalidasi dengan benar
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CashflowRevenueInputDTO)

@@ -104,13 +104,20 @@ export class CashflowService {
     // 3. Format dan Gabungkan Kedua Data Menjadi Satu Daftar (Unified List)
     let combinedData: any[] = [];
 
-    // Mapping Order Biasa
+    // Mapping Order Biasa di Backend getAllCashflows
     orders.forEach((order) => {
       const summary = order.cashflowSummary[0];
+
+      // Nilai Cashflow (sudah dalam IDR)
       const revenue = summary
         ? Number(summary.totalRevenue)
         : Number(order.totalAmount);
       const cost = summary ? Number(summary.totalCost) : 0;
+
+      // Nilai murni asli dari order (misalnya 578 EUR)
+      const originalRev = Number(order.totalAmount) || 0;
+      // Jika cost asli ingin diambil dari data PO awal, bisa disesuaikan, atau 0 jika belum ada cost asli
+      const originalCst = 0;
 
       let clientName = "-";
       if (order.client.b2b) clientName = order.client.b2b.companyName;
@@ -123,7 +130,15 @@ export class CashflowService {
         dateOrder: order.dateOrder,
         orderNumber: order.orderNumber,
         salesCategory: order.salesCategory,
-        currencyCode: summary?.baseCurrencyId || order.currencyCode,
+
+        currencyCode: summary ? "IDR" : order.currencyCode,
+        originalCurrencyCode: order.currencyCode,
+
+        // Kirim nilai murni asli
+        originalRevenue: originalRev,
+        originalCost: originalCst,
+        originalProfitOrLoss: originalRev - originalCst,
+
         clientName: clientName,
         totalRevenue: revenue,
         totalCost: cost,
@@ -131,16 +146,17 @@ export class CashflowService {
         hasCashflowData: !!summary,
       });
     });
-
-    // Mapping Replacement Order (Retur/Pengganti)
+    // Mapping Replacement Order di Backend getAllCashflows
     replacements.forEach((rep) => {
       const summary = rep.cashflowSummaries[0];
-      const revenue = summary ? Number(summary.totalRevenue) : 0; // Replacement biasanya revenue-nya 0 (gratis)
+      const revenue = summary ? Number(summary.totalRevenue) : 0;
       const cost = summary ? Number(summary.totalCost) : 0;
 
       let clientName = "-";
       if (rep.client.b2b) clientName = rep.client.b2b.companyName;
       else if (rep.client.b2c) clientName = rep.client.b2c.name;
+
+      const origCurr = rep.referenceOrder?.currencyCode || "IDR";
 
       combinedData.push({
         id: summary?.id || rep.id,
@@ -149,8 +165,11 @@ export class CashflowService {
         dateOrder: rep.replacementDate,
         orderNumber: rep.replacementNumber || "RN-UNKNOWN",
         salesCategory: "REPLACEMENT",
-        currencyCode:
-          summary?.baseCurrencyId || rep.referenceOrder?.currencyCode || "IDR",
+
+        currencyCode: summary ? "IDR" : origCurr,
+        originalCurrencyCode: origCurr,
+        originalRevenue: revenue,
+
         clientName: clientName,
         totalRevenue: revenue,
         totalCost: cost,
@@ -158,7 +177,6 @@ export class CashflowService {
         hasCashflowData: !!summary,
       });
     });
-
     // 4. Urutkan Berdasarkan Tanggal Terbaru (Descending)
     combinedData.sort(
       (a, b) =>
@@ -184,18 +202,23 @@ export class CashflowService {
     // 1. Ekstrak data dari DTO
     const { orderId, replacementOrderId, revenueItems, costItems } = data;
 
-    // 2. Kalkulasi Total
+    // 2. Kalkulasi Total Keseluruhan
     const totalRevenue = revenueItems.reduce(
-      (acc, item) => acc + item.total,
+      (acc, item) =>
+        acc + item.unitPrice * item.quantity * (item.exchangeRate || 1),
       0,
     );
-    const totalCost = costItems.reduce((acc, item) => acc + item.total, 0);
+    const totalCost = costItems.reduce(
+      (acc, item) =>
+        acc + item.costPerUnit * item.quantity * (item.exchangeRate || 1),
+      0,
+    );
     const profitLoss = totalRevenue - totalCost;
 
     let targetOrderNumber = data.orderNumber || "";
     let baseCurrencyCode = "IDR";
 
-    // 3. Logika Pemilihan Sumber (Order vs Replacement Order)
+    // 3. Logika Pemilihan Sumber (Order vs Replacement Order) untuk mendapatkan base currency
     if (orderId) {
       const order = await this.prisma.order.findUnique({
         where: { id: orderId },
@@ -208,7 +231,6 @@ export class CashflowService {
     } else if (replacementOrderId) {
       const replacement = await this.prisma.replacementOrder.findUnique({
         where: { id: replacementOrderId },
-        // ✨ Gunakan include untuk "mewarisi" mata uang dari pesanan aslinya
         include: {
           referenceOrder: { select: { orderNumber: true, currencyCode: true } },
         },
@@ -218,17 +240,25 @@ export class CashflowService {
 
       targetOrderNumber =
         replacement.replacementNumber ||
-        replacement.referenceOrder.orderNumber ||
+        replacement.referenceOrder?.orderNumber ||
         targetOrderNumber;
-      baseCurrencyCode = replacement.referenceOrder.currencyCode;
+      baseCurrencyCode = replacement.referenceOrder?.currencyCode || "IDR";
     }
 
-    // 4. Transaksi Database (Menyimpan Summary & Items)
+    // 4. Transaksi Database (Menyimpan Summary & Items dengan Aman)
     const result = await this.prisma.$transaction(async (tx) => {
       // Cari summary yang sudah ada (berdasarkan orderId ATAU replacementOrderId)
       const existingSummary = await tx.cashflowSummary.findFirst({
         where: orderId ? { orderId } : { replacementOrderId },
       });
+
+      // ✨ PENGAMANAN (LOCKING): Cek apakah data sudah disetujui (APPROVED)
+      if (existingSummary && existingSummary.status === "APPROVED") {
+        throw new ApiError(
+          "Data cashflow ini sudah disetujui dan tidak dapat diubah!",
+          403,
+        );
+      }
 
       let summaryId = existingSummary?.id;
 
@@ -261,42 +291,51 @@ export class CashflowService {
             totalCost,
             profitLoss,
             baseCurrencyId: baseCurrencyCode,
+            status: "DRAFT", // Status awal selalu DRAFT
           },
         });
         summaryId = newSummary.id;
       }
 
-      // C. Masukkan Revenue Items
+      // C. Masukkan Revenue Items (Dilengkapi Historical Exchange Rate)
       if (revenueItems.length > 0) {
         await tx.cashflowRevenue.createMany({
-          data: revenueItems.map((item) => ({
-            cashflowId: summaryId!,
-            description: item.description,
-            productId: item.productId || null,
-            unitPrice: item.unitPrice,
-            quantity: item.quantity,
-            total: item.total,
-            currency: item.currency,
-            exchangeRate: item.exchangeRate,
-            currencyCode: item.currency,
-          })),
+          data: revenueItems.map((item) => {
+            const currentRate = item.exchangeRate || 1;
+            return {
+              cashflowId: summaryId!,
+              description: item.description,
+              productId: item.productId || null,
+              unitPrice: item.unitPrice,
+              quantity: item.quantity,
+              total: item.unitPrice * item.quantity * currentRate,
+              currency: item.currency || baseCurrencyCode,
+              exchangeRate: currentRate,
+              historicalExchangeRate: currentRate,
+              currencyCode: item.currency || baseCurrencyCode,
+            };
+          }),
         });
       }
 
-      // D. Masukkan Cost Items
+      // D. Masukkan Cost Items (Dilengkapi Historical Exchange Rate)
       if (costItems.length > 0) {
         await tx.cashflowCost.createMany({
-          data: costItems.map((item) => ({
-            cashflowId: summaryId!,
-            description: item.description,
-            vendorId: item.vendorId || null,
-            costPerUnit: item.costPerUnit,
-            quantity: item.quantity,
-            total: item.total,
-            currency: item.currency,
-            exchangeRate: item.exchangeRate,
-            currencyCode: item.currency,
-          })),
+          data: costItems.map((item) => {
+            const currentRate = item.exchangeRate || 1;
+            return {
+              cashflowId: summaryId!,
+              description: item.description,
+              vendorId: item.isManual ? null : item.vendorId,
+              costPerUnit: item.costPerUnit,
+              quantity: item.quantity,
+              total: item.costPerUnit * item.quantity * currentRate,
+              currency: item.currency || baseCurrencyCode,
+              exchangeRate: currentRate,
+              historicalExchangeRate: currentRate,
+              currencyCode: item.currency || baseCurrencyCode,
+            };
+          }),
         });
       }
 
@@ -384,12 +423,12 @@ export class CashflowService {
       };
     });
 
-    // ✨ 3. AMBIL VENDOR KHUSUS DARI PO (Untuk Auto-fill)
-    let poVendors: any[] = [];
-    if (orderId) {
-      // Hanya berjalan jika ini adalah Order asli
-      poVendors = await this.getVendorsByOrderId(orderId);
-    }
+    // ✨ 3. AMBIL VENDOR KHUSUS DARI PO (Untuk Auto-fill Cashflow Cost)
+    // Tidak perlu pakai if (orderId) lagi karena fungsi ini sudah dirancang untuk menangani keduanya.
+    const poVendors = await this.getPOItemsForCashflow(
+      orderId,
+      replacementOrderId,
+    );
     // Catatan: Jika ini replacementOrderId, poVendors akan tetap [] (kosong)
     // karena saat ini Replacement tidak memiliki PO di database.
 
@@ -491,5 +530,41 @@ export class CashflowService {
     const vendorsList = Array.from(uniqueVendorsMap.values());
 
     return vendorsList;
+  }
+
+  // ====================================================================
+  // GET PO ITEMS LINKED TO AN ORDER ATAU REPLACEMENT ORDER (UNTUK CASHFLOW)
+  // ====================================================================
+  async getPOItemsForCashflow(orderId?: string, replacementOrderId?: string) {
+    if (!orderId && !replacementOrderId) return [];
+
+    const poItems = await this.prisma.purchaseOrderItem.findMany({
+      where: {
+        ...(orderId ? { orderId } : {}),
+        ...(replacementOrderId ? { replacementOrderId } : {}),
+      },
+      include: {
+        purchaseOrder: {
+          select: {
+            vendorId: true,
+            currencyCode: true,
+            vendor: {
+              select: {
+                companyName: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return poItems.map((item) => ({
+      vendorId: item.purchaseOrder?.vendorId,
+      companyName: item.purchaseOrder?.vendor?.companyName,
+      itemName: item.itemName,
+      unitPrice: Number(item.unitPrice),
+      quantityPurchase: item.quantityPurchase,
+      currencyCode: item.purchaseOrder?.currencyCode,
+    }));
   }
 }

@@ -288,6 +288,8 @@ export class VendorService {
             select: {
               item: {
                 select: {
+                  id: true, // ✨ PERBAIKAN 1: Wajib agar frontend bisa mendeteksi ID Jasa
+                  name: true, // ✨ PERBAIKAN 1: Wajib agar nama jasa muncul di Dropdown
                   category: {
                     select: {
                       id: true,
@@ -305,6 +307,7 @@ export class VendorService {
       return vendors.map((v) => {
         const typesSet = new Set<string>();
         const categoryNamesSet = new Set<string>();
+
         if (v.type) {
           typesSet.add(v.type);
         }
@@ -316,6 +319,7 @@ export class VendorService {
           categoryNamesSet.add(v.productCategory.name_id);
           typesSet.add("PRODUCT");
         }
+
         v.vendorItems?.forEach((vi) => {
           if (vi.item?.category?.type) {
             typesSet.add(vi.item.category.type);
@@ -335,6 +339,7 @@ export class VendorService {
           categoryNames,
           picName: v.picName,
           contacts: v.contacts,
+          vendorItems: v.vendorItems, // ✨ PERBAIKAN 2: Meneruskan data ke frontend!
         };
       });
     } catch (error) {
@@ -342,7 +347,6 @@ export class VendorService {
       throw new Error("Failed to fetch vendors for order.");
     }
   }
-
   // === GET BY ID ===
   async getVendorById(id: string) {
     try {

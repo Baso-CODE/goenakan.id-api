@@ -291,7 +291,6 @@ export class PurchaseOrderService {
   }) {
     const where: any = {};
 
-    // 1. Filter Pencarian Cerdas (Cari berdasarkan PO Number atau Nama Vendor)
     if (query.search) {
       const searchTerm = query.search.trim();
       where.OR = [
