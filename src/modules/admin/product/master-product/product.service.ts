@@ -928,6 +928,7 @@ export class ProductService {
       },
       include: {
         category: true,
+        priceTiers: true,
         activeVendorPriceRecord: {
           include: {
             vendor: true,
@@ -938,38 +939,28 @@ export class ProductService {
 
     const offsetVal = data.offsetValue || 0;
     const offsetCurr = data.offsetCurrency || "IDR";
-
-    // Resolve offset conversion rate for non-target currencies outside the loop
-    let baseOffsetRate = 1;
-    if (offsetCurr !== "IDR" && offsetCurr !== data.targetCurrency) {
-      try {
-        const res = await this.currencyConversion.convertCurrency({
-          fromCurrency: offsetCurr,
-          toCurrency: "IDR",
-          amount: 1,
-        });
-        baseOffsetRate = res.rate;
-      } catch (e) {
-        baseOffsetRate = 1;
+    let offsetRate = 1;
+    if (offsetCurr !== "IDR") {
+      if (offsetCurr === data.targetCurrency) {
+        offsetRate = data.newExchangeRate;
+      } else {
+        try {
+          const res = await this.currencyConversion.convertCurrency({
+            fromCurrency: offsetCurr,
+            toCurrency: "IDR",
+            amount: 1,
+          });
+          offsetRate = res.rate;
+        } catch (e) {
+          offsetRate = 1;
+        }
       }
     }
+    const idrOffset = offsetVal * offsetRate;
 
     const previewItems = products.map((p) => {
       const activeQuote = p.activeVendorPriceRecord;
-
-      // Calculate rate as current rate + diff for target currency
-      const rate =
-        p.currencyCode === data.targetCurrency
-          ? (Number(p.exchangeRate) || 0) + data.exchangeRateDiff
-          : Number(p.exchangeRate) || 1;
-
-      // Compute product-specific offset if offsetCurrency matches targetCurrency
-      let offsetRate = baseOffsetRate;
-      if (offsetCurr === data.targetCurrency) {
-        offsetRate = rate;
-      }
-      const idrOffset = offsetVal * offsetRate;
-
+      const rate = p.currencyCode === data.targetCurrency ? data.newExchangeRate : (Number(p.exchangeRate) || 1);
       let basePriceCalculated = Number(p.basePrice) || 0;
       let calculatedTiers: {
         minQuantity: number;
@@ -983,51 +974,86 @@ export class ProductService {
         const roundUpToVal = Number((activeQuote as any).roundUpTo) || 1000;
 
         if (activeQuote.calculationMode === "FIXED") {
-          // Generate 5 MOQ steps as tiers
-          const baseMoqCtn = Math.max(1, moqCtn || 1);
-          calculatedTiers = [0, 1, 2, 3, 4].map((step) => {
-            const stepCtn = baseMoqCtn + step;
-            const stepPcs = stepCtn * qtyPerCtn;
-            const nextStepPcs = (baseMoqCtn + step + 1) * qtyPerCtn;
-            const minQuantity = stepPcs;
-            const maxQuantity = step < 4 ? nextStepPcs - 1 : null;
+          if (p.priceTiers && p.priceTiers.length > 0) {
+            // Recalculate using existing saved tiers
+            calculatedTiers = p.priceTiers.map((t) => {
+              const calc = this.calculateCogsAndSellingPrice({
+                importType: activeQuote.importType as "BORONGAN" | "RESMI",
+                beaMasukPercent: Number(activeQuote.beaMasukPercent) || 0,
+                ppnPercent: Number(activeQuote.ppnPercent) || 0,
+                pphPercent: Number(activeQuote.pphPercent) || 0,
+                formECost: Number(activeQuote.formECost) || 0,
+                insurancePercent: Number(activeQuote.insurancePercent) || 0,
+                handlingCost: Number(activeQuote.handlingCost) || 0,
+                otherCost: Number(activeQuote.otherCost) || 0,
+                foreignPrice: Number(activeQuote.foreignPrice) || 0,
+                gzDeliveryCost: Number(activeQuote.gzDeliveryCost) || 0,
+                exchangeRate: rate,
+                qtyPcs: t.minQuantity,
+                qtyPerCtn,
+                length: Number(activeQuote.length) || 0,
+                width: Number(activeQuote.width) || 0,
+                height: Number(activeQuote.height) || 0,
+                weight: Number(activeQuote.weight) || 0,
+                seaFreightRate: Number(activeQuote.seaFreightRate) || 0,
+                airFreightRate: Number(activeQuote.airFreightRate) || 0,
+                localFreight: Number(activeQuote.localFreight) || 0,
+                margin: Number(activeQuote.margin) || 0,
+                sponsorPercent: Number(activeQuote.sponsorPercent) * 100 || 0,
+                roundUpTo: roundUpToVal,
+              });
 
-            const calc = this.calculateCogsAndSellingPrice({
-              importType: activeQuote.importType as "BORONGAN" | "RESMI",
-              beaMasukPercent: Number(activeQuote.beaMasukPercent) || 0,
-              ppnPercent: Number(activeQuote.ppnPercent) || 0,
-              pphPercent: Number(activeQuote.pphPercent) || 0,
-              formECost: Number(activeQuote.formECost) || 0,
-              insurancePercent: Number(activeQuote.insurancePercent) || 0,
-              handlingCost: Number(activeQuote.handlingCost) || 0,
-              otherCost: Number(activeQuote.otherCost) || 0,
-              foreignPrice: Number(activeQuote.foreignPrice) || 0,
-              gzDeliveryCost: Number(activeQuote.gzDeliveryCost) || 0,
-              exchangeRate: rate,
-              qtyPcs: stepPcs,
-              qtyPerCtn,
-              length: Number(activeQuote.length) || 0,
-              width: Number(activeQuote.width) || 0,
-              height: Number(activeQuote.height) || 0,
-              weight: Number(activeQuote.weight) || 0,
-              seaFreightRate: Number(activeQuote.seaFreightRate) || 0,
-              airFreightRate: Number(activeQuote.airFreightRate) || 0,
-              localFreight: Number(activeQuote.localFreight) || 0,
-              margin: Number(activeQuote.margin) || 0,
-              sponsorPercent: Number(activeQuote.sponsorPercent) * 100 || 0,
-              roundUpTo: roundUpToVal,
+              const finalPrice = p.activePriceFreightMode === "SEA" ? calc.sellPriceSea : calc.sellPriceAir;
+              return {
+                minQuantity: t.minQuantity,
+                maxQuantity: t.maxQuantity,
+                price: finalPrice + idrOffset,
+              };
             });
+          } else {
+            // Generate 5 MOQ steps as tiers (Fallback)
+            const baseMoqCtn = Math.max(1, moqCtn || 1);
+            calculatedTiers = [0, 1, 2, 3, 4].map((step) => {
+              const stepCtn = baseMoqCtn + step;
+              const stepPcs = stepCtn * qtyPerCtn;
+              const nextStepPcs = (baseMoqCtn + step + 1) * qtyPerCtn;
+              const minQuantity = stepPcs;
+              const maxQuantity = step < 4 ? nextStepPcs - 1 : null;
 
-            const finalPrice =
-              p.activePriceFreightMode === "SEA"
-                ? calc.sellPriceSea
-                : calc.sellPriceAir;
-            return {
-              minQuantity,
-              maxQuantity,
-              price: finalPrice + idrOffset,
-            };
-          });
+              const calc = this.calculateCogsAndSellingPrice({
+                importType: activeQuote.importType as "BORONGAN" | "RESMI",
+                beaMasukPercent: Number(activeQuote.beaMasukPercent) || 0,
+                ppnPercent: Number(activeQuote.ppnPercent) || 0,
+                pphPercent: Number(activeQuote.pphPercent) || 0,
+                formECost: Number(activeQuote.formECost) || 0,
+                insurancePercent: Number(activeQuote.insurancePercent) || 0,
+                handlingCost: Number(activeQuote.handlingCost) || 0,
+                otherCost: Number(activeQuote.otherCost) || 0,
+                foreignPrice: Number(activeQuote.foreignPrice) || 0,
+                gzDeliveryCost: Number(activeQuote.gzDeliveryCost) || 0,
+                exchangeRate: rate,
+                qtyPcs: stepPcs,
+                qtyPerCtn,
+                length: Number(activeQuote.length) || 0,
+                width: Number(activeQuote.width) || 0,
+                height: Number(activeQuote.height) || 0,
+                weight: Number(activeQuote.weight) || 0,
+                seaFreightRate: Number(activeQuote.seaFreightRate) || 0,
+                airFreightRate: Number(activeQuote.airFreightRate) || 0,
+                localFreight: Number(activeQuote.localFreight) || 0,
+                margin: Number(activeQuote.margin) || 0,
+                sponsorPercent: Number(activeQuote.sponsorPercent) * 100 || 0,
+                roundUpTo: roundUpToVal,
+              });
+
+              const finalPrice = p.activePriceFreightMode === "SEA" ? calc.sellPriceSea : calc.sellPriceAir;
+              return {
+                minQuantity,
+                maxQuantity,
+                price: finalPrice + idrOffset,
+              };
+            });
+          }
 
           if (calculatedTiers.length > 0) {
             basePriceCalculated = calculatedTiers[0].price;
@@ -1140,9 +1166,8 @@ export class ProductService {
       summary: {
         totalProducts: products.length,
         targetCurrency: data.targetCurrency,
-        exchangeRateDiff: data.exchangeRateDiff,
-        offsetValue: offsetVal,
-        offsetCurrency: offsetCurr,
+        newExchangeRate: data.newExchangeRate,
+        rupiahOffset: idrOffset,
       },
       previewItems,
     };
@@ -1154,22 +1179,13 @@ export class ProductService {
 
     await this.prisma.$transaction(async (tx) => {
       for (const item of preview.previewItems) {
-        const currentProduct = await tx.product.findUnique({
-          where: { id: item.productId },
-        });
-        const newExchangeRateVal =
-          currentProduct?.currencyCode === data.targetCurrency
-            ? (Number(currentProduct.exchangeRate) || 0) + data.exchangeRateDiff
-            : undefined;
-
         await tx.product.update({
           where: { id: item.productId },
           data: {
             basePrice: item.newPrice.toString(),
-            exchangeRate:
-              newExchangeRateVal !== undefined
-                ? newExchangeRateVal.toString()
-                : undefined,
+            exchangeRate: (await tx.product.findUnique({ where: { id: item.productId } }))?.currencyCode === data.targetCurrency 
+              ? data.newExchangeRate.toString() 
+              : undefined,
           },
         });
 

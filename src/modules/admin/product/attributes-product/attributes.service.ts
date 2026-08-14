@@ -218,6 +218,9 @@ export class AttributeService {
         name: source.name,
         slug: generatedSlug,
         productId: targetProductId,
+        type: source.type,
+        position: source.position,
+        parentValueId: source.parentValueId,
         values: {
           createMany: {
             data: source.values.map((v) => ({
