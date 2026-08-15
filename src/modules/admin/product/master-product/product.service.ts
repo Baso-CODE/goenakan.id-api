@@ -960,7 +960,10 @@ export class ProductService {
 
     const previewItems = products.map((p) => {
       const activeQuote = p.activeVendorPriceRecord;
-      const rate = p.currencyCode === data.targetCurrency ? data.newExchangeRate : (Number(p.exchangeRate) || 1);
+      const rate =
+        p.currencyCode === data.targetCurrency
+          ? data.newExchangeRate
+          : Number(p.exchangeRate) || 1;
       let basePriceCalculated = Number(p.basePrice) || 0;
       let calculatedTiers: {
         minQuantity: number;
@@ -1003,7 +1006,10 @@ export class ProductService {
                 roundUpTo: roundUpToVal,
               });
 
-              const finalPrice = p.activePriceFreightMode === "SEA" ? calc.sellPriceSea : calc.sellPriceAir;
+              const finalPrice =
+                p.activePriceFreightMode === "SEA"
+                  ? calc.sellPriceSea
+                  : calc.sellPriceAir;
               return {
                 minQuantity: t.minQuantity,
                 maxQuantity: t.maxQuantity,
@@ -1046,7 +1052,10 @@ export class ProductService {
                 roundUpTo: roundUpToVal,
               });
 
-              const finalPrice = p.activePriceFreightMode === "SEA" ? calc.sellPriceSea : calc.sellPriceAir;
+              const finalPrice =
+                p.activePriceFreightMode === "SEA"
+                  ? calc.sellPriceSea
+                  : calc.sellPriceAir;
               return {
                 minQuantity,
                 maxQuantity,
@@ -1183,9 +1192,11 @@ export class ProductService {
           where: { id: item.productId },
           data: {
             basePrice: item.newPrice.toString(),
-            exchangeRate: (await tx.product.findUnique({ where: { id: item.productId } }))?.currencyCode === data.targetCurrency 
-              ? data.newExchangeRate.toString() 
-              : undefined,
+            exchangeRate:
+              (await tx.product.findUnique({ where: { id: item.productId } }))
+                ?.currencyCode === data.targetCurrency
+                ? data.newExchangeRate.toString()
+                : undefined,
           },
         });
 
@@ -2872,7 +2883,7 @@ export class ProductService {
           itemCategory: true,
           itemName: true,
           images: { take: 1, orderBy: { isFeatured: "desc" } },
-          priceTiers: { orderBy: { minQuantity: "asc" } },
+          // priceTiers dihapus dari sini karena dipakai nanti di halaman detail produk
           orderProducts: { select: { quantity: true } },
         },
       }),
@@ -2899,14 +2910,14 @@ export class ProductService {
       }
     }
 
-    // ✨ Format Data & Terapkan Konversi Harga + Nama Bilingual
+    // ✨ Format Data & Terapkan Konversi Harga Berdasarkan Base Price Murni
     const formattedData = rawData.map((product) => {
       const totalSold = product.orderProducts.reduce(
         (sum, order) => sum + (order.quantity || 1),
         0,
       );
 
-      // ✨ PERBAIKAN: Pemilihan nama produk bilingual yang aman
+      // Pemilihan nama produk bilingual
       let productName = product.name;
       if (lang === "en") {
         productName = product.name_en || product.name || "Unnamed Product";
@@ -2914,23 +2925,14 @@ export class ProductService {
         productName = product.name || product.name_en || "Produk Tanpa Nama";
       }
 
-      // ✨ PERBAIKAN: Nama kategori bilingual jika tersedia
+      // Nama kategori bilingual
       let categoryName = product.category?.name_id || "Uncategorized";
       if (lang === "en" && product.category?.name_en) {
         categoryName = product.category.name_en;
       }
 
-      const baseRegularPrice = Number(product.basePrice);
-      let baseBulkPrice = baseRegularPrice;
-      let minOrder = 1;
-
-      if (product.priceTiers && product.priceTiers.length > 0) {
-        const cheapestTier = [...product.priceTiers].sort(
-          (a, b) => Number(a.price) - Number(b.price),
-        )[0];
-        baseBulkPrice = Number(cheapestTier.price);
-        minOrder = cheapestTier.minQuantity;
-      }
+      // Menggunakan basePrice murni untuk regularPrice dan bulkPrice di halaman list
+      const basePriceValue = Number(product.basePrice);
 
       const imageUrl =
         product.images.length > 0
@@ -2939,21 +2941,20 @@ export class ProductService {
 
       return {
         id: product.id,
-        name: productName, // ✨ Menggunakan nama produk bilingual
+        name: productName,
         image: imageUrl,
 
-        regularPrice: parseFloat(
-          (baseRegularPrice * conversionRate).toFixed(2),
-        ),
-        bulkPrice: parseFloat((baseBulkPrice * conversionRate).toFixed(2)),
+        // Kedua harga disamakan menggunakan basePrice murni yang sudah dikonversi
+        regularPrice: parseFloat((basePriceValue * conversionRate).toFixed(2)),
+        bulkPrice: parseFloat((basePriceValue * conversionRate).toFixed(2)),
 
         currencyCode: finalCurrency,
 
-        minOrder: minOrder,
+        minOrder: 1, // Minimum order diset 1 karena tidak pakai tier di halaman list
         sold: totalSold,
         isCustom: product.isCustom,
         categoryId: product.categoryId,
-        categoryName: categoryName, // ✨ Menggunakan kategori bilingual
+        categoryName: categoryName,
         itemCategoryName: product.itemCategory?.name || null,
         itemNameString: product.itemName?.name || null,
         slug: product.slug,

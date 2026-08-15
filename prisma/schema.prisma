@@ -337,7 +337,7 @@ model ClientB2C {
   district    String?
   subDistrict String?
   postalCode  String?
-  fullAddress String
+  fullAddress String  @db.Text
   client      Client  @relation(fields: [id], references: [id])
 
   @@map("clients_b2c")
@@ -357,7 +357,7 @@ model ClientB2B {
   district     String?
   subDistrict  String?
   postalCode   String?
-  fullAddress  String
+  fullAddress  String         @db.Text
   pics         ClientB2BPIC[]
   client       Client         @relation(fields: [id], references: [id])
   brandClients BrandClient[]
@@ -1105,7 +1105,7 @@ model Order {
   referenceSample      Order?                @relation("SampleToSalesOrder", fields: [referenceSampleId], references: [id])
   resultingOrders      Order[]               @relation("SampleToSalesOrder")
   clientId             String
-  shippingAddress      String
+  shippingAddress      String                @db.Text
   totalAmount          Decimal
   status               OrderStatus           @default(PENDING)
   webOrderId           String?               @unique

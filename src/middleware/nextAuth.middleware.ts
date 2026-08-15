@@ -48,9 +48,6 @@ export class NextAuthMiddleware {
 
       const authReq = req as AuthenticatedRequest;
 
-      // ✨ PERUBAHAN DI SINI:
-      // Kita menambahkan roleId untuk menyesuaikan dengan interface AuthenticatedUser terbaru.
-      // Kita tambahkan || "" sebagai pengaman jika seandainya payload.roleId belum terbaca dengan sempurna.
       authReq.user = {
         id: payload.id || payload.sub,
         email: payload.email,

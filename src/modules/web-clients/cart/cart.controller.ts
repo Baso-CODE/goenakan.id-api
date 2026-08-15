@@ -29,7 +29,7 @@ export class CartController {
 
   // ✨ 2. HELPER BARU: Ubah Country menjadi Currency di Backend ✨
   private getTargetCurrency(req: Request): string {
-    const countryHeader = req.headers["x-country"]; // Tangkap header x-country
+    const countryHeader = req.headers["x-country"];
 
     let targetCurrency = "IDR";
 
@@ -157,6 +157,41 @@ export class CartController {
         success: true,
         data: cart,
         message: "Keranjang guest berhasil disinkronisasi",
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === 7. MENGHITUNG GUEST CART MENGGUNAKAN BACKEND ===
+  calculateGuestCart = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      // Backend menerjemahkan Country -> Currency (Logika countryToCurrency)
+      const targetCurrency = this.getTargetCurrency(req);
+      const { items } = req.body; // Data dari localStorage
+
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return res
+          .status(200)
+          .json({
+            success: true,
+            data: { currencyCode: targetCurrency, items: [] },
+          });
+      }
+
+      // Hitung harganya menjadi dolar dsb.
+      const calculatedCart = await this.cartService.calculateGuestCartOffline(
+        items,
+        targetCurrency,
+      );
+
+      res.status(200).json({
+        success: true,
+        data: calculatedCart,
       });
     } catch (error) {
       next(error);

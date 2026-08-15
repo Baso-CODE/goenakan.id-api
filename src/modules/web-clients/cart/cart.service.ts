@@ -286,4 +286,105 @@ export class CartService {
 
     return this.getCart(profileId, targetCurrency, lang);
   }
+
+  // === 7. HITUNG KERANJANG GUEST SECARA OFFLINE (Backend Source of Truth) ===
+  async calculateGuestCartOffline(
+    items: any[],
+    targetCurrency: string = "IDR",
+    lang: string = "id",
+  ) {
+    let conversionRate = 1;
+
+    // 1. Ambil Rate Mata Uang
+    if (targetCurrency !== "IDR") {
+      try {
+        const conversionResult = await this.currencyConversion.convertCurrency({
+          fromCurrency: "IDR",
+          toCurrency: targetCurrency,
+          amount: 1,
+        });
+        conversionRate = conversionResult.rate;
+      } catch (error) {
+        console.error(
+          "Gagal mengambil nilai tukar untuk guest, fallback ke IDR",
+          error,
+        );
+      }
+    }
+
+    // 2. Hitung Ulang Data Murni dari Database
+    const processedItems = await Promise.all(
+      items.map(async (item) => {
+        // Ambil produk dari DB agar harga (basePrice) 100% akurat dari backend
+        const dbProduct = await this.prisma.product.findUnique({
+          where: { id: item.productId },
+          include: { images: { take: 1 }, materialType: true },
+        });
+
+        if (!dbProduct) return null;
+
+        // ✨ PERBAIKAN UTAMA DI SINI: Gunakan dbProduct.name (bukan name_id)
+        let productName = dbProduct.name;
+        if (lang === "en") {
+          productName = dbProduct.name_en || dbProduct.name;
+        }
+
+        // Tentukan Harga Awal (IDR)
+        let calculatedPriceIdr = dbProduct.basePrice.toNumber();
+        if (item.variantId) {
+          const dbVariant = await this.prisma.productVariant.findUnique({
+            where: { id: item.variantId },
+          });
+          if (dbVariant?.price) calculatedPriceIdr = dbVariant.price.toNumber();
+        }
+
+        // Kalkulasi Tambahan Kustomisasi Sablon
+        let customData: any = item.customization || {};
+        try {
+          if (typeof customData === "string")
+            customData = JSON.parse(customData);
+        } catch (e) {}
+
+        const COST_PER_LOGO_IDR = 15000;
+        if (customData.zones) {
+          Object.values(customData.zones).forEach((zone: any) => {
+            calculatedPriceIdr += COST_PER_LOGO_IDR * (zone.logoCount || 1);
+          });
+        }
+
+        // Konversi ke Target Mata Уang (Misal: Dolar)
+        const finalConvertedPrice = parseFloat(
+          (calculatedPriceIdr * conversionRate).toFixed(2),
+        );
+
+        // Format data yang dikirim balik ke frontend
+        const dimParts = [
+          dbProduct.length,
+          dbProduct.width,
+          dbProduct.height,
+        ].filter((v) => v != null);
+        return {
+          id: item.id,
+          productId: item.productId,
+          variantId: item.variantId,
+          name: productName,
+          price: finalConvertedPrice,
+          quantity: item.quantity,
+          image:
+            dbProduct.images?.[0]?.url || "/images/products/demo-products.png",
+          materialType: dbProduct.materialType?.name,
+          dimensions:
+            dimParts.length > 0 ? `${dimParts.join(" x ")} cm` : undefined,
+          weight: dbProduct.weight ? `${dbProduct.weight} gram` : undefined,
+          customization: customData,
+        };
+      }),
+    );
+
+    // Kembalikan ke Frontend (Mata Uang & Item yang Dikonversi)
+    return {
+      currencyCode: targetCurrency,
+      items: processedItems.filter((i) => i !== null),
+    };
+  }
 }

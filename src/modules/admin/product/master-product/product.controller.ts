@@ -85,7 +85,7 @@ export class ProductController {
         sort,
         attributes,
         country,
-        lang, // ✨ 1. Tangkap parameter lang dari query frontend
+        lang,
       } = req.query;
 
       // ✨ 2. TAMBAHKAN CONSOLE.LOG UNTUK MENGECEK DATA MASUK

@@ -17,8 +17,14 @@ export class CartRouter {
   private initializeRoutes = (): void => {
     const auth = this.nextAuthMiddleware.verifyNextAuthToken;
 
+    this.router.post(
+      "/guest-calculate",
+      this.cartController.calculateGuestCart,
+    );
+
     this.router.use(auth);
 
+    // === RUTE PRIVATE (HANYA UNTUK USER LOGIN) ===
     this.router.get("/", this.cartController.getCart);
     this.router.post("/", this.cartController.addToCart);
 
