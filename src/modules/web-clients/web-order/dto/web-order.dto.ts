@@ -1,5 +1,15 @@
 import { WebOrderStatus } from "@prisma/client";
-import { IsNotEmpty, IsString, MinLength } from "class-validator";
+import { Type } from "class-transformer";
+import {
+  IsArray,
+  IsEmail,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  MinLength,
+  ValidateNested,
+} from "class-validator";
 
 export class CancelOrderDTO {
   @IsString()
@@ -8,21 +18,11 @@ export class CancelOrderDTO {
   reason!: string;
 }
 
-// src/modules/web-order/dto/web-order.dto.ts
 export interface OrderQueryDTO {
   status?: WebOrderStatus;
   limit?: number;
   page?: number;
 }
-
-import { Type } from "class-transformer";
-import {
-  IsArray,
-  IsEmail,
-  IsNumber,
-  IsOptional,
-  ValidateNested,
-} from "class-validator";
 
 class AddressDTO {
   @IsString()
@@ -79,7 +79,8 @@ class OrderItemDTO {
   quantity!: number;
 
   @IsNumber()
-  price!: number;
+  @IsOptional()
+  price?: number; // Opsional karena harga divalidasi dan diambil langsung dari database demi keamanan
 
   @IsOptional()
   customization?: any;
@@ -100,11 +101,6 @@ export class CreateWebOrderDTO {
   note?: string; // Catatan dari customer
 
   @IsNumber()
-  subtotal!: number;
-
-  @IsNumber()
-  shippingCost!: number;
-
-  @IsNumber()
-  totalAmount!: number;
+  @IsOptional()
+  shippingCost?: number; // Biaya pengiriman dari client
 }

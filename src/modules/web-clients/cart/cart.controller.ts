@@ -1,3 +1,4 @@
+import countryToCurrency from "country-to-currency";
 import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -10,13 +11,11 @@ export class CartController {
     private readonly prisma: PrismaService,
   ) {}
 
-  // === HELPER: Dapatkan Profile ID berdasarkan User Login ===
   private async getProfileId(userId: string): Promise<string> {
     let profile = await this.prisma.customerProfile.findUnique({
       where: { userId },
     });
 
-    // Fallback: Jika user login tapi belum punya profile (misal via Google Auth)
     if (!profile) {
       profile = await this.prisma.customerProfile.create({
         data: {
@@ -25,17 +24,40 @@ export class CartController {
         },
       });
     }
-
     return profile.id;
+  }
+
+  // ✨ 2. HELPER BARU: Ubah Country menjadi Currency di Backend ✨
+  private getTargetCurrency(req: Request): string {
+    const countryHeader = req.headers["x-country"]; // Tangkap header x-country
+
+    let targetCurrency = "IDR";
+
+    if (typeof countryHeader === "string" && countryHeader.trim() !== "") {
+      const countryCode = countryHeader.toUpperCase();
+
+      if (countryCode === "ID") {
+        targetCurrency = "IDR";
+      } else {
+        const autoCurrency =
+          countryToCurrency[countryCode as keyof typeof countryToCurrency];
+        targetCurrency = autoCurrency || "USD";
+      }
+    }
+
+    return targetCurrency;
   }
 
   // === 1. GET CART ===
   getCart = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const userId = (req as any).user.id; // Didapat dari Middleware Auth
+      const userId = (req as any).user.id;
       const profileId = await this.getProfileId(userId);
 
-      const cart = await this.cartService.getCart(profileId);
+      // Backend yang menerjemahkan Country -> Currency
+      const targetCurrency = this.getTargetCurrency(req);
+
+      const cart = await this.cartService.getCart(profileId, targetCurrency);
 
       res.status(200).json({ success: true, data: cart });
     } catch (error) {
@@ -61,7 +83,7 @@ export class CartController {
     }
   };
 
-  // === 3. UPDATE CART ITEM (Quantity / Notes) ===
+  // === 3. UPDATE CART ITEM ===
   updateCartItem = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = (req as any).user.id;
@@ -101,7 +123,7 @@ export class CartController {
     }
   };
 
-  // === 5. CLEAR CART (Setelah Checkout) ===
+  // === 5. CLEAR CART ===
   clearCart = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = (req as any).user.id;
@@ -117,13 +139,19 @@ export class CartController {
     }
   };
 
-  // === 6. SYNC GUEST CART (Saat user login) ===
+  // === 6. SYNC GUEST CART ===
   syncGuestCart = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = (req as any).user.id;
       const profileId = await this.getProfileId(userId);
 
-      const cart = await this.cartService.syncGuestCart(profileId, req.body);
+      const targetCurrency = this.getTargetCurrency(req);
+
+      const cart = await this.cartService.syncGuestCart(
+        profileId,
+        req.body,
+        targetCurrency,
+      );
 
       res.status(200).json({
         success: true,

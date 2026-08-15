@@ -35,56 +35,6 @@ export class WebOrderService {
 
     return `GI-${formCode}${periodYYMM}${sequence}`;
   }
-  // === CREATE NEW ORDER ===
-  async createOrder(data: CreateWebOrderDTO, profileId: string | null) {
-    const { form, items, note, subtotal, shippingCost, totalAmount } = data;
-
-    // Generate Order Number
-    const orderNumber = await this.prisma.$transaction(async (tx) => {
-      return await this.generateOrderNumber(tx, "SALES");
-    });
-    return await this.prisma.webOrder.create({
-      data: {
-        orderNumber: orderNumber,
-        profileId: profileId,
-        guestName: form.fullName,
-        guestEmail: form.email,
-        guestPhone: form.phone,
-        customerNote: note || null,
-
-        shippingAddress: {
-          recipient: form.fullName,
-          phone: form.phone,
-          country: form.country,
-          province: form.province,
-          city: form.city,
-          district: form.district,
-          postalCode: form.postalCode,
-          fullAddress: form.address,
-        },
-
-        subtotal: subtotal,
-        shippingCost: shippingCost,
-        totalAmount: totalAmount,
-        status: "PENDING_PAYMENT",
-
-        items: {
-          create: items.map((item) => ({
-            productId: item.productId,
-            variantId: item.variantId || null,
-            productName: item.name,
-            quantity: item.quantity,
-            price: item.price,
-            total: item.price * item.quantity,
-            customization: item.customization || null,
-          })),
-        },
-      },
-      include: {
-        items: true,
-      },
-    });
-  }
 
   async getMyOrders(profileId: string, query: any) {
     const { status } = query;
@@ -185,6 +135,143 @@ export class WebOrderService {
       data: {
         status: "CANCELLED",
         canceledReason: reason,
+      },
+    });
+  }
+  // === CREATE NEW ORDER (VERSI FINAL & AMAN) ===
+  async createOrder(data: CreateWebOrderDTO, profileId: string | null) {
+    const { form, items, note, shippingCost } = data;
+
+    let calculatedSubtotal = 0;
+    const validatedItems = await Promise.all(
+      items.map(async (item) => {
+        let actualPrice = 0;
+        let productName = item.name;
+
+        // 1. Cek apakah item memiliki variantId (Varian Produk)
+        if (item.variantId) {
+          const dbVariant = await this.prisma.productVariant.findUnique({
+            where: { id: item.variantId },
+            include: { product: true },
+          });
+
+          if (!dbVariant) {
+            throw new ApiError(
+              `Varian produk dengan ID ${item.variantId} tidak ditemukan`,
+              404,
+            );
+          }
+
+          actualPrice = Number(dbVariant.price ?? dbVariant.product.basePrice);
+          productName = `${dbVariant.product.name} - ${dbVariant.variantName || "Varian"}`;
+        } else {
+          const dbProduct = await this.prisma.product.findUnique({
+            where: { id: item.productId },
+          });
+
+          if (!dbProduct) {
+            throw new ApiError(
+              `Produk dengan ID ${item.productId} tidak ditemukan`,
+              404,
+            );
+          }
+
+          actualPrice = Number(dbProduct.basePrice);
+          productName = dbProduct.name;
+        }
+
+        // 2. Hitung tambahan harga dari Customization (Logo/Sablon)
+        let customizationPriceAddition = 0;
+        let parsedCustomization: any = null;
+
+        if (item.customization) {
+          try {
+            parsedCustomization =
+              typeof item.customization === "string"
+                ? JSON.parse(item.customization)
+                : item.customization;
+
+            if (parsedCustomization && parsedCustomization.zones) {
+              Object.values(parsedCustomization.zones).forEach((zone: any) => {
+                const count = zone.logoCount || 1;
+                customizationPriceAddition += count * 10000;
+              });
+            }
+          } catch (e) {
+            console.error(
+              "Gagal parse customization untuk perhitungan harga",
+              e,
+            );
+          }
+        }
+
+        const finalItemPrice = actualPrice + customizationPriceAddition;
+        const actualTotalItem = finalItemPrice * item.quantity;
+
+        calculatedSubtotal += actualTotalItem;
+
+        // 3. Kembalikan objek item yang sesuai dengan tipe Json Prisma
+        return {
+          productName: productName,
+          quantity: item.quantity,
+          price: finalItemPrice,
+          total: actualTotalItem,
+          // ✨ PASTIKAN BERBENTUK OBJECT / NULL AGAR SESUAI DENGAN TIPE JSON PRISMA ✨
+          customization: parsedCustomization,
+
+          product: {
+            connect: { id: item.productId },
+          },
+          ...(item.variantId && {
+            variant: {
+              connect: { id: item.variantId },
+            },
+          }),
+        };
+      }),
+    );
+
+    // 4. Hitung Total Keseluruhan (Subtotal + Ongkir) di Backend secara aman
+    const actualShippingCost = shippingCost || 0;
+    const calculatedTotalAmount = calculatedSubtotal + actualShippingCost;
+
+    // 5. Generate Order Number menggunakan Transaction
+    const orderNumber = await this.prisma.$transaction(async (tx) => {
+      return await this.generateOrderNumber(tx, "SALES");
+    });
+
+    // 6. Simpan ke Database
+    return await this.prisma.webOrder.create({
+      data: {
+        orderNumber: orderNumber,
+        profileId: profileId,
+        guestName: form.fullName,
+        guestEmail: form.email,
+        guestPhone: form.phone,
+        customerNote: note || null,
+
+        shippingAddress: {
+          recipient: form.fullName,
+          phone: form.phone,
+          country: form.country,
+          province: form.province,
+          city: form.city,
+          district: form.district,
+          postalCode: form.postalCode,
+          fullAddress: form.address,
+        },
+
+        subtotal: calculatedSubtotal,
+        shippingCost: actualShippingCost,
+        totalAmount: calculatedTotalAmount,
+        status: "PENDING_PAYMENT",
+
+        items: {
+          create: validatedItems,
+        },
+      },
+      include: {
+        items: true,
       },
     });
   }

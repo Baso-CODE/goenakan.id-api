@@ -1,10 +1,14 @@
 import { injectable } from "tsyringe";
+import { CurrencyConversionService } from "../../admin/currency/convertionCurrency.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AddToCartDTO, SyncCartDTO, UpdateCartItemDTO } from "./dto/cart.dto";
 
 @injectable()
 export class CartService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly currencyConversion: CurrencyConversionService,
+  ) {}
 
   // === HELPER: GET ATAU BUAT KERANJANG ===
   private async getOrCreateCart(profileId: string) {
@@ -21,11 +25,15 @@ export class CartService {
     return cart;
   }
 
-  // === 1. GET CART ===
-  async getCart(profileId: string) {
+  // === 1. GET CART (DENGAN KALKULASI HARGA DINAMIS, KURS, & BAHASA BILINGUAL) ===
+  async getCart(
+    profileId: string,
+    targetCurrency: string = "IDR",
+    lang: string = "id",
+  ) {
     const cart = await this.getOrCreateCart(profileId);
 
-    return this.prisma.cart.findUnique({
+    const rawCart = await this.prisma.cart.findUnique({
       where: { id: cart.id },
       include: {
         items: {
@@ -35,11 +43,10 @@ export class CartService {
               select: {
                 id: true,
                 name: true,
+                name_en: true, // ✨ Ambil nama bahasa Inggris untuk bilingual
                 slug: true,
                 basePrice: true,
                 images: { take: 1, orderBy: { isFeatured: "desc" } },
-                priceTiers: { orderBy: { minQuantity: "asc" } },
-
                 materialType: true,
                 weight: true,
                 width: true,
@@ -53,25 +60,131 @@ export class CartService {
                 variantName: true,
                 sku: true,
                 price: true,
-                images: { take: 1, orderBy: { isFeatured: "desc" } },
-
-                weight: true,
-                width: true,
-                height: true,
-                length: true,
               },
             },
           },
         },
       },
     });
+
+    if (!rawCart) return null;
+
+    // ✨ 1. AMBIL NILAI KURS JIKA BUKAN IDR ✨
+    let conversionRate = 1;
+    if (targetCurrency && targetCurrency !== "IDR") {
+      try {
+        const conversionResult = await this.currencyConversion.convertCurrency({
+          fromCurrency: "IDR",
+          toCurrency: targetCurrency,
+          amount: 1,
+        });
+        conversionRate = conversionResult.rate;
+      } catch (error) {
+        console.error(
+          "Gagal mengambil nilai tukar untuk keranjang, fallback ke IDR",
+          error,
+        );
+      }
+    }
+
+    // ✨ 2. KALKULASI HARGA DINAMIS & FORMAT BILINGUAL UNTUK SETIAP ITEM ✨
+    const processedItems = await Promise.all(
+      rawCart.items.map(async (item) => {
+        // A. Pemilihan Nama Produk Berdasarkan Bahasa (Bilingual Support)
+        let productName = item.product.name;
+        if (lang === "en") {
+          productName =
+            item.product.name_en || item.product.name || "Unnamed Product";
+        } else {
+          productName =
+            item.product.name || item.product.name_en || "Produk Tanpa Nama";
+        }
+
+        // B. Ambil Harga Dasar (MURNI IDR)
+        let calculatedPriceIdr = item.variant?.price
+          ? item.variant.price.toNumber()
+          : item.product.basePrice.toNumber();
+
+        let customData: any = {};
+        let resolvedAttributes: any[] = [];
+
+        try {
+          if (item.customization) {
+            customData =
+              typeof item.customization === "string"
+                ? JSON.parse(item.customization)
+                : item.customization;
+          }
+        } catch (e) {
+          console.error("Gagal mem-parsing customization keranjang", e);
+        }
+
+        // C. Tambahkan Biaya Atribut (Bahan Premium, Ukuran XXL, dsb)
+        if (
+          customData.selectedAttributeValueIds &&
+          Array.isArray(customData.selectedAttributeValueIds)
+        ) {
+          const attributes = await this.prisma.productAttributeValue.findMany({
+            where: {
+              productId: item.productId,
+              attributeValueId: { in: customData.selectedAttributeValueIds },
+            },
+            include: { attributeValue: true },
+          });
+
+          attributes.forEach((attr) => {
+            const modifierIdr = attr.priceModifier
+              ? Number(attr.priceModifier)
+              : 0;
+            calculatedPriceIdr += modifierIdr; // Tambahkan ke total IDR
+
+            resolvedAttributes.push({
+              name: attr.attributeValue.value,
+              modifier: parseFloat((modifierIdr * conversionRate).toFixed(2)),
+            });
+          });
+        }
+
+        // D. Tambahkan Biaya Sablon / Custom Logo (Opsional)
+        const COST_PER_LOGO_IDR = 15000;
+        if (customData.zones) {
+          const zones = Object.values(customData.zones);
+          zones.forEach((zone: any) => {
+            const count = zone.logoCount || 1;
+            calculatedPriceIdr += COST_PER_LOGO_IDR * count;
+          });
+        }
+
+        customData.resolvedAttributes = resolvedAttributes;
+
+        // E. KONVERSI HARGA TOTAL ITEM KE MATA UANG TARGET
+        const finalConvertedPrice = parseFloat(
+          (calculatedPriceIdr * conversionRate).toFixed(2),
+        );
+
+        return {
+          ...item,
+          product: {
+            ...item.product,
+            name: productName, // Mengganti nama produk sesuai bahasa
+          },
+          price: finalConvertedPrice,
+          customization: customData,
+        };
+      }),
+    );
+
+    return {
+      ...rawCart,
+      currencyCode: targetCurrency,
+      items: processedItems,
+    };
   }
 
   // === 2. ADD TO CART ===
   async addToCart(profileId: string, data: AddToCartDTO) {
     const cart = await this.getOrCreateCart(profileId);
 
-    // Cek apakah item (produk + varian yang sama) sudah ada di keranjang
     const existingItem = await this.prisma.cartItem.findFirst({
       where: {
         cartId: cart.id,
@@ -81,7 +194,6 @@ export class CartService {
     });
 
     if (existingItem) {
-      // Jika sudah ada, tambahkan quantity-nya
       return this.prisma.cartItem.update({
         where: { id: existingItem.id },
         data: {
@@ -91,7 +203,6 @@ export class CartService {
         },
       });
     } else {
-      // Jika belum ada, buat item baru
       return this.prisma.cartItem.create({
         data: {
           cartId: cart.id,
@@ -105,7 +216,7 @@ export class CartService {
     }
   }
 
-  // === 3. UPDATE CART ITEM (Ubah Quantity / Catatan) ===
+  // === 3. UPDATE CART ITEM ===
   async updateCartItem(
     profileId: string,
     cartItemId: string,
@@ -113,7 +224,6 @@ export class CartService {
   ) {
     const cart = await this.getOrCreateCart(profileId);
 
-    // Pastikan item tersebut benar-benar milik user ini (keamanan)
     const existingItem = await this.prisma.cartItem.findFirst({
       where: { id: cartItemId, cartId: cart.id },
     });
@@ -153,7 +263,7 @@ export class CartService {
     });
   }
 
-  // === 5. CLEAR CART (Digunakan setelah berhasil Checkout) ===
+  // === 5. CLEAR CART ===
   async clearCart(profileId: string) {
     const cart = await this.getOrCreateCart(profileId);
 
@@ -162,14 +272,18 @@ export class CartService {
     });
   }
 
-  // === 6. SYNC GUEST CART (Digunakan saat user login) ===
-  async syncGuestCart(profileId: string, data: SyncCartDTO) {
+  // === 6. SYNC GUEST CART ===
+  async syncGuestCart(
+    profileId: string,
+    data: SyncCartDTO,
+    targetCurrency: string = "IDR",
+    lang: string = "id",
+  ) {
     const syncPromises = data.items.map((item) =>
       this.addToCart(profileId, item),
     );
     await Promise.all(syncPromises);
 
-    // Kembalikan isi keranjang terbaru setelah digabung
-    return this.getCart(profileId);
+    return this.getCart(profileId, targetCurrency, lang);
   }
 }
