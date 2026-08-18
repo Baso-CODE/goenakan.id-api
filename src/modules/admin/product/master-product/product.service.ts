@@ -145,6 +145,7 @@ export class ProductService {
       videosMetadata = [],
       tagIds = [],
       variantImagesMetadata = [],
+      createdAttributeIds = [],
     } = data;
 
     let uploadedImages: {
@@ -227,6 +228,7 @@ export class ProductService {
                 : null,
             isCustom: data.isCustom,
             isMadeByOrder: data.isMadeByOrder || false,
+            isActive: data.isActive !== undefined ? (typeof data.isActive === "string" ? data.isActive === "true" : Boolean(data.isActive)) : true,
             materialTypeId: data.materialTypeId,
             stock: !data.isCustom ? data.stock || 0 : 0,
             weight: data.weight,
@@ -320,6 +322,14 @@ export class ProductService {
           await tx.productAttributeValue.createMany({
             data: productAttributeValueData,
             skipDuplicates: true,
+          });
+        }
+
+        // 2.5 UPDATE PRODUCT ID FOR NEWLY CREATED ATTRIBUTES
+        if (createdAttributeIds && createdAttributeIds.length > 0) {
+          await tx.attribute.updateMany({
+            where: { id: { in: createdAttributeIds } },
+            data: { productId: product.id },
           });
         }
 
@@ -558,6 +568,10 @@ export class ProductService {
 
     if (data.isMadeByOrder !== undefined) {
       updateData.isMadeByOrder = data.isMadeByOrder;
+    }
+
+    if (data.isActive !== undefined) {
+      updateData.isActive = typeof data.isActive === "string" ? data.isActive === "true" : Boolean(data.isActive);
     }
 
     if (data.stock !== undefined) {
@@ -1160,14 +1174,28 @@ export class ProductService {
         currentPrice: Number(p.basePrice) || 0,
         newPrice: finalPriceRounded,
         difference: finalPriceRounded - (Number(p.basePrice) || 0),
-        priceTiers: calculatedTiers.map((t) => ({
-          minQuantity: t.minQuantity,
-          maxQuantity: t.maxQuantity,
-          price:
-            roundUp > 1
-              ? Math.ceil(t.price / roundUp) * roundUp
-              : Math.round(t.price),
-        })),
+        priceTiers: calculatedTiers.map((t) => {
+          const originalTier = p.priceTiers?.find((pt) => pt.minQuantity === t.minQuantity);
+          if (originalTier) {
+            const oldBase = Number(p.basePrice) || 0;
+            const oldTierPrice = Number(originalTier.price) || 0;
+            const existingDiscount = Math.max(0, oldBase - oldTierPrice);
+            const newTierPrice = Math.max(0, finalPriceRounded - existingDiscount);
+            return {
+              minQuantity: t.minQuantity,
+              maxQuantity: t.maxQuantity,
+              price: newTierPrice,
+            };
+          }
+          return {
+            minQuantity: t.minQuantity,
+            maxQuantity: t.maxQuantity,
+            price:
+              roundUp > 1
+                ? Math.ceil(t.price / roundUp) * roundUp
+                : Math.round(t.price),
+          };
+        }),
       };
     });
 
@@ -2742,7 +2770,7 @@ export class ProductService {
     targetCurrency?: string;
     lang?: string; // ✨ BARU: Parameter bahasa (id / en)
   }) {
-    const where: any = {};
+    const where: any = { isActive: true };
     const lang = query.lang || "id";
 
     if (query.search) {
@@ -3117,7 +3145,7 @@ export class ProductService {
         },
       });
 
-      if (!product) {
+      if (!product || !product.isActive) {
         throw new Error("Product not found");
       }
 
