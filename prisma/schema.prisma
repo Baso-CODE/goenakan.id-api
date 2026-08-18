@@ -510,6 +510,7 @@ model Product {
   activeVendorPriceRecord   VendorPriceRecord?        @relation("ActiveProductPrice", fields: [activeVendorPriceRecordId], references: [id], onDelete: SetNull)
   vendorPrices              VendorPriceRecord[]
   replacementProducts       ReplacementOrderProduct[]
+  isActive                  Boolean                   @default(true)
 
   @@map("products")
 }

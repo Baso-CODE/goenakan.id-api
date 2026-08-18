@@ -205,6 +205,10 @@ export class CreateProductDTO {
 
   @IsOptional()
   @IsBoolean()
+  isActive?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   isMadeByOrder?: boolean;
 
   @IsOptional()
@@ -292,4 +296,9 @@ export class CreateProductDTO {
   @Type(() => Number)
   @IsNumber()
   mockupAreaHeight?: number;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  createdAttributeIds?: string[];
 }

@@ -51,6 +51,14 @@ export class ProductTagService {
         where,
         skip,
         take,
+        include: {
+          categories: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
         orderBy: {
           createdAt: "desc", // Urutkan dari yang terbaru
         },
