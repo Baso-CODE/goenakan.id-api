@@ -1689,16 +1689,17 @@ model QuotationItemTier {
 // ===============================================
 
 model Currency {
-  code              String              @id
-  symbol            String
-  name              String
-  cashflowSummaries CashflowSummary[]
-  cashflowRevenues  CashflowRevenue[]
-  cashflowCosts     CashflowCost[]
-  orders            Order[]
-  purchaseOrders    PurchaseOrder[]
-  quotations        Quotation[]
-  vendorPrices      VendorPriceRecord[]
+  code                String               @id
+  symbol              String
+  name                String
+  cashflowSummaries   CashflowSummary[]
+  cashflowRevenues    CashflowRevenue[]
+  cashflowCosts       CashflowCost[]
+  orders              Order[]
+  purchaseOrders      PurchaseOrder[]
+  quotations          Quotation[]
+  vendorPrices        VendorPriceRecord[]
+  financeTransactions FinanceTransaction[]
 
   @@map("currencies")
 }
@@ -1919,8 +1920,10 @@ model FinanceTransaction {
   categoryId      String
   category        FinanceCategory @relation(fields: [categoryId], references: [id])
 
-  salesId String?
-  sales   Sales?  @relation(fields: [salesId], references: [id])
+  salesId      String?
+  sales        Sales?   @relation(fields: [salesId], references: [id])
+  currencyCode String   @default("IDR")
+  currency     Currency @relation(fields: [currencyCode], references: [code])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

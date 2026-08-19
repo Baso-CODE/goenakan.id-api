@@ -228,7 +228,12 @@ export class ProductService {
                 : null,
             isCustom: data.isCustom,
             isMadeByOrder: data.isMadeByOrder || false,
-            isActive: data.isActive !== undefined ? (typeof data.isActive === "string" ? data.isActive === "true" : Boolean(data.isActive)) : true,
+            isActive:
+              data.isActive !== undefined
+                ? typeof data.isActive === "string"
+                  ? data.isActive === "true"
+                  : Boolean(data.isActive)
+                : true,
             materialTypeId: data.materialTypeId,
             stock: !data.isCustom ? data.stock || 0 : 0,
             weight: data.weight,
@@ -571,7 +576,10 @@ export class ProductService {
     }
 
     if (data.isActive !== undefined) {
-      updateData.isActive = typeof data.isActive === "string" ? data.isActive === "true" : Boolean(data.isActive);
+      updateData.isActive =
+        typeof data.isActive === "string"
+          ? data.isActive === "true"
+          : Boolean(data.isActive);
     }
 
     if (data.stock !== undefined) {
@@ -1175,12 +1183,17 @@ export class ProductService {
         newPrice: finalPriceRounded,
         difference: finalPriceRounded - (Number(p.basePrice) || 0),
         priceTiers: calculatedTiers.map((t) => {
-          const originalTier = p.priceTiers?.find((pt) => pt.minQuantity === t.minQuantity);
+          const originalTier = p.priceTiers?.find(
+            (pt) => pt.minQuantity === t.minQuantity,
+          );
           if (originalTier) {
             const oldBase = Number(p.basePrice) || 0;
             const oldTierPrice = Number(originalTier.price) || 0;
             const existingDiscount = Math.max(0, oldBase - oldTierPrice);
-            const newTierPrice = Math.max(0, finalPriceRounded - existingDiscount);
+            const newTierPrice = Math.max(
+              0,
+              finalPriceRounded - existingDiscount,
+            );
             return {
               minQuantity: t.minQuantity,
               maxQuantity: t.maxQuantity,
