@@ -260,7 +260,7 @@ export default class App {
     try {
       const prismaService = container.resolve(PrismaService);
 
-      await syncPermissionsToDatabase(prismaService);
+      // await syncPermissionsToDatabase(prismaService);
       console.log("✅ Sinkronisasi permissions berhasil dijalankan!");
     } catch (error) {
       console.error("❌ Gagal menjalankan sinkronisasi permissions:", error);

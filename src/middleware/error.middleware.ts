@@ -9,6 +9,7 @@ export function errorMiddleware(
   _next: NextFunction,
 ) {
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    console.error("❌ Prisma Client Error:", err);
     switch (err.code) {
       case "P2002":
         res.status(409).send({
