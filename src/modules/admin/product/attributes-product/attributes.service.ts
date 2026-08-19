@@ -90,9 +90,14 @@ export class AttributeService {
 
   // === CREATE ATTRIBUTE (WITH VALUES & NESTED HIERARCHY RECURSIVELY) ===
   async createAttribute(data: CreateAttributeDTO) {
-    return await this.prisma.$transaction(async (tx) => {
-      return await this.createAttributeRecursive(data, null, tx);
-    });
+    return await this.prisma.$transaction(
+      async (tx) => {
+        return await this.createAttributeRecursive(data, null, tx);
+      },
+      {
+        timeout: 30000,
+      }
+    );
   }
 
   private async createAttributeRecursive(
@@ -308,10 +313,15 @@ export class AttributeService {
 
   // === UPDATE ATTRIBUTE (RECURSIVE LOGIC) ===
   async updateAttribute(id: string, data: UpdateAttributeDTO) {
-    return await this.prisma.$transaction(async (tx) => {
-      await this.updateAttributeRecursive(id, data, tx);
-      return await this.getAttributeByIdRecursive(id, tx);
-    });
+    return await this.prisma.$transaction(
+      async (tx) => {
+        await this.updateAttributeRecursive(id, data, tx);
+        return await this.getAttributeByIdRecursive(id, tx);
+      },
+      {
+        timeout: 30000,
+      }
+    );
   }
 
   private async updateAttributeRecursive(id: string, data: any, tx: any) {
@@ -433,6 +443,22 @@ export class AttributeService {
         await this.deleteAttributeValueRelationsRecursive(subVal.id, tx);
       }
     }
+
+    // Nullify references in product_images
+    await tx.productImage.updateMany({
+      where: { attributeValueId: valueId },
+      data: { attributeValueId: null },
+    });
+
+    await tx.productImage.updateMany({
+      where: { printPositionValueId: valueId },
+      data: { printPositionValueId: null },
+    });
+
+    await tx.productImage.updateMany({
+      where: { printSideValueId: valueId },
+      data: { printSideValueId: null },
+    });
 
     // Delete references in product_attribute_values
     await tx.productAttributeValue.deleteMany({
