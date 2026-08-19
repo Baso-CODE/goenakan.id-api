@@ -36,7 +36,7 @@ export class UserRouter {
     // Otomatis membutuhkan hak akses 'read'
     // ==========================================
     this.router.get("/", this.userController.getAllUsers);
-
+    this.router.get("/authors", this.userController.getAuthorsForFilter);
     // ==========================================
     // === CREATE NEW USER ===
     // Otomatis membutuhkan hak akses 'create'

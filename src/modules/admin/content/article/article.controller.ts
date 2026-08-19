@@ -132,7 +132,8 @@ export class ArticleController {
   // === GET ALL ARTICLES (Pagination & Filter) ===
   getAllArticles = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { page, take, search, categoryId, published } = req.query;
+      // ✨ Ambil authorId dari req.query
+      const { page, take, search, categoryId, published, authorId } = req.query;
 
       const articles = await this.articleService.getAllArticles({
         page: page ? Number(page) : 1,
@@ -140,6 +141,7 @@ export class ArticleController {
         search: search as string,
         categoryId: categoryId as string,
         published: published as string | boolean | undefined,
+        authorId: authorId as string,
       });
 
       res.status(200).json(articles);
