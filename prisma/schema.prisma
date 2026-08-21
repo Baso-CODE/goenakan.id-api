@@ -256,6 +256,39 @@ model Account {
   @@map("accounts")
 }
 
+// ===============================================
+// WEBSITE CLIENT SECTION (B2C & E-Commerce B2B)
+// ===============================================
+
+model CustomerProfile {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+
+  accountType AccountType @default(INDIVIDUAL)
+
+  // --- Kolom untuk INDIVIDUAL (B2C) ---
+  // fullName diambil dari tabel User (User.name)
+  phone String?
+
+  // --- Kolom untuk CORPORATE (B2B) ---
+  picName     String?
+  picPhone    String?
+  companyName String?
+  department  String?
+
+  // Alamat & Data Tambahan
+  avatarUrl String?
+  addresses CustomerAddress[]
+  carts     Cart[]
+  orders    WebOrder[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("customer_profiles")
+}
+
 model Session {
   id           String   @id @default(cuid())
   sessionToken String   @unique
@@ -1929,39 +1962,6 @@ model FinanceTransaction {
   updatedAt DateTime @updatedAt
 
   @@map("finance_transactions")
-}
-
-// ===============================================
-// WEBSITE CLIENT SECTION (B2C & E-Commerce B2B)
-// ===============================================
-
-model CustomerProfile {
-  id     String @id @default(uuid())
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id])
-
-  accountType AccountType @default(INDIVIDUAL)
-
-  // --- Kolom untuk INDIVIDUAL (B2C) ---
-  // fullName diambil dari tabel User (User.name)
-  phone String?
-
-  // --- Kolom untuk CORPORATE (B2B) ---
-  picName     String?
-  picPhone    String?
-  companyName String?
-  department  String?
-
-  // Alamat & Data Tambahan
-  avatarUrl String?
-  addresses CustomerAddress[]
-  carts     Cart[]
-  orders    WebOrder[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("customer_profiles")
 }
 
 model Cart {

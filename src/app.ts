@@ -72,6 +72,7 @@ import { AppSettingRouter } from "./modules/admin/content/setting/setting.router
 import { CartRouter } from "./modules/web-clients/cart/cart.router";
 import { CustomerProfileRouter } from "./modules/web-clients/customer-profile/customer-profile.router";
 import { AuthWebClientRouter } from "./modules/web-clients/register-user/register-user.router";
+import { TrackingRouter } from "./modules/web-clients/tracking/tracking.router";
 import { WebOrderRouter } from "./modules/web-clients/web-order/web-order.router";
 import { WhatsappCronService } from "./modules/whatsapp/notification/whatsapp-cron.service";
 import { WhatsappRouter } from "./modules/whatsapp/whatsapp.routes";
@@ -174,6 +175,7 @@ export default class App {
     const wilayahRouter = container.resolve(WilayahRouter);
     const whatsappRouter = container.resolve(WhatsappRouter);
     const replacementOrderRouter = container.resolve(ReplacementOrderRouter);
+    const trackingRouter = container.resolve(TrackingRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -252,6 +254,7 @@ export default class App {
     this.app.use("/wilayah", wilayahRouter.getRouter());
     this.app.use("/whatsapp", whatsappRouter.getRouter());
     this.app.use("/replacement-orders", replacementOrderRouter.getRouter());
+    this.app.use("/tracking", trackingRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

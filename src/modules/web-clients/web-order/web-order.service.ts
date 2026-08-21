@@ -424,116 +424,178 @@ export class WebOrderService {
     orderNumber: string,
     paymentMethod: string,
   ) {
-    await this.prisma.$transaction(async (tx) => {
-      // 1. Ambil Data Web Order secara lengkap
-      const webOrder = await tx.webOrder.findUnique({
-        where: { orderNumber },
-        include: {
-          profile: true,
-          items: true,
-        },
-      });
+    // Memberikan batas visual yang jelas di terminal saat proses dimulai
+    console.log(
+      `\n🚀 [WEBHOOK START] Memulai proses konversi Web Order: ${orderNumber}`,
+    );
+    console.log(`💳 Metode Pembayaran: ${paymentMethod}`);
 
-      if (!webOrder) throw new Error("Web Order tidak ditemukan");
-      if (webOrder.status === "PAID" || webOrder.status === "PROCESSING")
-        return;
-
-      // 2. Siapkan ID Client ... (Logika Client tetap sama) ...
-      let clientIdToUse = "";
-      const existingClient = webOrder.profile?.userId
-        ? await tx.client.findFirst({
-            where: { userId: webOrder.profile.userId },
-          })
-        : null;
-
-      if (existingClient) {
-        clientIdToUse = existingClient.id;
-      } else {
-        const isCorporate = webOrder.profile?.accountType === "CORPORATE";
-        const clientType = isCorporate ? ClientType.B2B : ClientType.B2C;
-        const newClient = await tx.client.create({
-          data: {
-            custCode: `CUST-WEB-${Date.now()}`,
-            type: clientType,
-            userId: webOrder.profile?.userId || undefined,
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // 1. Ambil Data Web Order secara lengkap
+        console.log("🔍 [STEP 1] Mencari data Web Order di database...");
+        const webOrder = await tx.webOrder.findUnique({
+          where: { orderNumber },
+          include: {
+            profile: true,
+            items: true,
           },
         });
-        clientIdToUse = newClient.id;
 
+        if (!webOrder) {
+          console.error("❌ [ERROR] Web Order tidak ditemukan!");
+          throw new Error("Web Order tidak ditemukan");
+        }
+
+        if (webOrder.status === "PAID" || webOrder.status === "PROCESSING") {
+          console.log(
+            `⚠️ [INFO] Web Order sudah berstatus ${webOrder.status}. Proses dihentikan agar tidak duplikat.`,
+          );
+          return;
+        }
+        console.log(
+          `✅ Web Order ditemukan! Jumlah produk: ${webOrder.items.length} item.`,
+        );
+
+        // ✨ OPTIMASI: Ambil Data Channel satu kali saja di awal
+        console.log("🔍 [STEP 2] Memeriksa Purchase Channel 'website'...");
         const webChannel = await tx.purchaseChannel.findUnique({
           where: { slug: "website" },
         });
-        if (!webChannel)
+        if (!webChannel) {
+          console.error(
+            "❌ [ERROR] PurchaseChannel dengan slug 'website' belum ada!",
+          );
           throw new Error(
             "Mohon buat data PurchaseChannel dengan slug 'website'!",
           );
-
-        if (isCorporate) {
-          const defaultDept = await tx.department.findFirst();
-          if (!defaultDept) throw new Error("Belum ada data Department!");
-          await tx.clientB2B.create({
-            data: {
-              id: newClient.id,
-              companyName: webOrder.profile?.companyName || "Perusahaan Web",
-              departmentId: defaultDept.id,
-              website: "-",
-              phone: webOrder.profile?.picPhone || webOrder.guestPhone,
-              fullAddress: JSON.stringify(webOrder.shippingAddress),
-            },
-          });
-        } else {
-          await tx.clientB2C.create({
-            data: {
-              id: newClient.id,
-              prefix: "Mr/Ms",
-              name: webOrder.guestName || "Guest",
-              phone: webOrder.guestPhone,
-              fullAddress: JSON.stringify(webOrder.shippingAddress),
-            },
-          });
         }
-      }
+        console.log("✅ Purchase Channel 'website' siap digunakan.");
 
-      // 3. Ambil ID Purchase Channel
-      const websiteChannel = await tx.purchaseChannel.findUnique({
-        where: { slug: "website" },
-      });
+        // 2. Siapkan ID Client
+        console.log("🔍 [STEP 3] Menyiapkan data Pelanggan (Client)...");
+        let clientIdToUse = "";
+        const existingClient = webOrder.profile?.userId
+          ? await tx.client.findFirst({
+              where: { userId: webOrder.profile.userId },
+            })
+          : null;
 
-      // ✨ GENERATE NOMOR ORDER DENGAN FORMAT GI-SOxxxx
-      const generatedOrderNumber = await this.generateOrderNumber(tx, "SALES");
-      // 4. Buat Order Utama
-      await tx.order.create({
-        data: {
-          orderNumber: generatedOrderNumber, // Gunakan format GI-SOxxxx
-          dateOrder: new Date(),
-          salesCategory: SalesCategory.SALES,
-          clientId: clientIdToUse,
-          purchaseChannelId: websiteChannel!.id,
-          shippingAddress: JSON.stringify(webOrder.shippingAddress),
-          totalAmount: webOrder.totalAmount,
-          webOrderId: webOrder.id,
+        if (existingClient) {
+          clientIdToUse = existingClient.id;
+          console.log(
+            `👤 Pelanggan lama ditemukan (ID: ${clientIdToUse}). Menggunakan data yang sudah ada.`,
+          );
+        } else {
+          console.log(
+            "👤 Pelanggan lama tidak ditemukan. Membuat profil Pelanggan baru...",
+          );
+          const isCorporate = webOrder.profile?.accountType === "CORPORATE";
+          const clientType = isCorporate ? ClientType.B2B : ClientType.B2C;
 
-          products: {
-            create: webOrder.items.map((item) => ({
-              productId: item.productId,
-              variantId: item.variantId,
-              quantity: item.quantity,
-              unitPrice: item.price,
-              customization: item.customization || undefined,
-              remarks: item.notes,
-            })),
+          const newClient = await tx.client.create({
+            data: {
+              custCode: `CUST-WEB-${Date.now()}`,
+              type: clientType,
+              userId: webOrder.profile?.userId || undefined,
+            },
+          });
+          clientIdToUse = newClient.id;
+
+          if (isCorporate) {
+            console.log(`🏢 Mendaftarkan profil sebagai Perusahaan (B2B)...`);
+            const defaultDept = await tx.department.findFirst();
+            if (!defaultDept) {
+              console.error(
+                "❌ [ERROR] Data Department belum ada di database!",
+              );
+              throw new Error("Belum ada data Department!");
+            }
+            await tx.clientB2B.create({
+              data: {
+                id: newClient.id,
+                companyName: webOrder.profile?.companyName || "Perusahaan Web",
+                departmentId: defaultDept.id,
+                website: "-",
+                phone: webOrder.profile?.picPhone || webOrder.guestPhone,
+                fullAddress: JSON.stringify(webOrder.shippingAddress),
+              },
+            });
+          } else {
+            console.log(`🧑 Mendaftarkan profil sebagai Personal (B2C)...`);
+            await tx.clientB2C.create({
+              data: {
+                id: newClient.id,
+                prefix: "Mr/Ms",
+                name: webOrder.guestName || "Guest",
+                phone: webOrder.guestPhone,
+                fullAddress: JSON.stringify(webOrder.shippingAddress),
+              },
+            });
+          }
+          console.log(
+            `✅ Profil Pelanggan berhasil dibuat (ID: ${clientIdToUse}).`,
+          );
+        }
+
+        // 3. Generate Nomor Order & Buat Order Utama
+        console.log("📝 [STEP 4] Membuat Nomor Pesanan (Order Number) baru...");
+        // 3. ✨ PERBAIKAN: Gunakan nomor order yang sudah ada dari WebOrder (Bukan generate baru!)
+        const generatedOrderNumber = webOrder.orderNumber;
+        console.log(
+          `✅ Menggunakan Nomor Order yang sama: ${generatedOrderNumber}`,
+        );
+
+        console.log("📦 Menyimpan Order Utama ke database...");
+        await tx.order.create({
+          data: {
+            orderNumber: generatedOrderNumber, // Konsisten dengan WebOrder!
+            dateOrder: new Date(),
+            salesCategory: SalesCategory.SALES,
+            clientId: clientIdToUse,
+            purchaseChannelId: webChannel.id,
+            shippingAddress: JSON.stringify(webOrder.shippingAddress),
+            totalAmount: webOrder.totalAmount,
+            webOrderId: webOrder.id,
+
+            products: {
+              create: webOrder.items.map((item) => ({
+                productId: item.productId,
+                variantId: item.variantId,
+                quantity: item.quantity,
+                unitPrice: item.price,
+                customization: item.customization || undefined,
+                remarks: item.notes,
+              })),
+            },
           },
-        },
-      });
+        });
+        console.log("✅ Order Utama berhasil disimpan!");
 
-      // 5. Update Status WebOrder menjadi PAID
-      await tx.webOrder.update({
-        where: { id: webOrder.id },
-        data: {
-          status: "PAID",
-          paymentMethod: paymentMethod,
-        },
+        // 4. Update Status WebOrder menjadi PAID
+        console.log("🔄 [STEP 5] Memperbarui status Web Order menjadi PAID...");
+        await tx.webOrder.update({
+          where: { id: webOrder.id },
+          data: {
+            status: "PAID",
+            paymentMethod: paymentMethod,
+          },
+        });
+
+        console.log(
+          `🎉 [WEBHOOK SUCCESS] Seluruh proses untuk ${orderNumber} berhasil diselesaikan!\n`,
+        );
       });
-    });
+    } catch (error) {
+      // Menangkap dan menampilkan error yang terjadi selama transaksi
+      console.error(
+        `🚨 [WEBHOOK FAILED] Terjadi kesalahan saat memproses Order ${orderNumber}:`,
+      );
+      console.error(error);
+      console.log(
+        "⚠️ Transaksi dibatalkan (Rollback). Tidak ada data yang tersimpan sebagian.\n",
+      );
+      throw error;
+    }
   }
 }
