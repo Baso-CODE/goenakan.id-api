@@ -242,6 +242,7 @@ export class WebOrderService {
     });
 
     // 6. Simpan ke Database
+    // 6. Simpan ke Database
     return await this.prisma.webOrder.create({
       data: {
         orderNumber: orderNumber,
@@ -258,6 +259,7 @@ export class WebOrderService {
           province: form.province,
           city: form.city,
           district: form.district,
+          subDistrict: form.subDistrict,
           postalCode: form.postalCode,
           fullAddress: form.address,
         },
@@ -424,7 +426,6 @@ export class WebOrderService {
     orderNumber: string,
     paymentMethod: string,
   ) {
-    // Memberikan batas visual yang jelas di terminal saat proses dimulai
     console.log(
       `\n🚀 [WEBHOOK START] Memulai proses konversi Web Order: ${orderNumber}`,
     );
@@ -453,28 +454,33 @@ export class WebOrderService {
           );
           return;
         }
-        console.log(
-          `✅ Web Order ditemukan! Jumlah produk: ${webOrder.items.length} item.`,
-        );
 
-        // ✨ OPTIMASI: Ambil Data Channel satu kali saja di awal
+        // Ambil Data Channel website
         console.log("🔍 [STEP 2] Memeriksa Purchase Channel 'website'...");
         const webChannel = await tx.purchaseChannel.findUnique({
           where: { slug: "website" },
         });
         if (!webChannel) {
-          console.error(
-            "❌ [ERROR] PurchaseChannel dengan slug 'website' belum ada!",
-          );
           throw new Error(
             "Mohon buat data PurchaseChannel dengan slug 'website'!",
           );
         }
-        console.log("✅ Purchase Channel 'website' siap digunakan.");
 
-        // 2. Siapkan ID Client
+        // 2. Siapkan ID Client & Ekstrak Data Alamat
         console.log("🔍 [STEP 3] Menyiapkan data Pelanggan (Client)...");
         let clientIdToUse = "";
+
+        // Parsing data JSON alamat dari Web Order
+        let addressData: any = {};
+        try {
+          addressData =
+            typeof webOrder.shippingAddress === "string"
+              ? JSON.parse(webOrder.shippingAddress)
+              : webOrder.shippingAddress;
+        } catch (e) {
+          console.error("⚠️ Gagal mem-parsing alamat pengiriman.");
+        }
+
         const existingClient = webOrder.profile?.userId
           ? await tx.client.findFirst({
               where: { userId: webOrder.profile.userId },
@@ -483,9 +489,45 @@ export class WebOrderService {
 
         if (existingClient) {
           clientIdToUse = existingClient.id;
-          console.log(
-            `👤 Pelanggan lama ditemukan (ID: ${clientIdToUse}). Menggunakan data yang sudah ada.`,
-          );
+          console.log(`👤 Pelanggan lama ditemukan (ID: ${clientIdToUse}).`);
+
+          // Sinkronisasi update alamat master klien
+          const isCorporate = webOrder.profile?.accountType === "CORPORATE";
+          if (isCorporate) {
+            await tx.clientB2B
+              .update({
+                where: { id: clientIdToUse },
+                data: {
+                  country: addressData.country || null,
+                  province: addressData.province || null,
+                  city: addressData.city || null,
+                  district: addressData.district || null,
+                  subDistrict: addressData.subDistrict || null, // ✨ Kelurahan sekarang aman
+                  postalCode: addressData.postalCode || null,
+                  fullAddress: addressData.fullAddress || "-",
+                },
+              })
+              .catch(() => {});
+          } else {
+            await tx.clientB2C
+              .update({
+                where: { id: clientIdToUse },
+                data: {
+                  country: addressData.country || null,
+                  province: addressData.province || null,
+                  city: addressData.city || null,
+                  district: addressData.district || null,
+                  subDistrict: addressData.subDistrict || null, // ✨ Kelurahan sekarang aman
+                  postalCode: addressData.postalCode || null,
+                  fullAddress: addressData.fullAddress || "-",
+                },
+              })
+              .catch(() => {});
+          }
+
+          // ⚠️ BLOK `tx.customerAddress.create` DI SINI TELAH DIHAPUS
+          // Agar buku alamat tidak bertambah otomatis setiap kali user membuat pesanan.
+          // User bisa mengelola buku alamat mereka sendiri langsung dari menu Address Manager.
         } else {
           console.log(
             "👤 Pelanggan lama tidak ditemukan. Membuat profil Pelanggan baru...",
@@ -503,33 +545,42 @@ export class WebOrderService {
           clientIdToUse = newClient.id;
 
           if (isCorporate) {
-            console.log(`🏢 Mendaftarkan profil sebagai Perusahaan (B2B)...`);
             const defaultDept = await tx.department.findFirst();
-            if (!defaultDept) {
-              console.error(
-                "❌ [ERROR] Data Department belum ada di database!",
-              );
-              throw new Error("Belum ada data Department!");
-            }
+            if (!defaultDept) throw new Error("Belum ada data Department!");
+
             await tx.clientB2B.create({
               data: {
                 id: newClient.id,
                 companyName: webOrder.profile?.companyName || "Perusahaan Web",
                 departmentId: defaultDept.id,
                 website: "-",
-                phone: webOrder.profile?.picPhone || webOrder.guestPhone,
-                fullAddress: JSON.stringify(webOrder.shippingAddress),
+                phone:
+                  webOrder.profile?.picPhone ||
+                  webOrder.guestPhone ||
+                  addressData.phone,
+                country: addressData.country || null,
+                province: addressData.province || null,
+                city: addressData.city || null,
+                district: addressData.district || null,
+                subDistrict: addressData.subDistrict || null, // ✨ Masukkan Kelurahan
+                postalCode: addressData.postalCode || null,
+                fullAddress: addressData.fullAddress || "-",
               },
             });
           } else {
-            console.log(`🧑 Mendaftarkan profil sebagai Personal (B2C)...`);
             await tx.clientB2C.create({
               data: {
                 id: newClient.id,
                 prefix: "Mr/Ms",
-                name: webOrder.guestName || "Guest",
-                phone: webOrder.guestPhone,
-                fullAddress: JSON.stringify(webOrder.shippingAddress),
+                name: webOrder.guestName || addressData.recipient || "Guest",
+                phone: webOrder.guestPhone || addressData.phone,
+                country: addressData.country || null,
+                province: addressData.province || null,
+                city: addressData.city || null,
+                district: addressData.district || null,
+                subDistrict: addressData.subDistrict || null, // ✨ Masukkan Kelurahan
+                postalCode: addressData.postalCode || null,
+                fullAddress: addressData.fullAddress || "-",
               },
             });
           }
@@ -539,17 +590,13 @@ export class WebOrderService {
         }
 
         // 3. Generate Nomor Order & Buat Order Utama
-        console.log("📝 [STEP 4] Membuat Nomor Pesanan (Order Number) baru...");
-        // 3. ✨ PERBAIKAN: Gunakan nomor order yang sudah ada dari WebOrder (Bukan generate baru!)
+        console.log("📝 [STEP 4] Menyalin Nomor Pesanan (Order Number)...");
         const generatedOrderNumber = webOrder.orderNumber;
-        console.log(
-          `✅ Menggunakan Nomor Order yang sama: ${generatedOrderNumber}`,
-        );
 
         console.log("📦 Menyimpan Order Utama ke database...");
         await tx.order.create({
           data: {
-            orderNumber: generatedOrderNumber, // Konsisten dengan WebOrder!
+            orderNumber: generatedOrderNumber,
             dateOrder: new Date(),
             salesCategory: SalesCategory.SALES,
             clientId: clientIdToUse,
@@ -582,18 +629,12 @@ export class WebOrderService {
           },
         });
 
-        console.log(
-          `🎉 [WEBHOOK SUCCESS] Seluruh proses untuk ${orderNumber} berhasil diselesaikan!\n`,
-        );
+        console.log(`🎉 [WEBHOOK SUCCESS] Seluruh proses berhasil!\n`);
       });
     } catch (error) {
-      // Menangkap dan menampilkan error yang terjadi selama transaksi
       console.error(
         `🚨 [WEBHOOK FAILED] Terjadi kesalahan saat memproses Order ${orderNumber}:`,
-      );
-      console.error(error);
-      console.log(
-        "⚠️ Transaksi dibatalkan (Rollback). Tidak ada data yang tersimpan sebagian.\n",
+        error,
       );
       throw error;
     }

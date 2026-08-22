@@ -2011,6 +2011,7 @@ model CustomerAddress {
   province    String?
   city        String?
   district    String?
+  subDistrict String?
   postalCode  String?
   fullAddress String          @db.Text
   isDefault   Boolean         @default(false)

@@ -2099,7 +2099,7 @@ export class ProductService {
     return { data, meta };
   }
 
-  // === GET ALL PRODUCTS FOR ORDER (WITHOUT PAGINATION, BUT WITH CATEGORY & CUSTOM FILTER) ===
+  // === GET ALL PRODUCTS FOR ORDER (DENGAN URUTAN BERDASARKAN POSITION) ===
   async getAllProductsForOrder(query?: {
     categoryId?: string;
     isCustom?: boolean | string;
@@ -2144,7 +2144,7 @@ export class ProductService {
             orderBy: { minQuantity: "asc" },
           },
 
-          // --- TAMBAHAN BARU 1: Ambil Opsi Atribut yang tersedia untuk produk ini ---
+          // --- AMBIL ATRIBUT PRODUK BESERTA POSITION-NYA ---
           attributeValues: {
             select: {
               id: true,
@@ -2153,11 +2153,13 @@ export class ProductService {
                 select: {
                   id: true,
                   value: true,
+                  position: true, // Ambil posisi nilai atribut
                   attribute: {
                     select: {
                       id: true,
                       name: true,
                       type: true,
+                      position: true, // Ambil posisi atribut utama
                     },
                   },
                 },
@@ -2165,7 +2167,7 @@ export class ProductService {
             },
           },
 
-          // --- TAMBAHAN 2: Ambil Product Variants beserta komposisi atributnya ---
+          // --- PRODUCT VARIANTS ---
           productVariants: {
             select: {
               id: true,
@@ -2179,10 +2181,12 @@ export class ProductService {
                     select: {
                       id: true,
                       value: true,
+                      position: true,
                       attribute: {
                         select: {
                           id: true,
                           name: true,
+                          position: true,
                         },
                       },
                     },
@@ -2195,25 +2199,41 @@ export class ProductService {
         },
       });
 
-      // === Map Response untuk Frontend ===
+      // === Map Response & Urutkan Berdasarkan Position di JavaScript ===
       return products.map((p) => {
         const groupedAttributes: Record<string, any> = {};
+
         p.attributeValues.forEach((pav) => {
-          const attrName = pav.attributeValue.attribute.name;
+          const attr = pav.attributeValue.attribute;
+          const attrName = attr.name;
+
           if (!groupedAttributes[attrName]) {
             groupedAttributes[attrName] = {
-              attributeId: pav.attributeValue.attribute.id,
+              attributeId: attr.id,
               attributeName: attrName,
-              attributeType: pav.attributeValue.attribute.type,
+              attributeType: attr.type,
+              position: attr.position, // Simpan posisi atribut utama untuk sorting
               values: [],
             };
           }
+
           groupedAttributes[attrName].values.push({
             valueId: pav.attributeValue.id,
             value: pav.attributeValue.value,
+            position: pav.attributeValue.position, // Simpan posisi nilai untuk sorting
             priceModifier: pav.priceModifier ? Number(pav.priceModifier) : 0,
             productAttributeValueId: pav.id,
           });
+        });
+
+        // ✨ Urutkan Atribut Utama Berdasarkan 'position'
+        const sortedAttributes = Object.values(groupedAttributes).sort(
+          (a: any, b: any) => a.position - b.position,
+        );
+
+        // ✨ Urutkan Nilai (Values) di Dalam Masing-masing Atribut Berdasarkan 'position'
+        sortedAttributes.forEach((attr: any) => {
+          attr.values.sort((a: any, b: any) => a.position - b.position);
         });
 
         return {
@@ -2232,7 +2252,7 @@ export class ProductService {
             price: Number(tier.price),
           })),
 
-          availableAttributes: Object.values(groupedAttributes),
+          availableAttributes: sortedAttributes,
 
           productVariants: p.productVariants.map((v) => ({
             id: v.id,
@@ -2241,11 +2261,11 @@ export class ProductService {
             price: v.price ? Number(v.price) : 0,
             stock: v.stock,
             combinationIds: v.attributeValues.map(
-              (vav) => vav.attributeValue.id,
+              (vav: any) => vav.attributeValue.id,
             ),
             attributesDescription: v.attributeValues
               .map(
-                (vav) =>
+                (vav: any) =>
                   `${vav.attributeValue.attribute.name}: ${vav.attributeValue.value}`,
               )
               .join(", "),

@@ -55,6 +55,7 @@ export class CustomerAddressService {
         province: data.province,
         city: data.city,
         district: data.district,
+        subDistrict: data.subDistrict, // ✨ TAMBAHAN BARU: Menyimpan kelurahan
         postalCode: data.postalCode,
         fullAddress: data.fullAddress,
         isDefault: isDefault,
@@ -82,7 +83,7 @@ export class CustomerAddressService {
     return this.prisma.customerAddress.update({
       where: { id: addressId },
       data: {
-        ...data,
+        ...data, // spread operator ini otomatis akan memperbarui subDistrict jika dikirim dari DTO
       },
     });
   }
@@ -91,8 +92,6 @@ export class CustomerAddressService {
   async deleteAddress(profileId: string, addressId: string) {
     const address = await this.getAddressById(profileId, addressId);
 
-    // Jika alamat yang dihapus adalah alamat default, dan user punya alamat lain,
-    // kita bisa buat alamat lain menjadi default secara acak agar sistem tidak kehilangan alamat utama (Opsional).
     if (address.isDefault) {
       const fallbackAddress = await this.prisma.customerAddress.findFirst({
         where: { profileId, id: { not: addressId } },
@@ -113,17 +112,14 @@ export class CustomerAddressService {
 
   // === 6. SET AS DEFAULT (Shortcut) ===
   async setDefaultAddress(profileId: string, addressId: string) {
-    // Pastikan alamat ada
     await this.getAddressById(profileId, addressId);
 
     return this.prisma.$transaction(async (tx) => {
-      // Set semua jadi false dulu
       await tx.customerAddress.updateMany({
         where: { profileId },
         data: { isDefault: false },
       });
 
-      // Set target jadi true
       return tx.customerAddress.update({
         where: { id: addressId },
         data: { isDefault: true },

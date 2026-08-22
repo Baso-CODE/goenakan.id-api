@@ -55,6 +55,10 @@ class AddressDTO {
 
   @IsString()
   @IsOptional()
+  subDistrict?: string;
+
+  @IsString()
+  @IsOptional()
   postalCode?: string;
 
   @IsString()
