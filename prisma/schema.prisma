@@ -604,8 +604,8 @@ model Attribute {
   updatedAt DateTime @updatedAt
 
   // Join to AttributeType via name
-  type String @default("TEXT")
-  // attrType AttributeType @relation(fields: [type], references: [name], onDelete: Restrict)
+  type     String        @default("TEXT")
+  attrType AttributeType @relation(fields: [type], references: [name], onDelete: Restrict)
 
   productId String?
   product   Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -613,10 +613,8 @@ model Attribute {
   parentValueId String?
   parentValue   AttributeValue? @relation("ValueToSubAttributes", fields: [parentValueId], references: [id], onDelete: Cascade)
 
-  values          AttributeValue[]        @relation("AttributeToValues")
-  products        ProductAttributeValue[]
-  attributeType   AttributeType?          @relation(fields: [attributeTypeId], references: [id])
-  attributeTypeId String?
+  values   AttributeValue[]        @relation("AttributeToValues")
+  products ProductAttributeValue[]
 
   @@index([type])
   @@map("attributes")

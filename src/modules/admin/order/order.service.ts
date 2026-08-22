@@ -611,6 +611,7 @@ export class OrderService {
           price: Number(p.unitPrice),
           customization: customVal,
           remarks: p.remarks || "",
+          selectedAttributes: p.selectedAttributes || {},
         };
       }),
 

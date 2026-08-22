@@ -32,4 +32,4 @@ EXPOSE 8000
 
 # Perintah saat container jalan:
 # ✨ UPDATE DISINI: Tambahkan --accept-data-loss
-CMD ["/bin/sh", "-c", "bunx prisma db push --accept-data-loss && bun run prisma/seed-attributes.ts && bun src/index.ts"]
+CMD ["/bin/sh", "-c", "bunx prisma db push --accept-data-loss && bun src/index.ts"]

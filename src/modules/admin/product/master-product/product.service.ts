@@ -2099,7 +2099,7 @@ export class ProductService {
     return { data, meta };
   }
 
-  // === GET ALL PRODUCTS FOR ORDER (DENGAN URUTAN BERDASARKAN POSITION) ===
+  // === GET ALL PRODUCTS FOR ORDER (DENGAN URUTAN BERDASARKAN POSITION & CUSTOM STATUS) ===
   async getAllProductsForOrder(query?: {
     categoryId?: string;
     isCustom?: boolean | string;
@@ -2144,7 +2144,7 @@ export class ProductService {
             orderBy: { minQuantity: "asc" },
           },
 
-          // --- AMBIL ATRIBUT PRODUK BESERTA POSITION-NYA ---
+          // --- AMBIL ATRIBUT PRODUK BESERTA POSITION & ATTR TYPE ---
           attributeValues: {
             select: {
               id: true,
@@ -2160,6 +2160,12 @@ export class ProductService {
                       name: true,
                       type: true,
                       position: true, // Ambil posisi atribut utama
+                      // ✨ TAMBAHAN BARU: Ambil relasi isCustom dari AttributeType
+                      attrType: {
+                        select: {
+                          isCustom: true,
+                        },
+                      },
                     },
                   },
                 },
@@ -2212,7 +2218,8 @@ export class ProductService {
               attributeId: attr.id,
               attributeName: attrName,
               attributeType: attr.type,
-              position: attr.position, // Simpan posisi atribut utama untuk sorting
+              isCustom: attr.attrType?.isCustom || false,
+              position: attr.position,
               values: [],
             };
           }
@@ -2220,7 +2227,7 @@ export class ProductService {
           groupedAttributes[attrName].values.push({
             valueId: pav.attributeValue.id,
             value: pav.attributeValue.value,
-            position: pav.attributeValue.position, // Simpan posisi nilai untuk sorting
+            position: pav.attributeValue.position,
             priceModifier: pav.priceModifier ? Number(pav.priceModifier) : 0,
             productAttributeValueId: pav.id,
           });
@@ -2240,7 +2247,7 @@ export class ProductService {
           id: p.id,
           name: p.name,
           sku: p.sku,
-          basePrice: p.basePrice,
+          basePrice: p.basePrice ? Number(p.basePrice) : 0,
           isCustom: p.isCustom,
           category: p.category
             ? { id: p.category.id, name: p.category.name_id }
