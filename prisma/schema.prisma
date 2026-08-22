@@ -582,14 +582,30 @@ model ProductSEO {
   @@map("product_seo")
 }
 
+model AttributeType {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  isCustom  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attributes Attribute[]
+
+  @@map("attribute_types")
+}
+
 model Attribute {
   id        String   @id @default(uuid())
   name      String
   slug      String   @unique
   position  Int      @default(0)
-  type      String   @default("TEXT")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Join to AttributeType via name
+  type String @default("TEXT")
+  // attrType AttributeType @relation(fields: [type], references: [name], onDelete: Restrict)
 
   productId String?
   product   Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -597,9 +613,12 @@ model Attribute {
   parentValueId String?
   parentValue   AttributeValue? @relation("ValueToSubAttributes", fields: [parentValueId], references: [id], onDelete: Cascade)
 
-  values   AttributeValue[]        @relation("AttributeToValues")
-  products ProductAttributeValue[]
+  values          AttributeValue[]        @relation("AttributeToValues")
+  products        ProductAttributeValue[]
+  attributeType   AttributeType?          @relation(fields: [attributeTypeId], references: [id])
+  attributeTypeId String?
 
+  @@index([type])
   @@map("attributes")
 }
 
