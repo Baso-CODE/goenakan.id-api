@@ -2007,8 +2007,9 @@ model CartItem {
 
   quantity Int
 
-  customization Json?
-  notes         String? @db.Text
+  customization      Json?
+  selectedAttributes Json?
+  notes              String? @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2078,8 +2079,9 @@ model WebOrderItem {
   price       Decimal
   total       Decimal
 
-  customization Json?
-  notes         String?
+  customization      Json?
+  selectedAttributes Json?
+  notes              String?
 
   @@map("web_order_items")
 }

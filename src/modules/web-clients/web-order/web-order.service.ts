@@ -139,17 +139,30 @@ export class WebOrderService {
     });
   }
 
-  // === CREATE NEW ORDER (VERSI FINAL & AMAN) ===
+  // === CREATE NEW ORDER (DENGAN DEBUGGING SELECTED ATTRIBUTES) ===
   async createOrder(data: CreateWebOrderDTO, profileId: string | null) {
     const { form, items, note, shippingCost } = data;
 
+    // ✨ 1. Pantau payload yang masuk dari frontend
+    console.log(
+      "\n📥 [DEBUG ORDER] Payload items masuk:",
+      JSON.stringify(items, null, 2),
+    );
+
     let calculatedSubtotal = 0;
     const validatedItems = await Promise.all(
-      items.map(async (item) => {
+      items.map(async (item: any, index: number) => {
+        // ✨ 2. Pantau item per indeks beserta atributnya
+        console.log(`\n🔍 [DEBUG ITEM ${index}] Nama:`, item.name);
+        console.log(
+          `   --> selectedAttributes dari frontend:`,
+          item.selectedAttributes,
+        );
+
         let actualPrice = 0;
         let productName = item.name;
 
-        // 1. Cek apakah item memiliki variantId (Varian Produk)
+        // 3. Cek apakah item memiliki variantId (Varian Produk)
         if (item.variantId) {
           const dbVariant = await this.prisma.productVariant.findUnique({
             where: { id: item.variantId },
@@ -181,7 +194,7 @@ export class WebOrderService {
           productName = dbProduct.name;
         }
 
-        // 2. Hitung tambahan harga dari Customization (Logo/Sablon)
+        // 4. Hitung tambahan harga dari Customization (Logo/Sablon)
         let customizationPriceAddition = 0;
         let parsedCustomization: any = null;
 
@@ -211,14 +224,33 @@ export class WebOrderService {
 
         calculatedSubtotal += actualTotalItem;
 
-        // 3. Kembalikan objek item yang sesuai dengan tipe Json Prisma
+        // ✨ 5. PARSING DAN VALIDASI SELECTED ATTRIBUTES
+        let parsedSelectedAttributes: any = null;
+        if (item.selectedAttributes) {
+          try {
+            parsedSelectedAttributes =
+              typeof item.selectedAttributes === "string"
+                ? JSON.parse(item.selectedAttributes)
+                : item.selectedAttributes;
+
+            console.log(`   --> Berhasil diparsing:`, parsedSelectedAttributes);
+          } catch (e) {
+            console.error("Gagal parse selectedAttributes", e);
+          }
+        } else {
+          console.log(
+            `   --> ⚠️ Perhatian: selectedAttributes kosong/undefined pada item ini.`,
+          );
+        }
+
+        // 6. Kembalikan objek item yang siap dimasukkan ke database (WebOrderItem)
         return {
           productName: productName,
           quantity: item.quantity,
           price: finalItemPrice,
           total: actualTotalItem,
-          // ✨ PASTIKAN BERBENTUK OBJECT / NULL AGAR SESUAI DENGAN TIPE JSON PRISMA ✨
           customization: parsedCustomization,
+          selectedAttributes: parsedSelectedAttributes, // Disimpan ke tabel database
 
           product: {
             connect: { id: item.productId },
@@ -232,18 +264,15 @@ export class WebOrderService {
       }),
     );
 
-    // 4. Hitung Total Keseluruhan (Subtotal + Ongkir) di Backend secara aman
     const actualShippingCost = shippingCost || 0;
     const calculatedTotalAmount = calculatedSubtotal + actualShippingCost;
 
-    // 5. Generate Order Number menggunakan Transaction
     const orderNumber = await this.prisma.$transaction(async (tx) => {
       return await this.generateOrderNumber(tx, "SALES");
     });
 
-    // 6. Simpan ke Database
-    // 6. Simpan ke Database
-    return await this.prisma.webOrder.create({
+    // ✨ 7. Simpan pesanan beserta item ke tabel WebOrder
+    const createdWebOrder = await this.prisma.webOrder.create({
       data: {
         orderNumber: orderNumber,
         profileId: profileId,
@@ -277,6 +306,294 @@ export class WebOrderService {
         items: true,
       },
     });
+
+    console.log(
+      "✅ [DEBUG ORDER] Berhasil membuat WebOrder:",
+      createdWebOrder.id,
+    );
+    return createdWebOrder;
+  }
+
+  // =========================================================================
+  // 🌟 FUNGSI: PROSES KONVERSI KE SISTEM UTAMA (ORDER & CLIENT)
+  // =========================================================================
+  private async processPaidWebOrder(
+    orderNumber: string,
+    paymentMethod: string,
+  ) {
+    console.log(
+      `\n🚀 [WEBHOOK START] Memulai proses konversi Web Order: ${orderNumber}`,
+    );
+    console.log(`💳 Metode Pembayaran: ${paymentMethod}`);
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // 1. Ambil Data Web Order secara lengkap
+        console.log("🔍 [STEP 1] Mencari data Web Order di database...");
+        const webOrder = await tx.webOrder.findUnique({
+          where: { orderNumber },
+          include: {
+            profile: true,
+            items: true,
+          },
+        });
+
+        if (!webOrder) {
+          console.error("❌ [ERROR] Web Order tidak ditemukan!");
+          throw new Error("Web Order tidak ditemukan");
+        }
+
+        if (webOrder.status === "PAID" || webOrder.status === "PROCESSING") {
+          console.log(
+            `⚠️ [INFO] Web Order sudah berstatus ${webOrder.status}. Proses dihentikan agar tidak duplikat.`,
+          );
+          return;
+        }
+
+        // Ambil Data Channel website
+        console.log("🔍 [STEP 2] Memeriksa Purchase Channel 'website'...");
+        const webChannel = await tx.purchaseChannel.findUnique({
+          where: { slug: "website" },
+        });
+        if (!webChannel) {
+          throw new Error(
+            "Mohon buat data PurchaseChannel dengan slug 'website'!",
+          );
+        }
+
+        // 2. Siapkan ID Client & Ekstrak Data Alamat
+        console.log("🔍 [STEP 3] Menyiapkan data Pelanggan (Client)...");
+        let clientIdToUse = "";
+
+        // Parsing data JSON alamat dari Web Order
+        let addressData: any = {};
+        try {
+          addressData =
+            typeof webOrder.shippingAddress === "string"
+              ? JSON.parse(webOrder.shippingAddress)
+              : webOrder.shippingAddress;
+        } catch (e) {
+          console.error("⚠️ Gagal mem-parsing alamat pengiriman.");
+        }
+
+        // ✨ MEMBUAT FORMAT STRING ALAMAT YANG RAPI (TANPA NOMOR TELEPON)
+        const formattedAddressString = [
+          addressData.fullAddress,
+          addressData.subDistrict,
+          addressData.district,
+          addressData.city,
+          addressData.province,
+          addressData.postalCode,
+        ]
+          .filter(Boolean)
+          .join(", ");
+
+        const finalAddress =
+          formattedAddressString || addressData.fullAddress || "-";
+
+        const existingClient = webOrder.profile?.userId
+          ? await tx.client.findFirst({
+              where: { userId: webOrder.profile.userId },
+            })
+          : null;
+
+        if (existingClient) {
+          clientIdToUse = existingClient.id;
+          console.log(`👤 Pelanggan lama ditemukan (ID: ${clientIdToUse}).`);
+
+          // Sinkronisasi update alamat master klien
+          const isCorporate = webOrder.profile?.accountType === "CORPORATE";
+          if (isCorporate) {
+            await tx.clientB2B
+              .update({
+                where: { id: clientIdToUse },
+                data: {
+                  country: addressData.country || null,
+                  province: addressData.province || null,
+                  city: addressData.city || null,
+                  district: addressData.district || null,
+                  subDistrict: addressData.subDistrict || null,
+                  postalCode: addressData.postalCode || null,
+                  fullAddress: addressData.fullAddress || "-",
+                },
+              })
+              .catch(() => {});
+          } else {
+            await tx.clientB2C
+              .update({
+                where: { id: clientIdToUse },
+                data: {
+                  country: addressData.country || null,
+                  province: addressData.province || null,
+                  city: addressData.city || null,
+                  district: addressData.district || null,
+                  subDistrict: addressData.subDistrict || null,
+                  postalCode: addressData.postalCode || null,
+                  fullAddress: addressData.fullAddress || "-",
+                },
+              })
+              .catch(() => {});
+          }
+        } else {
+          console.log(
+            "👤 Pelanggan lama tidak ditemukan. Membuat profil Pelanggan baru...",
+          );
+          const isCorporate = webOrder.profile?.accountType === "CORPORATE";
+          const clientType = isCorporate ? ClientType.B2B : ClientType.B2C;
+
+          const newClient = await tx.client.create({
+            data: {
+              custCode: `CUST-WEB-${Date.now()}`,
+              type: clientType,
+              userId: webOrder.profile?.userId || undefined,
+            },
+          });
+          clientIdToUse = newClient.id;
+
+          if (isCorporate) {
+            const defaultDept = await tx.department.findFirst();
+            if (!defaultDept) throw new Error("Belum ada data Department!");
+
+            await tx.clientB2B.create({
+              data: {
+                id: newClient.id,
+                companyName: webOrder.profile?.companyName || "Perusahaan Web",
+                departmentId: defaultDept.id,
+                website: "-",
+                phone:
+                  webOrder.profile?.picPhone ||
+                  webOrder.guestPhone ||
+                  addressData.phone,
+                country: addressData.country || null,
+                province: addressData.province || null,
+                city: addressData.city || null,
+                district: addressData.district || null,
+                subDistrict: addressData.subDistrict || null,
+                postalCode: addressData.postalCode || null,
+                fullAddress: addressData.fullAddress || "-",
+              },
+            });
+          } else {
+            await tx.clientB2C.create({
+              data: {
+                id: newClient.id,
+                prefix: "Mr/Ms",
+                name: webOrder.guestName || addressData.recipient || "Guest",
+                phone: webOrder.guestPhone || addressData.phone,
+                country: addressData.country || null,
+                province: addressData.province || null,
+                city: addressData.city || null,
+                district: addressData.district || null,
+                subDistrict: addressData.subDistrict || null,
+                postalCode: addressData.postalCode || null,
+                fullAddress: addressData.fullAddress || "-",
+              },
+            });
+          }
+          console.log(
+            `✅ Profil Pelanggan berhasil dibuat (ID: ${clientIdToUse}).`,
+          );
+        }
+
+        // 3. Generate Nomor Order & Buat Order Utama
+        console.log("📝 [STEP 4] Menyalin Nomor Pesanan (Order Number)...");
+        const generatedOrderNumber = webOrder.orderNumber;
+
+        console.log("📦 Menyimpan Order Utama ke database...");
+
+        // Konversi selectedAttributes menjadi format { attributeId: attributeValueId }
+        const processedOrderProducts = await Promise.all(
+          webOrder.items.map(async (item: any) => {
+            let mappedSelectedAttributes: Record<string, string> | null = null;
+
+            if (
+              item.selectedAttributes &&
+              typeof item.selectedAttributes === "object"
+            ) {
+              mappedSelectedAttributes = {};
+              const attrEntries = Object.entries(item.selectedAttributes);
+
+              for (const [attrName, attrValue] of attrEntries) {
+                const dbAttrValue = await tx.productAttributeValue.findFirst({
+                  where: {
+                    productId: item.productId,
+                    attribute: {
+                      name: attrName,
+                    },
+                    attributeValue: {
+                      value: {
+                        contains: attrValue as string,
+                      },
+                    },
+                  },
+                  include: {
+                    attribute: true,
+                    attributeValue: true,
+                  },
+                });
+
+                if (dbAttrValue && dbAttrValue.attributeId) {
+                  mappedSelectedAttributes[dbAttrValue.attributeId] =
+                    dbAttrValue.attributeValueId;
+                }
+              }
+            }
+
+            return {
+              productId: item.productId,
+              variantId: item.variantId,
+              quantity: item.quantity,
+              unitPrice: item.price,
+              customization: item.customization || undefined,
+              remarks: item.notes,
+              selectedAttributes: mappedSelectedAttributes || undefined,
+            };
+          }),
+        );
+
+        await tx.order.create({
+          data: {
+            orderNumber: generatedOrderNumber,
+            dateOrder: new Date(),
+            salesCategory: SalesCategory.SALES,
+            clientId: clientIdToUse,
+            purchaseChannelId: webChannel.id,
+
+            // ✨ MENERAPKAN FORMAT ALAMAT TEKS BERSIH TANPA NOMOR TELEPON
+            shippingAddress: finalAddress,
+
+            totalAmount: webOrder.totalAmount,
+            webOrderId: webOrder.id,
+
+            products: {
+              create: processedOrderProducts,
+            },
+          },
+        });
+
+        console.log(
+          "✅ Order Utama berhasil disimpan dengan alamat & format UUID Attributes yang benar!",
+        );
+
+        // 4. Update Status WebOrder menjadi PAID
+        console.log("🔄 [STEP 5] Memperbarui status Web Order menjadi PAID...");
+        await tx.webOrder.update({
+          where: { id: webOrder.id },
+          data: {
+            status: "PAID",
+            paymentMethod: paymentMethod,
+          },
+        });
+
+        console.log(`🎉 [WEBHOOK SUCCESS] Seluruh proses berhasil!\n`);
+      });
+    } catch (error) {
+      console.error(
+        `🚨 [WEBHOOK FAILED] Terjadi kesalahan saat memproses Order ${orderNumber}:`,
+        error,
+      );
+      throw error;
+    }
   }
 
   async createPayment(orderId: string) {
@@ -416,227 +733,6 @@ export class WebOrderService {
     } catch (error) {
       console.error("🔥 Gagal memproses Webhook Midtrans:", error);
       throw new Error("Gagal memproses notifikasi");
-    }
-  }
-
-  // =========================================================================
-  // 🌟 FUNGSI BARU: PROSES KONVERSI KE SISTEM UTAMA (ORDER & CLIENT)
-  // =========================================================================
-  private async processPaidWebOrder(
-    orderNumber: string,
-    paymentMethod: string,
-  ) {
-    console.log(
-      `\n🚀 [WEBHOOK START] Memulai proses konversi Web Order: ${orderNumber}`,
-    );
-    console.log(`💳 Metode Pembayaran: ${paymentMethod}`);
-
-    try {
-      await this.prisma.$transaction(async (tx) => {
-        // 1. Ambil Data Web Order secara lengkap
-        console.log("🔍 [STEP 1] Mencari data Web Order di database...");
-        const webOrder = await tx.webOrder.findUnique({
-          where: { orderNumber },
-          include: {
-            profile: true,
-            items: true,
-          },
-        });
-
-        if (!webOrder) {
-          console.error("❌ [ERROR] Web Order tidak ditemukan!");
-          throw new Error("Web Order tidak ditemukan");
-        }
-
-        if (webOrder.status === "PAID" || webOrder.status === "PROCESSING") {
-          console.log(
-            `⚠️ [INFO] Web Order sudah berstatus ${webOrder.status}. Proses dihentikan agar tidak duplikat.`,
-          );
-          return;
-        }
-
-        // Ambil Data Channel website
-        console.log("🔍 [STEP 2] Memeriksa Purchase Channel 'website'...");
-        const webChannel = await tx.purchaseChannel.findUnique({
-          where: { slug: "website" },
-        });
-        if (!webChannel) {
-          throw new Error(
-            "Mohon buat data PurchaseChannel dengan slug 'website'!",
-          );
-        }
-
-        // 2. Siapkan ID Client & Ekstrak Data Alamat
-        console.log("🔍 [STEP 3] Menyiapkan data Pelanggan (Client)...");
-        let clientIdToUse = "";
-
-        // Parsing data JSON alamat dari Web Order
-        let addressData: any = {};
-        try {
-          addressData =
-            typeof webOrder.shippingAddress === "string"
-              ? JSON.parse(webOrder.shippingAddress)
-              : webOrder.shippingAddress;
-        } catch (e) {
-          console.error("⚠️ Gagal mem-parsing alamat pengiriman.");
-        }
-
-        const existingClient = webOrder.profile?.userId
-          ? await tx.client.findFirst({
-              where: { userId: webOrder.profile.userId },
-            })
-          : null;
-
-        if (existingClient) {
-          clientIdToUse = existingClient.id;
-          console.log(`👤 Pelanggan lama ditemukan (ID: ${clientIdToUse}).`);
-
-          // Sinkronisasi update alamat master klien
-          const isCorporate = webOrder.profile?.accountType === "CORPORATE";
-          if (isCorporate) {
-            await tx.clientB2B
-              .update({
-                where: { id: clientIdToUse },
-                data: {
-                  country: addressData.country || null,
-                  province: addressData.province || null,
-                  city: addressData.city || null,
-                  district: addressData.district || null,
-                  subDistrict: addressData.subDistrict || null, // ✨ Kelurahan sekarang aman
-                  postalCode: addressData.postalCode || null,
-                  fullAddress: addressData.fullAddress || "-",
-                },
-              })
-              .catch(() => {});
-          } else {
-            await tx.clientB2C
-              .update({
-                where: { id: clientIdToUse },
-                data: {
-                  country: addressData.country || null,
-                  province: addressData.province || null,
-                  city: addressData.city || null,
-                  district: addressData.district || null,
-                  subDistrict: addressData.subDistrict || null, // ✨ Kelurahan sekarang aman
-                  postalCode: addressData.postalCode || null,
-                  fullAddress: addressData.fullAddress || "-",
-                },
-              })
-              .catch(() => {});
-          }
-
-          // ⚠️ BLOK `tx.customerAddress.create` DI SINI TELAH DIHAPUS
-          // Agar buku alamat tidak bertambah otomatis setiap kali user membuat pesanan.
-          // User bisa mengelola buku alamat mereka sendiri langsung dari menu Address Manager.
-        } else {
-          console.log(
-            "👤 Pelanggan lama tidak ditemukan. Membuat profil Pelanggan baru...",
-          );
-          const isCorporate = webOrder.profile?.accountType === "CORPORATE";
-          const clientType = isCorporate ? ClientType.B2B : ClientType.B2C;
-
-          const newClient = await tx.client.create({
-            data: {
-              custCode: `CUST-WEB-${Date.now()}`,
-              type: clientType,
-              userId: webOrder.profile?.userId || undefined,
-            },
-          });
-          clientIdToUse = newClient.id;
-
-          if (isCorporate) {
-            const defaultDept = await tx.department.findFirst();
-            if (!defaultDept) throw new Error("Belum ada data Department!");
-
-            await tx.clientB2B.create({
-              data: {
-                id: newClient.id,
-                companyName: webOrder.profile?.companyName || "Perusahaan Web",
-                departmentId: defaultDept.id,
-                website: "-",
-                phone:
-                  webOrder.profile?.picPhone ||
-                  webOrder.guestPhone ||
-                  addressData.phone,
-                country: addressData.country || null,
-                province: addressData.province || null,
-                city: addressData.city || null,
-                district: addressData.district || null,
-                subDistrict: addressData.subDistrict || null, // ✨ Masukkan Kelurahan
-                postalCode: addressData.postalCode || null,
-                fullAddress: addressData.fullAddress || "-",
-              },
-            });
-          } else {
-            await tx.clientB2C.create({
-              data: {
-                id: newClient.id,
-                prefix: "Mr/Ms",
-                name: webOrder.guestName || addressData.recipient || "Guest",
-                phone: webOrder.guestPhone || addressData.phone,
-                country: addressData.country || null,
-                province: addressData.province || null,
-                city: addressData.city || null,
-                district: addressData.district || null,
-                subDistrict: addressData.subDistrict || null, // ✨ Masukkan Kelurahan
-                postalCode: addressData.postalCode || null,
-                fullAddress: addressData.fullAddress || "-",
-              },
-            });
-          }
-          console.log(
-            `✅ Profil Pelanggan berhasil dibuat (ID: ${clientIdToUse}).`,
-          );
-        }
-
-        // 3. Generate Nomor Order & Buat Order Utama
-        console.log("📝 [STEP 4] Menyalin Nomor Pesanan (Order Number)...");
-        const generatedOrderNumber = webOrder.orderNumber;
-
-        console.log("📦 Menyimpan Order Utama ke database...");
-        await tx.order.create({
-          data: {
-            orderNumber: generatedOrderNumber,
-            dateOrder: new Date(),
-            salesCategory: SalesCategory.SALES,
-            clientId: clientIdToUse,
-            purchaseChannelId: webChannel.id,
-            shippingAddress: JSON.stringify(webOrder.shippingAddress),
-            totalAmount: webOrder.totalAmount,
-            webOrderId: webOrder.id,
-
-            products: {
-              create: webOrder.items.map((item) => ({
-                productId: item.productId,
-                variantId: item.variantId,
-                quantity: item.quantity,
-                unitPrice: item.price,
-                customization: item.customization || undefined,
-                remarks: item.notes,
-              })),
-            },
-          },
-        });
-        console.log("✅ Order Utama berhasil disimpan!");
-
-        // 4. Update Status WebOrder menjadi PAID
-        console.log("🔄 [STEP 5] Memperbarui status Web Order menjadi PAID...");
-        await tx.webOrder.update({
-          where: { id: webOrder.id },
-          data: {
-            status: "PAID",
-            paymentMethod: paymentMethod,
-          },
-        });
-
-        console.log(`🎉 [WEBHOOK SUCCESS] Seluruh proses berhasil!\n`);
-      });
-    } catch (error) {
-      console.error(
-        `🚨 [WEBHOOK FAILED] Terjadi kesalahan saat memproses Order ${orderNumber}:`,
-        error,
-      );
-      throw error;
     }
   }
 }
