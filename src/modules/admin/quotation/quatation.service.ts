@@ -656,6 +656,7 @@ export class QuotationService {
       });
     });
   }
+
   // ==========================================
   // 5. DELETE QUOTATION
   // ==========================================
@@ -804,6 +805,8 @@ export class QuotationService {
               select: {
                 sku: true,
                 name: true,
+                slug: true,
+                basePrice: true,
                 description: true,
                 images: {
                   select: { url: true },
@@ -832,43 +835,26 @@ export class QuotationService {
     const valueIds = new Set<string>();
 
     quotation.items.forEach((item) => {
-      if (item.customization) {
-        try {
-          const parsed =
-            typeof item.customization === "string"
-              ? JSON.parse(item.customization)
-              : item.customization;
-          const attrs = parsed?.selectedAttributes || parsed;
-          if (typeof attrs === "object" && attrs !== null) {
-            Object.entries(attrs).forEach(([attrId, valId]) => {
-              attributeIds.add(attrId);
-              if (Array.isArray(valId)) {
-                valId.forEach((v) => valueIds.add(String(v)));
-              } else {
-                valueIds.add(String(valId));
-              }
-            });
+      // ✨ PERBAIKAN: Langsung baca dari kolom selectedAttributes
+      let attrs: any = null;
+      if (item.selectedAttributes) {
+        attrs =
+          typeof item.selectedAttributes === "string"
+            ? JSON.parse(item.selectedAttributes)
+            : item.selectedAttributes;
+      }
+
+      if (attrs && typeof attrs === "object") {
+        Object.entries(attrs).forEach(([attrId, valId]) => {
+          attributeIds.add(attrId);
+          if (Array.isArray(valId)) {
+            valId.forEach((v) => valueIds.add(String(v)));
+          } else {
+            valueIds.add(String(valId));
           }
-        } catch (error) {}
+        });
       }
     });
-
-    const attributes = await this.prisma.attribute.findMany({
-      where: { id: { in: Array.from(attributeIds) } },
-      select: { id: true, name: true },
-    });
-
-    const attributeValues = await this.prisma.attributeValue.findMany({
-      where: { id: { in: Array.from(valueIds) } },
-      select: { id: true, value: true },
-    });
-
-    const attrDictionary = Object.fromEntries(
-      attributes.map((a) => [a.id, a.name]),
-    );
-    const valDictionary = Object.fromEntries(
-      attributeValues.map((v) => [v.id, v.value]),
-    );
 
     const normalizedItems = quotation.items.map((item) => {
       let imageUrl: string | null = null;
@@ -881,40 +867,24 @@ export class QuotationService {
       const finalDescription =
         item.description || item.product?.description || null;
 
-      // ✨ PERBAIKAN: Ubah menjadi any agar tidak bentrok dengan tipe Json Prisma
-      let readableCustomization: any = null;
+      // ✨ PERBAIKAN: Parsing selectedAttributes ke rawAttrs dengan benar
       let rawAttrs: any = null;
+      if (item.selectedAttributes) {
+        rawAttrs =
+          typeof item.selectedAttributes === "string"
+            ? JSON.parse(item.selectedAttributes)
+            : item.selectedAttributes;
+      }
 
+      // Parsing customization terpisah (untuk logo, catatan khusus, dll)
+      let readableCustomization: any = null;
       if (item.customization) {
         try {
-          const parsed =
+          readableCustomization =
             typeof item.customization === "string"
               ? JSON.parse(item.customization)
               : item.customization;
-          const attrs = parsed?.selectedAttributes || parsed;
-          rawAttrs = attrs;
-
-          if (typeof attrs === "object" && attrs !== null) {
-            const customizationObject: Record<string, string> = {};
-            Object.entries(attrs).forEach(([attrId, valId]) => {
-              const realName = attrDictionary[attrId] || attrId;
-
-              let realValue = "";
-              if (Array.isArray(valId)) {
-                realValue = valId
-                  .map((v) => valDictionary[String(v)] || String(v))
-                  .join(", ");
-              } else {
-                realValue = valDictionary[String(valId)] || String(valId);
-              }
-
-              customizationObject[realName] = realValue;
-            });
-            readableCustomization = customizationObject;
-          } else {
-            readableCustomization = attrs;
-          }
-        } catch (error) {
+        } catch {
           readableCustomization = item.customization;
         }
       }
@@ -926,34 +896,53 @@ export class QuotationService {
         (item.product as any).attributeValues.forEach((pav: any) => {
           if (!pav.attribute || !pav.attributeValue) return;
 
-          if (!attrMap.has(pav.attribute.id)) {
-            attrMap.set(pav.attribute.id, {
-              attributeId: pav.attribute.id,
-              attributeName: pav.attribute.name,
-              values: [],
-            });
+          const attrId = pav.attribute.id;
+          const valId = pav.attributeValue.id;
+
+          let shouldInclude = false;
+          // Cek apakah grup atribut ini (misal: Bahan) memiliki pilihan dari user
+          const hasSelectionForThisGroup =
+            rawAttrs &&
+            rawAttrs[attrId] !== undefined &&
+            rawAttrs[attrId] !== null;
+
+          if (hasSelectionForThisGroup) {
+            const selectedVals = Array.isArray(rawAttrs[attrId])
+              ? rawAttrs[attrId]
+              : [rawAttrs[attrId]];
+            // Jika ada pilihan, HANYA masukkan nilai yang dipilih ke dalam list
+            if (selectedVals.includes(valId)) {
+              shouldInclude = true;
+            }
+          } else {
+            // Jika tidak ada pilihan sama sekali untuk grup ini, tampilkan semua yang available
+            shouldInclude = true;
           }
 
-          attrMap.get(pav.attribute.id).values.push({
-            valueId: pav.attributeValue.id,
-            value: pav.attributeValue.value,
-            priceModifier: Number(pav.priceModifier || 0),
-          });
+          if (shouldInclude) {
+            if (!attrMap.has(attrId)) {
+              attrMap.set(attrId, {
+                attributeId: attrId,
+                attributeName: pav.attribute.name,
+                hasSelection: hasSelectionForThisGroup, // ✨ FLAG UNTUK FRONTEND
+                values: [],
+              });
+            }
+
+            attrMap.get(attrId).values.push({
+              valueId: valId,
+              value: pav.attributeValue.value,
+              priceModifier: Number(pav.priceModifier || 0),
+            });
+          }
         });
 
         availableAttributes = Array.from(attrMap.values());
       }
 
-      const productObj = item.product
-        ? {
-            ...item.product,
-            availableAttributes,
-          }
-        : null;
-
       return {
         ...item,
-        product: productObj,
+        product: item.product ? { ...item.product, availableAttributes } : null,
         imageUrl,
         description: finalDescription,
         customization: readableCustomization,

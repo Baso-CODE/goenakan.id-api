@@ -70,8 +70,15 @@ export class OrderController {
 
   getAllOrder = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { page, take, search, salesCategory, startDate, endDate } =
-        req.query;
+      const {
+        page,
+        take,
+        search,
+        salesCategory,
+        startDate,
+        endDate,
+        purchaseChannelId,
+      } = req.query;
 
       const result = await this.orderService.getAllOrders({
         page: page && !isNaN(Number(page)) ? Number(page) : 1,
@@ -87,6 +94,9 @@ export class OrderController {
 
         startDate: startDate ? String(startDate) : undefined,
         endDate: endDate ? String(endDate) : undefined,
+        purchaseChannelId: purchaseChannelId
+          ? String(purchaseChannelId)
+          : undefined,
       });
 
       res.status(200).send(result);
@@ -249,16 +259,14 @@ export class OrderController {
     }
   };
 
-  // =================================================================
-  // GET ALL COMBINED ORDERS (SALES, SAMPLE, & REPLACEMENT)
-  // =================================================================
   getAllCombinedOrders = async (
     req: Request,
     res: Response,
     next: NextFunction,
   ) => {
     try {
-      const { page, take, search, startDate, endDate } = req.query;
+      const { page, take, search, startDate, endDate, purchaseChannelId } =
+        req.query;
 
       const result = await this.orderService.getAllCombinedOrders({
         page: page && !isNaN(Number(page)) ? Number(page) : 1,
@@ -268,6 +276,11 @@ export class OrderController {
 
         startDate: startDate ? String(startDate) : undefined,
         endDate: endDate ? String(endDate) : undefined,
+
+        // ✨ TAMBAHAN: Meneruskan parameter purchaseChannelId
+        purchaseChannelId: purchaseChannelId
+          ? String(purchaseChannelId)
+          : undefined,
       });
 
       res.status(200).send(result);

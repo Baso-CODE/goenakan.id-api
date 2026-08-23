@@ -882,6 +882,7 @@ export class OrderService {
     salesCategory?: string;
     startDate?: string;
     endDate?: string;
+    purchaseChannelId?: string; // ✨ TAMBAHAN TIPE DATA
   }) {
     const where: any = {};
 
@@ -911,6 +912,11 @@ export class OrderService {
 
     if (query.salesCategory) {
       where.salesCategory = query.salesCategory;
+    }
+
+    // ✨ TAMBAHAN LOGIKA FILTER PURCHASE CHANNEL
+    if (query.purchaseChannelId && query.purchaseChannelId !== "ALL") {
+      where.purchaseChannelId = query.purchaseChannelId;
     }
 
     // 3. Filter Tanggal
@@ -949,11 +955,12 @@ export class OrderService {
             },
           },
         },
-        pic: { select: { name: true } }, // PIC Customer
-        createdBy: { select: { name: true } }, // ✨ User yang login (PIC Sales)
+        pic: { select: { name: true } },
+        createdBy: { select: { name: true } },
         updatedBy: { select: { name: true } },
         referenceQuotation: { select: { quotationNumber: true } },
         referenceSample: { select: { orderNumber: true } },
+        purchaseChannel: { select: { id: true, name: true } }, // ✨ TAMBAHAN AGAR CHANNEL KETAMPIL JIKA PERLU
         shipments: {
           where: { type: "OUTBOUND" },
           orderBy: { updatedAt: "desc" },
@@ -981,7 +988,6 @@ export class OrderService {
       let clientName = "-";
       let picCustomer: string | null = null;
 
-      // Logika PIC Customer (Pihak Klien)
       if (order.client?.b2b) {
         clientName = order.client.b2b.companyName;
         picCustomer =
@@ -1033,6 +1039,12 @@ export class OrderService {
         totalAmount: Number(order.totalAmount),
         currencyCode: order.currencyCode,
         salesCategory: order.salesCategory,
+
+        // ✨ TAMBAHAN INFORMASI PURCHASE CHANNEL KE FORMAT RESPONSE
+        purchaseChannel: order.purchaseChannel
+          ? order.purchaseChannel.name
+          : "-",
+        purchaseChannelId: order.purchaseChannelId || null,
 
         salesName: order.createdBy?.name || "-",
 
@@ -1752,22 +1764,32 @@ export class OrderService {
     return order;
   }
 
-  // =================================================================
-  // GET ALL COMBINED ORDERS (SALES, SAMPLE, & REPLACEMENT)
-  // =================================================================
   async getAllCombinedOrders(query: {
     page?: number;
     take?: number;
     search?: string;
     startDate?: string;
     endDate?: string;
+    purchaseChannelId?: string;
   }) {
-    const { page = 1, take = 10, search, startDate, endDate } = query;
+    const {
+      page = 1,
+      take = 10,
+      search,
+      startDate,
+      endDate,
+      purchaseChannelId,
+    } = query;
     const skip = (Number(page) - 1) * Number(take);
 
     // 1. Siapkan Filter Pencarian
     const orderWhere: any = {};
     const replacementWhere: any = {};
+
+    // ✨ TAMBAHAN: Filter berdasarkan purchaseChannelId (Hanya untuk Order)
+    if (purchaseChannelId && purchaseChannelId !== "ALL") {
+      orderWhere.purchaseChannelId = purchaseChannelId;
+    }
 
     if (search) {
       const searchTerm = search.trim();
@@ -1847,6 +1869,7 @@ export class OrderService {
           updatedBy: { select: { name: true } },
           referenceQuotation: { select: { quotationNumber: true } },
           referenceSample: { select: { orderNumber: true } },
+          purchaseChannel: { select: { id: true, name: true } }, // ✨ TAMBAHAN: Ambil data purchase channel
           shipments: {
             where: { type: "OUTBOUND" },
             orderBy: { updatedAt: "desc" },
@@ -1924,6 +1947,11 @@ export class OrderService {
         updatedBy: order.updatedBy?.name || "-",
         updatedTime: order.updatedAt,
         salesCategory: order.salesCategory,
+        // ✨ TAMBAHAN: Menyertakan informasi purchase channel pada hasil mapping
+        purchaseChannel: order.purchaseChannel
+          ? order.purchaseChannel.name
+          : "-",
+        purchaseChannelId: order.purchaseChannelId || null,
       });
     });
 
@@ -1970,6 +1998,8 @@ export class OrderService {
         updatedBy: rep.updatedBy?.name || "-",
         updatedTime: rep.updatedAt,
         salesCategory: "REPLACEMENT",
+        purchaseChannel: "-", // Replacement order tidak memiliki relasi langsung ke purchase channel
+        purchaseChannelId: null,
       });
     });
 
