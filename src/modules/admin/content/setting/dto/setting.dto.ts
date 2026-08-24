@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from "class-validator";
+import { IsOptional, IsString, IsNumber } from "class-validator";
 
 export class UpdateAppSettingDTO {
   @IsOptional()
@@ -12,4 +12,8 @@ export class UpdateAppSettingDTO {
   @IsOptional()
   @IsString()
   pixelId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  globalForeignPriceAdjuster?: number;
 }

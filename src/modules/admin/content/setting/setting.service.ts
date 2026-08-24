@@ -28,6 +28,7 @@ export class AppSettingService {
           googleAdsId: data.googleAdsId,
           gtmId: data.gtmId,
           pixelId: data.pixelId,
+          globalForeignPriceAdjuster: data.globalForeignPriceAdjuster,
         },
       });
     } else {
@@ -37,6 +38,7 @@ export class AppSettingService {
           googleAdsId: data.googleAdsId,
           gtmId: data.gtmId,
           pixelId: data.pixelId,
+          globalForeignPriceAdjuster: data.globalForeignPriceAdjuster,
         },
       });
     }

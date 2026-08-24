@@ -707,6 +707,7 @@ export class ProductService {
       currencyCode?: string | null;
       exchangeRate?: number | string | null;
       additionalFee?: number | string | null;
+      foreignPriceAdjuster?: number | null;
       priceTiers: {
         minQuantity: number;
         maxQuantity?: number | null;
@@ -723,6 +724,7 @@ export class ProductService {
       currencyCode,
       exchangeRate,
       additionalFee,
+      foreignPriceAdjuster,
     } = payload;
 
     if (priceTiers.length > 0) {
@@ -771,6 +773,10 @@ export class ProductService {
             additionalFee !== undefined && additionalFee !== null
               ? additionalFee.toString()
               : null,
+          foreignPriceAdjuster:
+            foreignPriceAdjuster !== undefined && foreignPriceAdjuster !== null
+              ? Number(foreignPriceAdjuster)
+              : 0,
         },
       });
 
@@ -1329,7 +1335,8 @@ export class ProductService {
     const updatedProduct = await this.prisma.product.findUnique({
       where: { id: productId },
       include: {
-        images: true, // Pastikan ini termasuk semua media yang relevan
+        images: true,
+        videos: true,
       },
     });
 
@@ -1379,9 +1386,22 @@ export class ProductService {
       where: { id: videoId },
     });
     if (!vid) throw new ApiError("Video not found", 404);
+    const productId = vid.productId;
     await this.cloudinary.remove(vid.url);
     await this.prisma.productVideo.delete({ where: { id: videoId } });
-    return { message: "Video deleted successfully" };
+
+    const updatedProduct = await this.prisma.product.findUnique({
+      where: { id: productId },
+      include: {
+        images: true,
+        videos: true,
+      },
+    });
+
+    if (!updatedProduct)
+      throw new ApiError("Product not found after update", 404);
+
+    return updatedProduct;
   }
 
   // == DELETE PRODUCT (SOFT DELETE) ===
@@ -3161,6 +3181,25 @@ export class ProductService {
               amount: 1,
             });
           conversionRate = conversionResult.rate;
+          
+          const appSetting = await this.prisma.appSetting.findFirst();
+          const globalAdjuster = appSetting?.globalForeignPriceAdjuster ? Number(appSetting.globalForeignPriceAdjuster) : 0;
+          const productAdjuster = product.foreignPriceAdjuster !== null && product.foreignPriceAdjuster !== undefined
+            ? Number(product.foreignPriceAdjuster)
+            : 0;
+
+          const effectiveAdjuster = productAdjuster > 0 ? productAdjuster : globalAdjuster;
+
+          if (effectiveAdjuster > 0) {
+            conversionRate = conversionRate * (1 + effectiveAdjuster / 100);
+          }
+
+          console.log(`[CURRENCY ADJUSTMENT] Slug: ${slug}, Target: ${targetCurrency}`);
+          console.log(` - Original rate: ${conversionResult.rate}`);
+          console.log(` - Global adjuster: ${globalAdjuster}%`);
+          console.log(` - Product adjuster: ${productAdjuster}%`);
+          console.log(` - Effective adjuster: ${effectiveAdjuster}%`);
+          console.log(` - Final rate (adjusted): ${conversionRate}`);
         } catch (error) {
           console.error(
             "Gagal mengambil nilai tukar untuk detail produk, fallback ke IDR",
@@ -3333,6 +3372,7 @@ export class ProductService {
         slug: product.slug,
         basePrice: convertedBasePrice,
         currencyCode: targetCurrency,
+        foreignPriceAdjuster: product.foreignPriceAdjuster || 0,
         category: product.category?.name_id || "Uncategorized",
         sold: totalSold,
         media: combinedMedia,
@@ -3553,6 +3593,7 @@ export class ProductService {
             physicalWidth: area.physicalWidth ?? null,
             physicalHeight: area.physicalHeight ?? null,
             unit: area.unit ?? "cm",
+            rotation: area.rotation ?? 0,
           })),
         });
       }

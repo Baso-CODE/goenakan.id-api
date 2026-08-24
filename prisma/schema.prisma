@@ -463,6 +463,7 @@ model Product {
   currencyCode    String?                 @default("IDR")
   exchangeRate    Decimal?                @default(1.0)
   additionalFee   Decimal?                @default(0.0)
+  foreignPriceAdjuster Float?             @default(0)
   isCustom        Boolean                 @default(false)
   isMadeByOrder   Boolean                 @default(false)
   materialTypeId  String?
@@ -721,6 +722,8 @@ model ProductImageMockupArea {
   physicalWidth  Float?
   physicalHeight Float?
   unit           String? @default("cm") // "cm" | "mm"
+
+  rotation       Float?  @default(0)
 
   productImageId String
   productImage   ProductImage @relation(fields: [productImageId], references: [id], onDelete: Cascade)
@@ -1881,10 +1884,11 @@ model ClientLogo {
 }
 
 model AppSetting {
-  id          String  @id @default(uuid())
-  googleAdsId String?
-  gtmId       String?
-  pixelId     String?
+  id                         String  @id @default(uuid())
+  googleAdsId                String?
+  gtmId                      String?
+  pixelId                    String?
+  globalForeignPriceAdjuster Float?  @default(0)
 
   updatedAt DateTime @updatedAt
 
