@@ -50,6 +50,11 @@ export class SyncMockupAreaDto {
   @IsString()
   @IsOptional()
   unit?: string;
+
+  @IsNumber()
+  @IsOptional()
+  @Type(() => Number)
+  rotation?: number | null;
 }
 
 export class SyncMockupPayloadDto {
