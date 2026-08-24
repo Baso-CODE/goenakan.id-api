@@ -301,4 +301,8 @@ export class CreateProductDTO {
   @IsArray()
   @IsString({ each: true })
   createdAttributeIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  colorMockupTrigger?: string;
 }

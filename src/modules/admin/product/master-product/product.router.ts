@@ -136,6 +136,11 @@ export class ProductRouter {
       "/image/:imageId/seo",
       this.productController.updateImageSEO,
     );
+    this.router.post(
+      "/image/:imageId/color-mask",
+      upload.single("colorMask"),
+      this.productController.uploadColorMask,
+    );
     this.router.put(
       "/image/:imageId/mockups",
       validateBody(SyncMockupPayloadDto),
