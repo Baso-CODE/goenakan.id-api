@@ -266,6 +266,18 @@ export class ProductController {
     }
   };
 
+  // === UPLOAD COLOR MASK ===
+  uploadColorMask = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { imageId } = req.params;
+      const file = req.file as Express.Multer.File;
+      const result = await this.productService.uploadColorMask(imageId, file);
+      res.status(200).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
   // === ADD VIDEO (UPDATED FOR DIRECT UPLOAD) ===
   addVideo = async (req: Request, res: Response, next: NextFunction) => {
     try {

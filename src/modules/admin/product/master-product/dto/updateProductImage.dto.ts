@@ -24,4 +24,8 @@ export class UpdateProductImageDTO {
   @IsOptional()
   @IsString()
   printSideValueId?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  deleteColorMask?: boolean;
 }

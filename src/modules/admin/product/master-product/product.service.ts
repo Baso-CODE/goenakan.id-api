@@ -254,6 +254,7 @@ export class ProductService {
               data.mockupAreaHeight !== undefined
                 ? data.mockupAreaHeight
                 : null,
+            colorMockupTrigger: data.colorMockupTrigger || "NONE",
             tags:
               tagIds.length > 0
                 ? { connect: tagIds.map((id) => ({ id })) }
@@ -278,6 +279,7 @@ export class ProductService {
           const productAttributeValueData: {
             productId: string;
             attributeValueId: string;
+            attributeId: string;
             priceModifier: number;
             weight: number | null;
             width: number | null;
@@ -315,6 +317,7 @@ export class ProductService {
               productAttributeValueData.push({
                 productId: product.id,
                 attributeValueId: valueId,
+                attributeId: attr.attributeId,
                 priceModifier: modifier,
                 weight: weightVal,
                 width: widthVal,
@@ -614,6 +617,10 @@ export class ProductService {
     if (data.mockupBackImageId !== undefined)
       updateData.mockupBackImageId = data.mockupBackImageId;
 
+    if (data.colorMockupTrigger !== undefined) {
+      updateData.colorMockupTrigger = data.colorMockupTrigger;
+    }
+
     // Sync Tags
     if (tagIds !== undefined) {
       updateData.tags = {
@@ -762,6 +769,15 @@ export class ProductService {
     }
 
     return await this.prisma.$transaction(async (tx) => {
+      // 1. Get the current product details before update to compare basePrice and tiers
+      const oldProduct = await tx.product.findUnique({
+        where: { id },
+        include: { priceTiers: true, productVariants: { include: { priceTiers: true } } },
+      });
+
+      const oldBasePrice = oldProduct?.basePrice ? Number(oldProduct.basePrice) : 0;
+      const oldTiers = oldProduct?.priceTiers || [];
+
       const product = await tx.product.update({
         where: { id },
         data: {
@@ -801,6 +817,68 @@ export class ProductService {
             price: t.price.toString(),
           })),
         });
+      }
+
+      // 4. Synchronize product variants
+      if (oldProduct && oldProduct.productVariants.length > 0) {
+        for (const variant of oldProduct.productVariants) {
+          const vPrice = variant.price ? Number(variant.price) : 0;
+          
+          // Check if variant price should be updated:
+          // If the price is 0, or is equal to the old base price of the product
+          const shouldUpdatePrice = vPrice === 0 || vPrice === oldBasePrice;
+          
+          // Check if variant tiers should be updated:
+          // We check if variant has no tiers, or if all variant tiers match old product tiers (or are 0)
+          const vTiers = variant.priceTiers || [];
+          let shouldUpdateTiers = vTiers.length === 0;
+          
+          if (!shouldUpdateTiers && oldTiers.length === vTiers.length) {
+            // Check if they match exactly
+            const allMatch = vTiers.every((vt: any) => {
+              const matchingOldTier = oldTiers.find(
+                (ot: any) => ot.minQuantity === vt.minQuantity && ot.maxQuantity === vt.maxQuantity
+              );
+              return matchingOldTier && Number(matchingOldTier.price) === Number(vt.price);
+            });
+            if (allMatch) {
+              shouldUpdateTiers = true;
+            }
+          }
+
+          // If the variant tiers are all 0 or empty, we also want to update/recreate them
+          const isAllTiersZero = vTiers.length > 0 && vTiers.every((vt: any) => Number(vt.price) === 0);
+          if (isAllTiersZero) {
+            shouldUpdateTiers = true;
+          }
+
+          // Apply variant price update
+          if (shouldUpdatePrice) {
+            await tx.productVariant.update({
+              where: { id: variant.id },
+              data: { price: Number(basePrice) },
+            });
+          }
+
+          // Apply variant tiers update
+          if (shouldUpdateTiers) {
+            // Clear variant's old tiers
+            await tx.priceTier.deleteMany({ where: { variantId: variant.id } });
+            
+            // Re-create them mirroring the new product's price tiers
+            if (priceTiers.length > 0) {
+              await tx.priceTier.createMany({
+                data: priceTiers.map((t) => ({
+                  variantId: variant.id,
+                  minQuantity: t.minQuantity,
+                  maxQuantity: t.maxQuantity ?? null,
+                  price: t.price.toString(),
+                  productId: null,
+                })),
+              });
+            }
+          }
+        }
       }
 
       return product;
@@ -1326,6 +1404,13 @@ export class ProductService {
     if (!img) throw new ApiError("Image not found", 404);
     const productId = img.productId;
     await this.cloudinary.remove(img.url);
+    if (img.colorMaskUrl) {
+      try {
+        await this.cloudinary.remove(img.colorMaskUrl);
+      } catch (err) {
+        console.warn("⚠️ Failed to delete color mask from Cloudinary on deleteImage:", err);
+      }
+    }
 
     if (img.product) {
       const updateData: any = {};
@@ -1357,6 +1442,50 @@ export class ProductService {
       throw new ApiError("Product not found after update", 404);
 
     return updatedProduct;
+  }
+
+  // === UPLOAD COLOR MASK ===
+  async uploadColorMask(
+    imageId: string,
+    file?: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new ApiError("No color mask file provided", 400);
+    }
+
+    // 1. Get the existing product image
+    const existingImage = await this.prisma.productImage.findUnique({
+      where: { id: imageId },
+    });
+    if (!existingImage) {
+      throw new ApiError("Product image not found", 404);
+    }
+
+    // 2. If it already has an existing color mask in Cloudinary, delete it first
+    if (existingImage.colorMaskUrl) {
+      try {
+        await this.cloudinary.remove(existingImage.colorMaskUrl);
+      } catch (err) {
+        console.warn("⚠️ Failed to delete old color mask from Cloudinary:", err);
+      }
+    }
+
+    // 3. Upload new color mask to Cloudinary
+    const uploadResult = await this.cloudinary.upload(file, {
+      folder: "products/color-masks",
+      resource_type: "image",
+    });
+
+    // 4. Update the ProductImage record
+    const updatedImage = await this.prisma.productImage.update({
+      where: { id: imageId },
+      data: {
+        colorMaskUrl: uploadResult.secure_url,
+        colorMaskPublicId: uploadResult.public_id,
+      },
+    });
+
+    return updatedImage;
   }
 
   // === ADD VIDEO ===
@@ -2502,6 +2631,15 @@ export class ProductService {
       });
     }
 
+    // 2. Handle color mask deletion if requested
+    if (data.deleteColorMask === true && existingImage.colorMaskUrl) {
+      try {
+        await this.cloudinary.remove(existingImage.colorMaskUrl);
+      } catch (err) {
+        console.error("Failed to delete color mask from Cloudinary:", err);
+      }
+    }
+
     // 3. Update Image
     const updatedImage = await this.prisma.productImage.update({
       where: { id: imageId },
@@ -2522,6 +2660,9 @@ export class ProductService {
           data.printSideValueId !== undefined
             ? data.printSideValueId
             : undefined,
+        ...(data.deleteColorMask === true
+          ? { colorMaskUrl: null, colorMaskPublicId: null }
+          : {}),
       },
     });
 
@@ -3283,6 +3424,7 @@ export class ProductService {
             attributeValueId: img.attributeValueId,
             printSideValueId: img.printSideValueId,
             isFeatured: img.isFeatured || false,
+            colorMaskUrl: img.colorMaskUrl,
           });
         });
       }
@@ -3441,6 +3583,7 @@ export class ProductService {
         isMultiFace: product.isMultiFace,
         mockupFrontImageId: product.mockupFrontImageId,
         mockupBackImageId: product.mockupBackImageId,
+        colorMockupTrigger: product.colorMockupTrigger,
         attributeValues: product.attributeValues
           .map((av) => ({
             id: av.id,

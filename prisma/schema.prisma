@@ -545,6 +545,7 @@ model Product {
   vendorPrices              VendorPriceRecord[]
   replacementProducts       ReplacementOrderProduct[]
   isActive                  Boolean                   @default(true)
+  colorMockupTrigger        String                    @default("NONE")
 
   @@map("products")
 }
@@ -741,6 +742,8 @@ model ProductImage {
   isFeatured     Boolean @default(false)
   altText        String?
   mockupSideName String?
+  colorMaskUrl        String?
+  colorMaskPublicId   String?
 
   productId String
   product   Product @relation(fields: [productId], references: [id])

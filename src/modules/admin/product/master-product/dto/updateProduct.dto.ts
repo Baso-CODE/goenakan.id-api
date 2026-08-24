@@ -119,4 +119,8 @@ export class UpdateProductCoreDTO {
   @IsOptional()
   @IsString()
   mockupBackImageId?: string;
+
+  @IsOptional()
+  @IsString()
+  colorMockupTrigger?: string;
 }
