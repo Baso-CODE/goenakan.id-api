@@ -835,7 +835,6 @@ export class QuotationService {
     const valueIds = new Set<string>();
 
     quotation.items.forEach((item) => {
-      // ✨ PERBAIKAN: Langsung baca dari kolom selectedAttributes
       let attrs: any = null;
       if (item.selectedAttributes) {
         attrs =
@@ -867,7 +866,6 @@ export class QuotationService {
       const finalDescription =
         item.description || item.product?.description || null;
 
-      // ✨ PERBAIKAN: Parsing selectedAttributes ke rawAttrs dengan benar
       let rawAttrs: any = null;
       if (item.selectedAttributes) {
         rawAttrs =
@@ -876,7 +874,6 @@ export class QuotationService {
             : item.selectedAttributes;
       }
 
-      // Parsing customization terpisah (untuk logo, catatan khusus, dll)
       let readableCustomization: any = null;
       if (item.customization) {
         try {
@@ -900,7 +897,6 @@ export class QuotationService {
           const valId = pav.attributeValue.id;
 
           let shouldInclude = false;
-          // Cek apakah grup atribut ini (misal: Bahan) memiliki pilihan dari user
           const hasSelectionForThisGroup =
             rawAttrs &&
             rawAttrs[attrId] !== undefined &&
@@ -910,12 +906,10 @@ export class QuotationService {
             const selectedVals = Array.isArray(rawAttrs[attrId])
               ? rawAttrs[attrId]
               : [rawAttrs[attrId]];
-            // Jika ada pilihan, HANYA masukkan nilai yang dipilih ke dalam list
             if (selectedVals.includes(valId)) {
               shouldInclude = true;
             }
           } else {
-            // Jika tidak ada pilihan sama sekali untuk grup ini, tampilkan semua yang available
             shouldInclude = true;
           }
 
@@ -924,14 +918,23 @@ export class QuotationService {
               attrMap.set(attrId, {
                 attributeId: attrId,
                 attributeName: pav.attribute.name,
-                hasSelection: hasSelectionForThisGroup, // ✨ FLAG UNTUK FRONTEND
+                hasSelection: hasSelectionForThisGroup,
                 values: [],
               });
             }
 
+            // ✨ PERBAIKAN UTAMA: Membersihkan URL dari attribute value
+            let rawValue = pav.attributeValue.value;
+            let cleanValue = rawValue;
+
+            if (typeof rawValue === "string" && rawValue.includes("|")) {
+              // Mengambil teks sebelum tanda "|" dan membuang spasi di sekitarnya
+              cleanValue = rawValue.split("|")[0].trim();
+            }
+
             attrMap.get(attrId).values.push({
               valueId: valId,
-              value: pav.attributeValue.value,
+              value: cleanValue, // Nilai yang dikirim sekarang bersih tanpa URL
               priceModifier: Number(pav.priceModifier || 0),
             });
           }
