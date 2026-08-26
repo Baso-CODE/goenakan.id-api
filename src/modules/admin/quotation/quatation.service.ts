@@ -831,30 +831,6 @@ export class QuotationService {
 
     if (!quotation) throw new ApiError("Quotation not found", 404);
 
-    const attributeIds = new Set<string>();
-    const valueIds = new Set<string>();
-
-    quotation.items.forEach((item) => {
-      let attrs: any = null;
-      if (item.selectedAttributes) {
-        attrs =
-          typeof item.selectedAttributes === "string"
-            ? JSON.parse(item.selectedAttributes)
-            : item.selectedAttributes;
-      }
-
-      if (attrs && typeof attrs === "object") {
-        Object.entries(attrs).forEach(([attrId, valId]) => {
-          attributeIds.add(attrId);
-          if (Array.isArray(valId)) {
-            valId.forEach((v) => valueIds.add(String(v)));
-          } else {
-            valueIds.add(String(valId));
-          }
-        });
-      }
-    });
-
     const normalizedItems = quotation.items.map((item) => {
       let imageUrl: string | null = null;
       if (item.product?.images?.[0]?.url) {
@@ -866,12 +842,15 @@ export class QuotationService {
       const finalDescription =
         item.description || item.product?.description || null;
 
-      let rawAttrs: any = null;
+      // 1. Ambil data atribut mentah
+      let rawAttrs: any = {};
       if (item.selectedAttributes) {
-        rawAttrs =
-          typeof item.selectedAttributes === "string"
-            ? JSON.parse(item.selectedAttributes)
-            : item.selectedAttributes;
+        try {
+          rawAttrs =
+            typeof item.selectedAttributes === "string"
+              ? JSON.parse(item.selectedAttributes)
+              : item.selectedAttributes;
+        } catch (error) {}
       }
 
       let readableCustomization: any = null;
@@ -886,6 +865,17 @@ export class QuotationService {
         }
       }
 
+      // ✨ KUNCI PERBAIKAN LOGIKA: Filter atribut yang benar-benar ada isinya
+      const validAttrKeys = Object.keys(rawAttrs || {}).filter((key) => {
+        const val = rawAttrs[key];
+        if (Array.isArray(val)) return val.length > 0; // Abaikan array kosong []
+        return val !== null && val !== undefined && val !== ""; // Abaikan null/string kosong
+      });
+
+      // Jika validAttrKeys.length > 0, berarti ada atribut yang dipilih
+      const hasAnySelection = validAttrKeys.length > 0;
+      const isPriceStartFrom = !hasAnySelection; // Start From HANYA true jika tidak ada pilihan
+
       let availableAttributes: any[] = [];
       if (item.product && (item.product as any).attributeValues) {
         const attrMap = new Map();
@@ -897,44 +887,45 @@ export class QuotationService {
           const valId = pav.attributeValue.id;
 
           let shouldInclude = false;
-          const hasSelectionForThisGroup =
-            rawAttrs &&
-            rawAttrs[attrId] !== undefined &&
-            rawAttrs[attrId] !== null;
 
-          if (hasSelectionForThisGroup) {
-            const selectedVals = Array.isArray(rawAttrs[attrId])
-              ? rawAttrs[attrId]
-              : [rawAttrs[attrId]];
-            if (selectedVals.includes(valId)) {
-              shouldInclude = true;
+          // ✨ LOGIKA BERCABANG TEGAS
+          if (hasAnySelection) {
+            // KONDISI 1: Ada atribut yang dipilih -> HANYA masukkan yang cocok
+            if (validAttrKeys.includes(attrId)) {
+              const userSelectedVals = Array.isArray(rawAttrs[attrId])
+                ? rawAttrs[attrId].map(String)
+                : [String(rawAttrs[attrId])];
+
+              if (userSelectedVals.includes(String(valId))) {
+                shouldInclude = true;
+              }
             }
           } else {
+            // KONDISI 2: Tidak ada yang dipilih sama sekali -> Masukkan SEMUA
             shouldInclude = true;
           }
 
+          // Proses memasukkan data yang lolos seleksi
           if (shouldInclude) {
             if (!attrMap.has(attrId)) {
               attrMap.set(attrId, {
                 attributeId: attrId,
                 attributeName: pav.attribute.name,
-                hasSelection: hasSelectionForThisGroup,
+                hasSelection: hasAnySelection, // Jika ada seleksi, tandai true untuk frontend
                 values: [],
               });
             }
 
-            // ✨ PERBAIKAN UTAMA: Membersihkan URL dari attribute value
+            // Membersihkan link https
             let rawValue = pav.attributeValue.value;
             let cleanValue = rawValue;
-
             if (typeof rawValue === "string" && rawValue.includes("|")) {
-              // Mengambil teks sebelum tanda "|" dan membuang spasi di sekitarnya
               cleanValue = rawValue.split("|")[0].trim();
             }
 
             attrMap.get(attrId).values.push({
               valueId: valId,
-              value: cleanValue, // Nilai yang dikirim sekarang bersih tanpa URL
+              value: cleanValue,
               priceModifier: Number(pav.priceModifier || 0),
             });
           }
@@ -952,6 +943,7 @@ export class QuotationService {
         rawAttributes: rawAttrs || {},
         remarks: item.remarks ?? null,
         tiers: item.tiers || [],
+        isPriceStartFrom, // Kirimkan flag penentu Start From
       };
     });
 

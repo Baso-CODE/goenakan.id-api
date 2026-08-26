@@ -176,6 +176,7 @@ export class ClientService {
       );
     }
   }
+
   // === GET ALL CLIENTS ===
   async getAllClients(query: {
     page?: number;

@@ -1,4 +1,3 @@
-// src/modules/web-order/web-order.service.ts
 import { ClientType, SalesCategory, WebOrderStatus } from "@prisma/client";
 import { injectable } from "tsyringe";
 import { coreApi, snap } from "../../../lib/midtrans";
@@ -25,7 +24,6 @@ export class WebOrderService {
     const periodYYMM = this.counterService.getCurrentPeriodYYMM();
     const counterType = `${formCode}_${periodYYMM}`;
 
-    // Menggunakan CounterService untuk atomic increment yang aman dari race condition
     const sequence = await this.counterService.getNextFormattedNumber(
       tx,
       counterType,
@@ -121,7 +119,6 @@ export class WebOrderService {
       throw new ApiError("Order tidak ditemukan", 404);
     }
 
-    // Status yang diizinkan untuk dibatalkan
     const allowedStatus: WebOrderStatus[] = ["PENDING_PAYMENT"];
     if (!allowedStatus.includes(order.status)) {
       throw new ApiError(
@@ -139,11 +136,10 @@ export class WebOrderService {
     });
   }
 
-  // === CREATE NEW ORDER (DENGAN DEBUGGING SELECTED ATTRIBUTES) ===
+  // === CREATE NEW ORDER (DENGAN KALKULASI TIER & PRICE MODIFIER ATRIBUT TEKS) ===
   async createOrder(data: CreateWebOrderDTO, profileId: string | null) {
     const { form, items, note, shippingCost } = data;
 
-    // ✨ 1. Pantau payload yang masuk dari frontend
     console.log(
       "\n📥 [DEBUG ORDER] Payload items masuk:",
       JSON.stringify(items, null, 2),
@@ -152,21 +148,30 @@ export class WebOrderService {
     let calculatedSubtotal = 0;
     const validatedItems = await Promise.all(
       items.map(async (item: any, index: number) => {
-        // ✨ 2. Pantau item per indeks beserta atributnya
         console.log(`\n🔍 [DEBUG ITEM ${index}] Nama:`, item.name);
-        console.log(
-          `   --> selectedAttributes dari frontend:`,
-          item.selectedAttributes,
-        );
 
-        let actualPrice = 0;
-        let productName = item.name;
+        // 1. Ambil Data Product & Tier Harga dari Database
+        const dbProduct = await this.prisma.product.findUnique({
+          where: { id: item.productId },
+          include: { priceTiers: { orderBy: { minQuantity: "desc" } } },
+        });
 
-        // 3. Cek apakah item memiliki variantId (Varian Produk)
+        if (!dbProduct) {
+          throw new ApiError(
+            `Produk dengan ID ${item.productId} tidak ditemukan`,
+            404,
+          );
+        }
+
+        let actualPrice = Number(dbProduct.basePrice);
+        let productName = dbProduct.name;
+        let activeTiers: any[] = dbProduct.priceTiers || [];
+
+        // 2. Cek Varian Produk
         if (item.variantId) {
           const dbVariant = await this.prisma.productVariant.findUnique({
             where: { id: item.variantId },
-            include: { product: true },
+            include: { priceTiers: { orderBy: { minQuantity: "desc" } } },
           });
 
           if (!dbVariant) {
@@ -176,56 +181,32 @@ export class WebOrderService {
             );
           }
 
-          actualPrice = Number(dbVariant.price ?? dbVariant.product.basePrice);
-          productName = `${dbVariant.product.name} - ${dbVariant.variantName || "Varian"}`;
-        } else {
-          const dbProduct = await this.prisma.product.findUnique({
-            where: { id: item.productId },
-          });
+          actualPrice = Number(dbVariant.price ?? actualPrice);
+          productName = `${dbProduct.name} - ${dbVariant.variantName || "Varian"}`;
 
-          if (!dbProduct) {
-            throw new ApiError(
-              `Produk dengan ID ${item.productId} tidak ditemukan`,
-              404,
-            );
-          }
-
-          actualPrice = Number(dbProduct.basePrice);
-          productName = dbProduct.name;
-        }
-
-        // 4. Hitung tambahan harga dari Customization (Logo/Sablon)
-        let customizationPriceAddition = 0;
-        let parsedCustomization: any = null;
-
-        if (item.customization) {
-          try {
-            parsedCustomization =
-              typeof item.customization === "string"
-                ? JSON.parse(item.customization)
-                : item.customization;
-
-            if (parsedCustomization && parsedCustomization.zones) {
-              Object.values(parsedCustomization.zones).forEach((zone: any) => {
-                const count = zone.logoCount || 1;
-                customizationPriceAddition += count * 10000;
-              });
-            }
-          } catch (e) {
-            console.error(
-              "Gagal parse customization untuk perhitungan harga",
-              e,
-            );
+          if (dbVariant.priceTiers && dbVariant.priceTiers.length > 0) {
+            activeTiers = dbVariant.priceTiers;
+          } else if (activeTiers.length > 0 && dbVariant.price) {
+            const diff = Number(dbVariant.price) - Number(dbProduct.basePrice);
+            activeTiers = activeTiers.map((t) => ({
+              ...t,
+              price: Number(t.price) + diff,
+            }));
           }
         }
 
-        const finalItemPrice = actualPrice + customizationPriceAddition;
-        const actualTotalItem = finalItemPrice * item.quantity;
+        // 3. TERAPKAN HARGA TIER (POTONGAN GROSIR) BERDASARKAN KUANTITAS
+        const matchedTier = activeTiers.find(
+          (tier) => item.quantity >= tier.minQuantity,
+        );
+        if (matchedTier) {
+          actualPrice = Number(matchedTier.price);
+        }
 
-        calculatedSubtotal += actualTotalItem;
-
-        // ✨ 5. PARSING DAN VALIDASI SELECTED ATTRIBUTES
+        // 4. PARSING SELECTED ATTRIBUTES & HITUNG PRICE MODIFIER DARI NAMA TEKS
         let parsedSelectedAttributes: any = null;
+        let attributePriceAddition = 0;
+
         if (item.selectedAttributes) {
           try {
             parsedSelectedAttributes =
@@ -233,24 +214,70 @@ export class WebOrderService {
                 ? JSON.parse(item.selectedAttributes)
                 : item.selectedAttributes;
 
-            console.log(`   --> Berhasil diparsing:`, parsedSelectedAttributes);
+            if (
+              parsedSelectedAttributes &&
+              typeof parsedSelectedAttributes === "object"
+            ) {
+              const attrEntries = Object.entries(parsedSelectedAttributes);
+
+              for (const [attrName, attrValue] of attrEntries) {
+                if (!attrValue) continue;
+
+                // Cari data product attribute value berdasarkan nama atribut dan nilai teks
+                const dbAttrValue =
+                  await this.prisma.productAttributeValue.findFirst({
+                    where: {
+                      productId: item.productId,
+                      attribute: {
+                        name: { equals: attrName },
+                      },
+                      attributeValue: {
+                        value: {
+                          contains: attrValue as string,
+                        },
+                      },
+                    },
+                  });
+
+                if (dbAttrValue) {
+                  attributePriceAddition += dbAttrValue.priceModifier
+                    ? Number(dbAttrValue.priceModifier)
+                    : 0;
+                }
+              }
+            }
           } catch (e) {
-            console.error("Gagal parse selectedAttributes", e);
+            console.error(
+              "Gagal memparsing/menghitung priceModifier selectedAttributes",
+              e,
+            );
           }
-        } else {
-          console.log(
-            `   --> ⚠️ Perhatian: selectedAttributes kosong/undefined pada item ini.`,
-          );
         }
 
-        // 6. Kembalikan objek item yang siap dimasukkan ke database (WebOrderItem)
+        // 5. Total Akhir per Item (Harga Tier + Modifier Atribut)
+        const finalItemPrice = actualPrice + attributePriceAddition;
+        const actualTotalItem = finalItemPrice * item.quantity;
+
+        calculatedSubtotal += actualTotalItem;
+
+        // 6. Parsing Customization opsional
+        let parsedCustomization: any = null;
+        if (item.customization) {
+          try {
+            parsedCustomization =
+              typeof item.customization === "string"
+                ? JSON.parse(item.customization)
+                : item.customization;
+          } catch (e) {}
+        }
+
         return {
           productName: productName,
           quantity: item.quantity,
           price: finalItemPrice,
           total: actualTotalItem,
           customization: parsedCustomization,
-          selectedAttributes: parsedSelectedAttributes, // Disimpan ke tabel database
+          selectedAttributes: parsedSelectedAttributes,
 
           product: {
             connect: { id: item.productId },
@@ -271,7 +298,6 @@ export class WebOrderService {
       return await this.generateOrderNumber(tx, "SALES");
     });
 
-    // ✨ 7. Simpan pesanan beserta item ke tabel WebOrder
     const createdWebOrder = await this.prisma.webOrder.create({
       data: {
         orderNumber: orderNumber,
@@ -328,8 +354,6 @@ export class WebOrderService {
 
     try {
       await this.prisma.$transaction(async (tx) => {
-        // 1. Ambil Data Web Order secara lengkap
-        console.log("🔍 [STEP 1] Mencari data Web Order di database...");
         const webOrder = await tx.webOrder.findUnique({
           where: { orderNumber },
           include: {
@@ -350,8 +374,6 @@ export class WebOrderService {
           return;
         }
 
-        // Ambil Data Channel website
-        console.log("🔍 [STEP 2] Memeriksa Purchase Channel 'website'...");
         const webChannel = await tx.purchaseChannel.findUnique({
           where: { slug: "website" },
         });
@@ -361,11 +383,7 @@ export class WebOrderService {
           );
         }
 
-        // 2. Siapkan ID Client & Ekstrak Data Alamat
-        console.log("🔍 [STEP 3] Menyiapkan data Pelanggan (Client)...");
         let clientIdToUse = "";
-
-        // Parsing data JSON alamat dari Web Order
         let addressData: any = {};
         try {
           addressData =
@@ -376,7 +394,6 @@ export class WebOrderService {
           console.error("⚠️ Gagal mem-parsing alamat pengiriman.");
         }
 
-        // ✨ MEMBUAT FORMAT STRING ALAMAT YANG RAPI (TANPA NOMOR TELEPON)
         const formattedAddressString = [
           addressData.fullAddress,
           addressData.subDistrict,
@@ -399,9 +416,6 @@ export class WebOrderService {
 
         if (existingClient) {
           clientIdToUse = existingClient.id;
-          console.log(`👤 Pelanggan lama ditemukan (ID: ${clientIdToUse}).`);
-
-          // Sinkronisasi update alamat master klien
           const isCorporate = webOrder.profile?.accountType === "CORPORATE";
           if (isCorporate) {
             await tx.clientB2B
@@ -435,16 +449,27 @@ export class WebOrderService {
               .catch(() => {});
           }
         } else {
-          console.log(
-            "👤 Pelanggan lama tidak ditemukan. Membuat profil Pelanggan baru...",
-          );
           const isCorporate = webOrder.profile?.accountType === "CORPORATE";
           const clientType = isCorporate ? ClientType.B2B : ClientType.B2C;
 
+          const prefix = clientType === ClientType.B2B ? "B" : "C";
+          const counterType =
+            clientType === ClientType.B2B ? "CLIENT_B2B_OFF" : "CLIENT_B2C_OFF";
+
+          const sequence = await this.counterService.getNextFormattedNumber(
+            tx,
+            counterType,
+            "",
+            5,
+          );
+
+          const custCode = `${prefix}${sequence}`;
+
           const newClient = await tx.client.create({
             data: {
-              custCode: `CUST-WEB-${Date.now()}`,
+              custCode: custCode,
               type: clientType,
+              status: "OFFICIAL",
               userId: webOrder.profile?.userId || undefined,
             },
           });
@@ -490,18 +515,10 @@ export class WebOrderService {
               },
             });
           }
-          console.log(
-            `✅ Profil Pelanggan berhasil dibuat (ID: ${clientIdToUse}).`,
-          );
         }
 
-        // 3. Generate Nomor Order & Buat Order Utama
-        console.log("📝 [STEP 4] Menyalin Nomor Pesanan (Order Number)...");
         const generatedOrderNumber = webOrder.orderNumber;
 
-        console.log("📦 Menyimpan Order Utama ke database...");
-
-        // Konversi selectedAttributes menjadi format { attributeId: attributeValueId }
         const processedOrderProducts = await Promise.all(
           webOrder.items.map(async (item: any) => {
             let mappedSelectedAttributes: Record<string, string> | null = null;
@@ -558,25 +575,15 @@ export class WebOrderService {
             salesCategory: SalesCategory.SALES,
             clientId: clientIdToUse,
             purchaseChannelId: webChannel.id,
-
-            // ✨ MENERAPKAN FORMAT ALAMAT TEKS BERSIH TANPA NOMOR TELEPON
             shippingAddress: finalAddress,
-
             totalAmount: webOrder.totalAmount,
             webOrderId: webOrder.id,
-
             products: {
               create: processedOrderProducts,
             },
           },
         });
 
-        console.log(
-          "✅ Order Utama berhasil disimpan dengan alamat & format UUID Attributes yang benar!",
-        );
-
-        // 4. Update Status WebOrder menjadi PAID
-        console.log("🔄 [STEP 5] Memperbarui status Web Order menjadi PAID...");
         await tx.webOrder.update({
           where: { id: webOrder.id },
           data: {
@@ -584,8 +591,6 @@ export class WebOrderService {
             paymentMethod: paymentMethod,
           },
         });
-
-        console.log(`🎉 [WEBHOOK SUCCESS] Seluruh proses berhasil!\n`);
       });
     } catch (error) {
       console.error(
@@ -672,7 +677,6 @@ export class WebOrderService {
     }
   }
 
-  // === 5. HANDLE MIDTRANS WEBHOOK / NOTIFICATION ===
   async handleMidtransNotification(notificationRaw: any) {
     try {
       const statusResponse = await (coreApi as any).transaction.notification(
@@ -683,13 +687,11 @@ export class WebOrderService {
       const transactionStatus = statusResponse.transaction_status;
       const fraudStatus = statusResponse.fraud_status;
 
-      // Misal format order_id dari midtrans: ORD-12345_171000000
       const actualOrderNumber = rawOrderId.split("_")[0];
       const paymentMethodFromMidtrans = statusResponse.payment_type;
 
       let newStatus: WebOrderStatus | undefined;
 
-      // 1. Tentukan Status Berdasarkan Notifikasi Midtrans
       if (
         transactionStatus === "capture" ||
         transactionStatus === "settlement"
@@ -707,18 +709,13 @@ export class WebOrderService {
         newStatus = "PENDING_PAYMENT";
       }
 
-      // 2. Jalankan Proses Update Berdasarkan Status
       if (newStatus) {
         if (newStatus === "PAID") {
-          // ==============================================================
-          // 🌟 LOGIKA BARU: JIKA LUNAS, KONVERSI KE ORDER UTAMA & CLIENT
-          // ==============================================================
           await this.processPaidWebOrder(
             actualOrderNumber,
             paymentMethodFromMidtrans,
           );
         } else {
-          // Jika status selain PAID (misal CANCELLED/PENDING), update biasa saja
           await this.prisma.webOrder.update({
             where: { orderNumber: actualOrderNumber },
             data: {

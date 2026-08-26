@@ -483,53 +483,53 @@ model ItemName {
 }
 
 model Product {
-  id              String                  @id @default(uuid())
-  name            String                  @default("") @map("name_id")
-  name_en         String?
-  sku             String                  @unique
-  slug            String                  @unique
-  description     String?                 @map("description_id") @db.Text
-  description_en  String?                 @db.Text
-  uom             String                  @default("pcs")
-  basePrice       Decimal
-  foreignPrice    Decimal?
-  currencyCode    String?                 @default("IDR")
-  exchangeRate    Decimal?                @default(1.0)
-  additionalFee   Decimal?                @default(0.0)
-  foreignPriceAdjuster Float?             @default(0)
-  isCustom        Boolean                 @default(false)
-  isMadeByOrder   Boolean                 @default(false)
-  materialTypeId  String?
-  materialType    MaterialType?           @relation(fields: [materialTypeId], references: [id])
-  stock           Int                     @default(0)
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
-  weight          Float?
-  width           Float?
-  height          Float?
-  length          Float?
-  categoryId      String
-  category        ProductCategory         @relation(fields: [categoryId], references: [id])
-  itemCategoryId  String?
-  itemCategory    ItemCategory?           @relation(fields: [itemCategoryId], references: [id])
-  itemNameId      String?
-  itemName        ItemName?               @relation(fields: [itemNameId], references: [id])
-  attributeValues ProductAttributeValue[]
-  priceTiers      PriceTier[]
-  tags            Tag[]
-  invoiceItems    InvoiceItem[]
-  orderProducts   OrderProduct[]
-  quotationItems  QuotationItem[]
-  cashflowRevenue CashflowRevenue[]
-  images          ProductImage[]
-  videos          ProductVideo[]
-  productVariants ProductVariant[]
-  attributes      Attribute[]
-  seo             ProductSEO?
-  articleProducts ArticleProduct[]
-  cartItems       CartItem[]
-  webOrderItems   WebOrderItem[]
-  purchaseItems   PurchaseOrderItem[]
+  id                   String                  @id @default(uuid())
+  name                 String                  @default("") @map("name_id")
+  name_en              String?
+  sku                  String                  @unique
+  slug                 String                  @unique
+  description          String?                 @map("description_id") @db.Text
+  description_en       String?                 @db.Text
+  uom                  String                  @default("pcs")
+  basePrice            Decimal
+  foreignPrice         Decimal?
+  currencyCode         String?                 @default("IDR")
+  exchangeRate         Decimal?                @default(1.0)
+  additionalFee        Decimal?                @default(0.0)
+  foreignPriceAdjuster Float?                  @default(0)
+  isCustom             Boolean                 @default(false)
+  isMadeByOrder        Boolean                 @default(false)
+  materialTypeId       String?
+  materialType         MaterialType?           @relation(fields: [materialTypeId], references: [id])
+  stock                Int                     @default(0)
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  weight               Float?
+  width                Float?
+  height               Float?
+  length               Float?
+  categoryId           String
+  category             ProductCategory         @relation(fields: [categoryId], references: [id])
+  itemCategoryId       String?
+  itemCategory         ItemCategory?           @relation(fields: [itemCategoryId], references: [id])
+  itemNameId           String?
+  itemName             ItemName?               @relation(fields: [itemNameId], references: [id])
+  attributeValues      ProductAttributeValue[]
+  priceTiers           PriceTier[]
+  tags                 Tag[]
+  invoiceItems         InvoiceItem[]
+  orderProducts        OrderProduct[]
+  quotationItems       QuotationItem[]
+  cashflowRevenue      CashflowRevenue[]
+  images               ProductImage[]
+  videos               ProductVideo[]
+  productVariants      ProductVariant[]
+  attributes           Attribute[]
+  seo                  ProductSEO?
+  articleProducts      ArticleProduct[]
+  cartItems            CartItem[]
+  webOrderItems        WebOrderItem[]
+  purchaseItems        PurchaseOrderItem[]
 
   mockupAreaX      Float?
   mockupAreaY      Float?
@@ -736,14 +736,14 @@ model ProductVariantImage {
 }
 
 model ProductImage {
-  id             String  @id @default(uuid())
-  url            String
-  publicId       String
-  isFeatured     Boolean @default(false)
-  altText        String?
-  mockupSideName String?
-  colorMaskUrl        String?
-  colorMaskPublicId   String?
+  id                String  @id @default(uuid())
+  url               String
+  publicId          String
+  isFeatured        Boolean @default(false)
+  altText           String?
+  mockupSideName    String?
+  colorMaskUrl      String?
+  colorMaskPublicId String?
 
   productId String
   product   Product @relation(fields: [productId], references: [id])
@@ -776,7 +776,7 @@ model ProductImageMockupArea {
   physicalHeight Float?
   unit           String? @default("cm") // "cm" | "mm"
 
-  rotation       Float?  @default(0)
+  rotation Float? @default(0)
 
   productImageId String
   productImage   ProductImage @relation(fields: [productImageId], references: [id], onDelete: Cascade)

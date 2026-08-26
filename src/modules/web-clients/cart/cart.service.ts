@@ -25,7 +25,7 @@ export class CartService {
     return cart;
   }
 
-  // === 1. GET CART (DENGAN KALKULASI HARGA TIER BERDASARKAN QUANTITY, KURS, & BILINGUAL) ===
+  // === 1. GET CART (DENGAN TIER & MODIFIER ATRIBUT BERBASIS NAMA TEKS) ===
   async getCart(
     profileId: string,
     targetCurrency: string = "IDR",
@@ -52,7 +52,7 @@ export class CartService {
                 width: true,
                 height: true,
                 length: true,
-                priceTiers: { orderBy: { minQuantity: "desc" } }, // ✨ Ambil priceTiers produk
+                priceTiers: { orderBy: { minQuantity: "desc" } },
               },
             },
             variant: {
@@ -61,7 +61,7 @@ export class CartService {
                 variantName: true,
                 sku: true,
                 price: true,
-                priceTiers: { orderBy: { minQuantity: "desc" } }, // ✨ Ambil priceTiers varian
+                priceTiers: { orderBy: { minQuantity: "desc" } },
               },
             },
           },
@@ -71,7 +71,7 @@ export class CartService {
 
     if (!rawCart) return null;
 
-    // ✨ 1. AMBIL NILAI KURS JIKA BUKAN IDR ✨
+    // ✨ 1. AMBIL NILAI KURS JIKA BUKAN IDR
     let conversionRate = 1;
     if (targetCurrency && targetCurrency !== "IDR") {
       try {
@@ -89,10 +89,9 @@ export class CartService {
       }
     }
 
-    // ✨ 2. KALKULASI HARGA BERDASARKAN TIER QUANTITY & FORMAT BILINGUAL ✨
+    // ✨ 2. KALKULASI HARGA
     const processedItems = await Promise.all(
       rawCart.items.map(async (item) => {
-        // A. Pemilihan Nama Produk Berdasarkan Bahasa (Bilingual Support)
         let productName = item.product.name;
         if (lang === "en") {
           productName =
@@ -102,10 +101,10 @@ export class CartService {
             item.product.name || item.product.name_en || "Produk Tanpa Nama";
         }
 
-        // B. Tentukan Harga Dasar & Active Tiers (Produk vs Varian)
         let calculatedPriceIdr = item.product.basePrice.toNumber();
         let activeTiers: any[] = item.product.priceTiers || [];
 
+        // Penyesuaian Varian
         if (item.variantId && item.variant) {
           if (item.variant.price) {
             calculatedPriceIdr = item.variant.price.toNumber();
@@ -123,7 +122,7 @@ export class CartService {
           }
         }
 
-        // C. Cek Tier Berdasarkan Quantity User (Misal: 11 pcs masuk tier tertentu)
+        // Cek Tier Berdasarkan Quantity User
         const matchedTier = activeTiers.find(
           (tier) => item.quantity >= tier.minQuantity,
         );
@@ -132,9 +131,8 @@ export class CartService {
           calculatedPriceIdr = Number(matchedTier.price);
         }
 
+        // Ekstrak Customization
         let customData: any = {};
-        let resolvedAttributes: any[] = [];
-
         try {
           if (item.customization) {
             customData =
@@ -146,45 +144,52 @@ export class CartService {
           console.error("Gagal mem-parsing customization keranjang", e);
         }
 
-        // D. Tambahkan Biaya Atribut (Bahan Premium, Ukuran XXL, dsb)
+        let resolvedAttributes: any[] = [];
+
+        // ✨ EKSTRAKSI ATRIBUT BERBASIS NAMA TEKS (SELARAS DENGAN WEB ORDER)
         if (
-          customData.selectedAttributeValueIds &&
-          Array.isArray(customData.selectedAttributeValueIds)
+          item.selectedAttributes &&
+          typeof item.selectedAttributes === "object"
         ) {
-          const attributes = await this.prisma.productAttributeValue.findMany({
-            where: {
-              productId: item.productId,
-              attributeValueId: { in: customData.selectedAttributeValueIds },
-            },
-            include: { attributeValue: true },
-          });
+          const attrEntries = Object.entries(
+            item.selectedAttributes as Record<string, any>,
+          );
 
-          attributes.forEach((attr) => {
-            const modifierIdr = attr.priceModifier
-              ? Number(attr.priceModifier)
-              : 0;
-            calculatedPriceIdr += modifierIdr;
+          for (const [attrName, attrValue] of attrEntries) {
+            if (!attrValue) continue;
 
-            resolvedAttributes.push({
-              name: attr.attributeValue.value,
-              modifier: parseFloat((modifierIdr * conversionRate).toFixed(2)),
-            });
-          });
-        }
+            const dbAttrVal = await this.prisma.productAttributeValue.findFirst(
+              {
+                where: {
+                  productId: item.productId,
+                  attribute: {
+                    name: { equals: attrName },
+                  },
+                  attributeValue: {
+                    value: { contains: String(attrValue) },
+                  },
+                },
+                include: { attributeValue: true },
+              },
+            );
 
-        // E. Tambahkan Biaya Sablon / Custom Logo (Opsional)
-        const COST_PER_LOGO_IDR = 15000;
-        if (customData.zones) {
-          const zones = Object.values(customData.zones);
-          zones.forEach((zone: any) => {
-            const count = zone.logoCount || 1;
-            calculatedPriceIdr += COST_PER_LOGO_IDR * count;
-          });
+            if (dbAttrVal) {
+              const modifierIdr = dbAttrVal.priceModifier
+                ? Number(dbAttrVal.priceModifier)
+                : 0;
+              calculatedPriceIdr += modifierIdr; // Ditambahkan ke Harga Dasar/Tier Per Pcs
+
+              resolvedAttributes.push({
+                name: String(attrValue),
+                modifier: parseFloat((modifierIdr * conversionRate).toFixed(2)),
+              });
+            }
+          }
         }
 
         customData.resolvedAttributes = resolvedAttributes;
 
-        // F. KONVERSI HARGA TOTAL ITEM KE MATA UANG TARGET
+        // F. Konversi Harga Total Unit ke Mata Uang Target
         const finalConvertedPrice = parseFloat(
           (calculatedPriceIdr * conversionRate).toFixed(2),
         );
@@ -213,7 +218,7 @@ export class CartService {
     };
   }
 
-  // === 2. ADD TO CART (MENYIMPAN SELECTED ATTRIBUTES) ===
+  // === 2. ADD TO CART ===
   async addToCart(profileId: string, data: AddToCartDTO) {
     const cart = await this.getOrCreateCart(profileId);
 
@@ -347,11 +352,38 @@ export class CartService {
             customData = JSON.parse(customData);
         } catch (e) {}
 
-        const COST_PER_LOGO_IDR = 15000;
-        if (customData.zones) {
-          Object.values(customData.zones).forEach((zone: any) => {
-            calculatedPriceIdr += COST_PER_LOGO_IDR * (zone.logoCount || 1);
-          });
+        // ✨ Tambahkan Price Modifier Berdasarkan Nama Teks Attribute untuk Guest
+        if (
+          item.selectedAttributes &&
+          typeof item.selectedAttributes === "object"
+        ) {
+          const attrEntries = Object.entries(
+            item.selectedAttributes as Record<string, any>,
+          );
+
+          for (const [attrName, attrValue] of attrEntries) {
+            if (!attrValue) continue;
+
+            const dbAttrVal = await this.prisma.productAttributeValue.findFirst(
+              {
+                where: {
+                  productId: item.productId,
+                  attribute: {
+                    name: { equals: attrName },
+                  },
+                  attributeValue: {
+                    value: { contains: String(attrValue) },
+                  },
+                },
+              },
+            );
+
+            if (dbAttrVal) {
+              calculatedPriceIdr += dbAttrVal.priceModifier
+                ? Number(dbAttrVal.priceModifier)
+                : 0;
+            }
+          }
         }
 
         const finalConvertedPrice = parseFloat(
