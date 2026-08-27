@@ -6,6 +6,7 @@ import { injectable } from "tsyringe";
 import { ApiError } from "../../../utils/api-error";
 import { PaginationService } from "../../pagination/pagination.service";
 import { PrismaService } from "../../prisma/prisma.service";
+import { OrderService } from "../order/order.service";
 import { CreateInvoiceDTO, InvoiceCategory } from "./dto/createInvoice.dto";
 import { PayInvoiceDTO } from "./dto/updateInvoice.dto";
 
@@ -14,6 +15,7 @@ export class InvoiceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pagination: PaginationService,
+    private readonly orderService: OrderService,
   ) {}
 
   async createInvoice(userId: string, data: CreateInvoiceDTO) {
@@ -231,9 +233,10 @@ export class InvoiceService {
   }
 
   async payInvoice(invoiceId: number, data: PayInvoiceDTO) {
-    // 1. Cek Invoice
+    // 1. Cek Invoice beserta data orderId-nya
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
+      select: { id: true, status: true, orderId: true }, // Pastikan orderId ikut diambil
     });
 
     if (!invoice) throw new ApiError("Invoice not found", 404);
@@ -253,9 +256,19 @@ export class InvoiceService {
       },
     });
 
+    // ✨ 3. Pengecekan otomatis: Cek apakah setelah invoice ini dibayar, PO client perlu dihapus
+    if (invoice.orderId) {
+      try {
+        // Asumsikan order service tersedia atau kita panggil logika pengecekannya
+        // Jika kamu menggunakan Dependency Injection ttsyringe, pastikan OrderService di-inject di constructor InvoiceService.
+        await this.orderService.checkAndDeleteClientPoIfNeeded(invoice.orderId);
+      } catch (error) {
+        console.error("Gagal menjalankan pengecekan hapus PO otomatis:", error);
+      }
+    }
+
     return updatedInvoice;
   }
-
   async getAllInvoices(query: {
     page?: number;
     take?: number;

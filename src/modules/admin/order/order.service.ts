@@ -4,6 +4,7 @@ import { injectable } from "tsyringe";
 import { getErrorMessage } from "../../../middleware/getErrorMessage";
 import { ApiError } from "../../../utils/api-error";
 import { CounterService } from "../../../utils/counter.service";
+import { CloudinaryService } from "../../cloudinary/cloudinary.service";
 import { PaginationService } from "../../pagination/pagination.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { WhatsappNotificationService } from "../../whatsapp/notification/whatsapp-notification.service";
@@ -24,6 +25,7 @@ export class OrderService {
     private readonly pagination: PaginationService,
     private whatsappNotification: WhatsappNotificationService,
     private readonly counterService: CounterService,
+    private readonly cloudinary: CloudinaryService,
   ) {}
 
   // ====================================================================
@@ -54,10 +56,11 @@ export class OrderService {
     // Gabungkan menjadi format akhir: GI-XXYYMMXXXXX
     return `GI-${formCode}${periodYYMM}${sequence}`;
   }
+
   // ====================================================================
   // MAIN METHOD: CREATE ORDER
   // ====================================================================
-  async createOrder(data: CreateOrderDTO) {
+  async createOrder(data: CreateOrderDTO, file?: Express.Multer.File) {
     const {
       products,
       clientB2BPICId,
@@ -66,11 +69,33 @@ export class OrderService {
       warrantyDays,
       ...orderCore
     } = data;
-
     let totalAmount = 0;
     const orderProductsData: any[] = [];
 
     const isSampleOrder = orderCore.salesCategory === "SAMPLE";
+
+    // ====================================================================
+    // ✨ PERBAIKAN: UPLOAD FILE KE CLOUDINARY (Lakukan di luar transaksi DB)
+    // ====================================================================
+    let uploadedPoData: {
+      url: string;
+      fileName: string;
+      fileType: string;
+    } | null = null;
+
+    if (file) {
+      const uploadResult = await this.cloudinary.upload(file, {
+        folder: "orders/client_po",
+        resource_type: "auto",
+      });
+
+      uploadedPoData = {
+        url: uploadResult.secure_url,
+        fileName: file.originalname, // Nama asli file tetap kita simpan di database!
+        fileType: file.mimetype,
+      };
+    }
+    // ====================================================================
 
     for (const item of products) {
       const product = await this.prisma.product.findUnique({
@@ -144,7 +169,6 @@ export class OrderService {
       const subtotal = finalPrice * item.quantity;
       totalAmount += subtotal;
 
-      // --- PERUBAHAN ADA DI BLOK INI ---
       const productData: any = {
         product: { connect: { id: item.productId } },
         quantity: item.quantity,
@@ -219,8 +243,10 @@ export class OrderService {
           remark: orderCore.remark || null,
           shippingAddress: orderCore.shippingAddress,
           totalAmount: totalAmount,
-          warrantyDays: warrantyDays ?? null,
-
+          warrantyDays:
+            warrantyDays !== undefined && warrantyDays !== null
+              ? Number(warrantyDays)
+              : null,
           client: { connect: { id: orderCore.clientId } },
           ...connectRelations,
 
@@ -246,6 +272,23 @@ export class OrderService {
           },
         },
       });
+
+      // ====================================================================
+      // ✨ PERBAIKAN: SIMPAN DATA CLIENT PURCHASE ORDER KE DATABASE
+      // ====================================================================
+      if (orderCore.clientPoNumber || uploadedPoData) {
+        await tx.clientPurchaseOrder.create({
+          data: {
+            orderId: order.id, // Sambungkan ke Order yang baru saja dibuat
+            poNumber: orderCore.clientPoNumber || null,
+            fileUrl: uploadedPoData?.url || null,
+            fileName: uploadedPoData?.fileName || null,
+            fileType: uploadedPoData?.fileType || null,
+          },
+        });
+      }
+      // ====================================================================
+
       const clientRecord = await tx.client.findUnique({
         where: { id: orderCore.clientId },
         select: { status: true, type: true, custCode: true },
@@ -257,7 +300,6 @@ export class OrderService {
           clientRecord.type === "B2B" ? "CLIENT_B2B_OFF" : "CLIENT_B2C_OFF";
 
         // Generate nomor urut secara aman tanpa race condition
-        // Karena ini bukan format tanggal, kita berikan string kosong "" pada parameter periodYYMM
         const sequence = await this.counterService.getNextFormattedNumber(
           tx,
           counterType,
@@ -293,7 +335,6 @@ export class OrderService {
 
       return order;
     });
-
     // try {
     //   // const getClientPhone = () => {
     //   //   if (newOrder.client?.b2c?.phone) {
@@ -642,6 +683,9 @@ export class OrderService {
           },
         },
         createdBy: true,
+        // ✨ TAMBAHAN BARU: Sertakan data Client Purchase Order
+        clientPurchaseOrder: true,
+
         products: {
           include: {
             product: true,
@@ -847,6 +891,7 @@ export class OrderService {
       id: order.id,
       orderNumber: order.orderNumber || "-",
       dateOrder: order.dateOrder,
+      status: order.status,
       salesCategory: order.salesCategory,
       shippingAddress: order.shippingAddress,
       totalAmount: Number(order.totalAmount),
@@ -872,6 +917,17 @@ export class OrderService {
         isDone: fu.isDone,
         createdAt: fu.createdAt,
       })),
+
+      // ✨ TAMBAHAN BARU: Kirim data PO client ke frontend
+      clientPurchaseOrder: order.clientPurchaseOrder
+        ? {
+            id: order.clientPurchaseOrder.id,
+            poNumber: order.clientPurchaseOrder.poNumber,
+            fileUrl: order.clientPurchaseOrder.fileUrl,
+            fileName: order.clientPurchaseOrder.fileName,
+            fileType: order.clientPurchaseOrder.fileType,
+          }
+        : null,
     };
   }
 
@@ -2021,5 +2077,149 @@ export class OrderService {
     };
 
     return { data: paginatedData, meta };
+  }
+
+  // ====================================================================
+  // METHOD: CANCEL ORDER & DELETE FILE FROM CLOUD & DATABASE
+  // ====================================================================
+  async cancelOrder(id: string, userId?: string) {
+    // 1. Cek apakah order dengan ID tersebut ada beserta data PO client-nya
+    const existingOrder = await this.prisma.order.findUnique({
+      where: { id },
+      include: { clientPurchaseOrder: true },
+    });
+
+    if (!existingOrder) {
+      throw new ApiError(`Order dengan ID ${id} tidak ditemukan`, 404);
+    }
+
+    // 2. Validasi status order
+    if (existingOrder.status === "COMPLETED") {
+      throw new ApiError(
+        "Order yang sudah selesai (COMPLETED) tidak dapat dibatalkan",
+        400,
+      );
+    }
+
+    if (existingOrder.status === "CANCELLED") {
+      throw new ApiError("Order ini sudah dibatalkan sebelumnya", 400);
+    }
+
+    // 3. Ambil data file PO jika ada untuk dihapus fisiknya dari Cloudinary
+    const poFile = existingOrder.clientPurchaseOrder;
+
+    // 4. Jalankan transaksi database dan hapus file fisik
+    const result = await this.prisma.$transaction(async (tx) => {
+      // A. Hapus record ClientPurchaseOrder dari database jika ada
+      if (poFile) {
+        await tx.clientPurchaseOrder.delete({
+          where: { orderId: id },
+        });
+      }
+
+      // B. Update status order menjadi CANCELLED
+      const updatedOrder = await tx.order.update({
+        where: { id },
+        data: {
+          status: "CANCELLED",
+          updatedById: userId || null,
+        },
+      });
+
+      return updatedOrder;
+    });
+
+    // 5. Hapus file fisik dari Cloudinary di luar transaksi database
+    // (Agar jika penghapusan cloud gagal, transaksi database utama tetap aman)
+    if (poFile && poFile.fileUrl) {
+      try {
+        // Memanggil fungsi remove/delete dari CloudinaryService
+        await this.cloudinary.remove(poFile.fileUrl);
+      } catch (cloudinaryError) {
+        console.error(
+          "⚠️ Gagal menghapus file fisik dari Cloudinary:",
+          cloudinaryError,
+        );
+        // Proses tetap dilanjutkan karena status order sudah resmi dibatalkan
+      }
+    }
+
+    return result;
+  }
+  // ====================================================================
+  // METHOD: CEK & HAPUS FILE PO CLIENT (SUPPORT CICILAN & GARANSI)
+  // ====================================================================
+  async checkAndDeleteClientPoIfNeeded(orderId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        clientPurchaseOrder: true,
+        invoices: true,
+      },
+    });
+
+    if (!order || !order.clientPurchaseOrder) return;
+
+    // Jika order sudah dicancel, file langsung dihapus
+    if (order.status === "CANCELLED") {
+      await this.executeDeletePo(order.id, order.clientPurchaseOrder);
+      return;
+    }
+
+    // 1. Cek apakah seluruh tagihan pesanan ini sudah benar-benar lunas
+    // Ambil semua invoice aktif (tidak cancelled)
+    const activeInvoices = order.invoices.filter(
+      (inv) => inv.status !== "CANCELLED",
+    );
+
+    // Hitung total uang dari invoice yang sudah berstatus PAID
+    const totalPaidAmount = activeInvoices
+      .filter((inv) => inv.status === "PAID")
+      .reduce((sum, inv) => sum + Number(inv.totalAmount), 0);
+
+    const totalOrderAmount = Number(order.totalAmount);
+
+    // Order dianggap lunas jika total yang dibayar sudah sama dengan (atau melebihi) total order,
+    // DAN pastikan minimal sudah ada invoice yang dibuat (activeInvoices.length > 0)
+    const isFullyPaid =
+      activeInvoices.length > 0 && totalPaidAmount >= totalOrderAmount;
+
+    // 2. Cek apakah masa garansi sudah habis
+    let isWarrantyExpired = false;
+    if (order.warrantyDays && order.warrantyDays > 0) {
+      const orderDate = new Date(order.dateOrder);
+      const expiryDate = new Date(orderDate);
+      expiryDate.setDate(expiryDate.getDate() + order.warrantyDays);
+
+      const today = new Date();
+      isWarrantyExpired = today > expiryDate;
+    } else {
+      isWarrantyExpired = true;
+    }
+
+    // Aturan: Hapus jika "Sudah Lunas Sepenuhnya (Termasuk Cicilan)" ATAU "Garansi Habis"
+    if (isFullyPaid || isWarrantyExpired) {
+      await this.executeDeletePo(order.id, order.clientPurchaseOrder);
+    }
+  }
+
+  // Fungsi helper privat untuk mengeksekusi penghapusan database & file fisik
+  private async executeDeletePo(
+    orderId: string,
+    poRecord: { id: string; fileUrl: string | null },
+  ) {
+    try {
+      await this.prisma.clientPurchaseOrder
+        .delete({
+          where: { orderId },
+        })
+        .catch(() => {});
+
+      if (poRecord.fileUrl) {
+        await this.cloudinary.remove(poRecord.fileUrl);
+      }
+    } catch (error) {
+      console.error("Gagal menghapus file PO otomatis:", error);
+    }
   }
 }

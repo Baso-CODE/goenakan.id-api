@@ -1196,8 +1196,25 @@ model Order {
   salesId              String?
   whatsappMessages     WhatsappMessage[]
   replacementOrders    ReplacementOrder[]    @relation("OrderToReplacement")
+  clientPurchaseOrder  ClientPurchaseOrder?
 
   @@map("orders")
+}
+
+model ClientPurchaseOrder {
+  id      String @id @default(uuid())
+  orderId String @unique
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  poNumber String?
+  fileUrl  String?
+  fileName String?
+  fileType String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("client_purchase_orders")
 }
 
 model OrderWarranty {

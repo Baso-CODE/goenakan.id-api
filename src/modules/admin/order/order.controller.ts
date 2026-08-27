@@ -6,15 +6,44 @@ import { OrderExportQuery, OrderService } from "./order.service";
 @injectable()
 export class OrderController {
   constructor(private readonly orderService: OrderService) {}
+
   createOrder = async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // 1. Ambil body yang sudah diproses oleh Multer
       const body = req.body as CreateOrderDTO;
+
       const authorId = (req as any).user?.id;
       if (authorId) {
         body.createdById = authorId;
       }
 
-      const result = await this.orderService.createOrder(body);
+      // =====================================================================
+      // ✨ PERBAIKAN: PARSING STRING JSON DARI FORMDATA MENJADI ARRAY OBJEK
+      // =====================================================================
+      if (typeof body.products === "string") {
+        try {
+          body.products = JSON.parse(body.products);
+        } catch (e) {
+          throw new Error("Format data products tidak valid (Bukan JSON)");
+        }
+      }
+
+      if (typeof body.sampleFollowUps === "string") {
+        try {
+          body.sampleFollowUps = JSON.parse(body.sampleFollowUps);
+        } catch (e) {
+          throw new Error(
+            "Format data sampleFollowUps tidak valid (Bukan JSON)",
+          );
+        }
+      }
+      // =====================================================================
+
+      const file = req.file;
+
+      // 2. Lanjutkan meneruskan body yang sudah berwujud array ke Service
+      const result = await this.orderService.createOrder(body, file);
+
       res.status(201).send(result);
     } catch (error) {
       next(error);
@@ -284,6 +313,23 @@ export class OrderController {
       });
 
       res.status(200).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  cancelOrder = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const authorId = (req as any).user?.id;
+
+      const result = await this.orderService.cancelOrder(id, authorId);
+
+      res.status(200).json({
+        success: true,
+        message: "Order berhasil dibatalkan",
+        data: result,
+      });
     } catch (error) {
       next(error);
     }
