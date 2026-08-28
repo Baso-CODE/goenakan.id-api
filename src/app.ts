@@ -262,8 +262,8 @@ export default class App {
   public async start(): Promise<void> {
     try {
       const prismaService = container.resolve(PrismaService);
-
-      // await syncPermissionsToDatabase(prismaService);
+      // matikan kalau sudah di deploy
+      await syncPermissionsToDatabase(prismaService);
       console.log("✅ Sinkronisasi permissions berhasil dijalankan!");
     } catch (error) {
       console.error("❌ Gagal menjalankan sinkronisasi permissions:", error);
