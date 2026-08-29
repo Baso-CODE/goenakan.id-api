@@ -1897,8 +1897,17 @@ model HeroSlide {
   id    String @id @default(uuid())
   title String
 
+  // Gambar Utama (Desktop)
   imageUrl      String
   imagePublicId String
+
+  // Gambar Versi Mobile (Wajib ada untuk responsivitas HP)
+  imageMobileUrl      String
+  imageMobilePublicId String
+
+  // Gambar Versi Tablet (Opsional / Boleh kosong/null)
+  imageTabletUrl      String?
+  imageTabletPublicId String?
 
   altText      String?  @db.Text
   ctaText      String?

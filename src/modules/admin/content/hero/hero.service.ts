@@ -6,6 +6,13 @@ import { PaginationService } from "../../../pagination/pagination.service";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { CreateHeroSlideDTO, UpdateHeroSlideDTO } from "./dto/hero.dto";
 
+// Interface baru untuk mengelompokkan file yang diupload
+export interface HeroSlideFiles {
+  imageDesktop?: Express.Multer.File;
+  imageMobile?: Express.Multer.File;
+  imageTablet?: Express.Multer.File;
+}
+
 @injectable()
 export class HeroService {
   constructor(
@@ -36,7 +43,6 @@ export class HeroService {
 
       const where: any = {};
 
-      // 1. Logika Search (Title, AltText, atau CTA)
       if (query.search) {
         where.OR = [
           { title: { contains: query.search } },
@@ -45,15 +51,12 @@ export class HeroService {
         ];
       }
 
-      // 2. Logika Filter isActive
       if (query.isActive && query.isActive !== "ALL") {
         where.isActive = query.isActive === "true";
       }
 
-      // === Total count for pagination ===
       const count = await this.prisma.heroSlide.count({ where });
 
-      // === Query data ===
       const data = await this.prisma.heroSlide.findMany({
         where,
         skip,
@@ -61,17 +64,13 @@ export class HeroService {
         orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }],
       });
 
-      // === Generate pagination meta ===
       const meta = this.pagination.generateMeta({
         count,
         page,
         take,
       });
 
-      return {
-        data,
-        meta,
-      };
+      return { data, meta };
     } catch (error) {
       console.error("❌ Error in Get All Slides Admin:", error);
       throw new Error("Failed to fetch slides.");
@@ -86,37 +85,54 @@ export class HeroService {
   }
 
   // === CREATE ===
-  // ... imports
-
-  // === CREATE ===
-  async createSlide(data: CreateHeroSlideDTO, file: Express.Multer.File) {
-    if (!file) {
-      throw new ApiError("Image file is required", 400);
+  async createSlide(data: CreateHeroSlideDTO, files: HeroSlideFiles) {
+    // Validasi file wajib di Service
+    if (!files.imageDesktop || !files.imageMobile) {
+      throw new ApiError("Desktop and Mobile images are required", 400);
     }
 
-    const uploadResult = await this.cloudinary.upload(file, {
+    // Upload Desktop
+    const uploadDesktop = await this.cloudinary.upload(files.imageDesktop, {
       folder: "hero-slides",
       resource_type: "image",
     });
 
-    const displayOrderInt = data.displayOrder ? Number(data.displayOrder) : 0;
+    // Upload Mobile
+    const uploadMobile = await this.cloudinary.upload(files.imageMobile, {
+      folder: "hero-slides",
+      resource_type: "image",
+    });
 
+    // Upload Tablet (Opsional)
+    let uploadTablet: any = null;
+    if (files.imageTablet) {
+      uploadTablet = await this.cloudinary.upload(files.imageTablet, {
+        folder: "hero-slides",
+        resource_type: "image",
+      });
+    }
+
+    const displayOrderInt = data.displayOrder ? Number(data.displayOrder) : 0;
     const isActiveBool = String(data.isActive) === "true";
 
-    // 2. Simpan ke Database
+    // Simpan ke Database
     return await this.prisma.heroSlide.create({
       data: {
         title: data.title,
         altText: data.altText,
         ctaText: data.ctaText,
         ctaLink: data.ctaLink,
-
-        // Gunakan variabel yang sudah dikonversi
         displayOrder: displayOrderInt,
         isActive: isActiveBool,
-
-        imageUrl: uploadResult.secure_url,
-        imagePublicId: uploadResult.public_id,
+        // Mapping untuk Desktop
+        imageUrl: uploadDesktop.secure_url,
+        imagePublicId: uploadDesktop.public_id,
+        // Mapping untuk Mobile
+        imageMobileUrl: uploadMobile.secure_url,
+        imageMobilePublicId: uploadMobile.public_id,
+        // Mapping untuk Tablet
+        imageTabletUrl: uploadTablet ? uploadTablet.secure_url : null,
+        imageTabletPublicId: uploadTablet ? uploadTablet.public_id : null,
       },
     });
   }
@@ -125,33 +141,61 @@ export class HeroService {
   async updateSlide(
     id: string,
     data: UpdateHeroSlideDTO,
-    file?: Express.Multer.File,
+    files: HeroSlideFiles,
   ) {
     const existing = await this.prisma.heroSlide.findUnique({ where: { id } });
     if (!existing) throw new ApiError("Hero slide not found", 404);
 
-    let imageUrl = existing.imageUrl;
-    let imagePublicId = existing.imagePublicId;
+    let {
+      imageUrl,
+      imagePublicId,
+      imageMobileUrl,
+      imageMobilePublicId,
+      imageTabletUrl,
+      imageTabletPublicId,
+    } = existing;
 
-    if (file) {
-      if (existing.imageUrl) {
+    // Helper untuk hapus gambar lama dari Cloudinary
+    const safeRemoveCloudinary = async (url: string | null) => {
+      if (url) {
         try {
-          await this.cloudinary.remove(existing.imageUrl);
-        } catch (error) {
-          console.error("Failed to delete old image:", error);
+          await this.cloudinary.remove(url);
+        } catch (err) {
+          console.error("Failed to delete old image:", err);
         }
       }
+    };
 
-      const uploadResult = await this.cloudinary.upload(file, {
+    // Update Desktop Image
+    if (files.imageDesktop) {
+      await safeRemoveCloudinary(existing.imageUrl);
+      const res = await this.cloudinary.upload(files.imageDesktop, {
         folder: "hero-slides",
-        resource_type: "image",
       });
-
-      imageUrl = uploadResult.secure_url;
-      imagePublicId = uploadResult.public_id;
+      imageUrl = res.secure_url;
+      imagePublicId = res.public_id;
     }
 
-    // ✅ FIX MANUAL JUGA UNTUK UPDATE (PENTING)
+    // Update Mobile Image
+    if (files.imageMobile) {
+      await safeRemoveCloudinary(existing.imageMobileUrl);
+      const res = await this.cloudinary.upload(files.imageMobile, {
+        folder: "hero-slides",
+      });
+      imageMobileUrl = res.secure_url;
+      imageMobilePublicId = res.public_id;
+    }
+
+    // Update Tablet Image
+    if (files.imageTablet) {
+      await safeRemoveCloudinary(existing.imageTabletUrl);
+      const res = await this.cloudinary.upload(files.imageTablet, {
+        folder: "hero-slides",
+      });
+      imageTabletUrl = res.secure_url;
+      imageTabletPublicId = res.public_id;
+    }
+
     const displayOrderInt =
       data.displayOrder !== undefined ? Number(data.displayOrder) : undefined;
     const isActiveBool =
@@ -159,7 +203,6 @@ export class HeroService {
         ? String(data.isActive) === "true"
         : undefined;
 
-    // 3. Update Database
     return await this.prisma.heroSlide.update({
       where: { id },
       data: {
@@ -167,28 +210,38 @@ export class HeroService {
         altText: data.altText,
         ctaText: data.ctaText,
         ctaLink: data.ctaLink,
-
-        // Gunakan yang sudah dikonversi
         displayOrder: displayOrderInt,
         isActive: isActiveBool,
 
         imageUrl,
         imagePublicId,
+        imageMobileUrl,
+        imageMobilePublicId,
+        imageTabletUrl,
+        imageTabletPublicId,
       },
     });
   }
+
   // === DELETE ===
   async deleteSlide(id: string) {
     const existing = await this.prisma.heroSlide.findUnique({ where: { id } });
     if (!existing) throw new ApiError("Hero slide not found", 404);
 
-    if (existing.imageUrl) {
-      try {
-        await this.cloudinary.remove(existing.imageUrl);
-      } catch (error) {
-        console.error("Failed to delete image from cloud:", error);
+    const safeRemoveCloudinary = async (url: string | null) => {
+      if (url) {
+        try {
+          await this.cloudinary.remove(url);
+        } catch (err) {
+          console.error("Failed to delete image from cloud:", err);
+        }
       }
-    }
+    };
+
+    // Hapus semua gambar dari Cloudinary jika ada
+    await safeRemoveCloudinary(existing.imageUrl);
+    await safeRemoveCloudinary(existing.imageMobileUrl);
+    await safeRemoveCloudinary(existing.imageTabletUrl);
 
     return await this.prisma.heroSlide.delete({ where: { id } });
   }
