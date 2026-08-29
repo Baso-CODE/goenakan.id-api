@@ -36,7 +36,7 @@ export class CreateFinanceTransactionDTO {
   @IsNotEmpty({ message: "Kategori ID wajib diisi" })
   categoryId!: string;
 
-  // ✨ TAMBAHAN BARU: Kode mata uang (contoh: IDR, USD, EUR)
+  //  TAMBAHAN BARU: Kode mata uang (contoh: IDR, USD, EUR)
   @IsString()
   @IsNotEmpty({ message: "Kode mata uang (currencyCode) wajib diisi" })
   currencyCode!: string;
@@ -80,7 +80,7 @@ export class UpdateFinanceTransactionDTO {
   @IsOptional()
   categoryId?: string;
 
-  // ✨ TAMBAHAN BARU: Opsional untuk proses update
+  //  TAMBAHAN BARU: Opsional untuk proses update
   @IsString()
   @IsOptional()
   currencyCode?: string;

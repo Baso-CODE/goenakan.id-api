@@ -119,7 +119,7 @@ export class FaqService {
       const where: any = {};
 
       if (query.search) {
-        // ✨ Search in both Indonesian and English fields
+        //  Search in both Indonesian and English fields
         where.OR = [
           { questionId: { contains: query.search } },
           { questionEn: { contains: query.search } },

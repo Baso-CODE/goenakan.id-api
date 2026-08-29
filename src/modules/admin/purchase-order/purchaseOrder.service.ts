@@ -93,7 +93,7 @@ export class PurchaseOrderService {
         totalAmount: itemTotalAmount,
         remarks: item.remarks || null,
 
-        // ✨ TAMBAHAN BARU: Memasukkan selectedAttributes ke payload database
+        //  TAMBAHAN BARU: Memasukkan selectedAttributes ke payload database
         // Jika ada datanya maka simpan sebagai JSON, jika tidak ada biarkan undefined (kosong)
         selectedAttributes: item.selectedAttributes
           ? item.selectedAttributes
@@ -221,7 +221,7 @@ export class PurchaseOrderService {
         totalAmount: itemTotalAmount,
         remarks: item.remarks || null,
 
-        // ✨ TAMBAHAN BARU: Memastikan varian tersimpan saat diedit
+        //  TAMBAHAN BARU: Memastikan varian tersimpan saat diedit
         selectedAttributes: item.selectedAttributes
           ? item.selectedAttributes
           : undefined,
@@ -357,7 +357,7 @@ export class PurchaseOrderService {
 
     // === Format Ulang Data (Data Mapping) ===
     const formattedData = purchaseOrders.map((po) => {
-      // ✨ TAMBAHAN BARU: Mengumpulkan referensi dari SO Reguler dan Replacement Order
+      //  TAMBAHAN BARU: Mengumpulkan referensi dari SO Reguler dan Replacement Order
       const rawReferences = po.items
         .map((item) => {
           const refs = [];

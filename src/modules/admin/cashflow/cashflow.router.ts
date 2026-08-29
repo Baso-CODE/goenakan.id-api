@@ -2,7 +2,7 @@ import { Router } from "express";
 import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
-// ✨ Hapus verifyRole dan ganti dengan autoVerifyPermission
+//  Hapus verifyRole dan ganti dengan autoVerifyPermission
 import { autoVerifyPermission } from "../../../middleware/permission.middleware";
 import { validateBody } from "../../../middleware/validation.middleware";
 import { CashflowController } from "./cashflow.controller";
@@ -27,7 +27,7 @@ export class CashflowRouter {
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
 
-    // ✨ Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
+    //  Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
     this.router.use(autoVerifyPermission());
 
     // ==========================================

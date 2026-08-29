@@ -36,7 +36,7 @@ export class ClientLogoRouter {
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
 
-    // ✨ Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
+    //  Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
     this.router.use(autoVerifyPermission());
 
     // ==========================================

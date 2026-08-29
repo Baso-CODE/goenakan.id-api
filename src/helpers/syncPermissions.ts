@@ -23,7 +23,7 @@ function getDirectoriesRecursive(dirPath: string): string[] {
       if (file.isDirectory()) {
         const dirName = file.name;
 
-        // ✨ Jika folder adalah bagian dari teknis internal, abaikan dan jangan masuk ke list permission
+        //  Jika folder adalah bagian dari teknis internal, abaikan dan jangan masuk ke list permission
         if (IGNORED_FOLDERS.includes(dirName)) {
           continue;
         }

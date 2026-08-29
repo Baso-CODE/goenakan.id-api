@@ -1,4 +1,4 @@
-import { Transform, Type } from "class-transformer"; // ✨ Tambahkan Transform di sini
+import { Transform, Type } from "class-transformer"; //  Tambahkan Transform di sini
 import {
   IsArray,
   IsBoolean,
@@ -105,12 +105,12 @@ export class CreateOrderDTO {
   @IsEnum(["SALES", "SAMPLE"])
   salesCategory!: "SALES" | "SAMPLE";
 
-  // ✨ KOLOM OPSIONAL UNTUK NOMOR PO
+  //  KOLOM OPSIONAL UNTUK NOMOR PO
   @IsOptional()
   @IsString()
   clientPoNumber?: string;
 
-  // ✨ TAMBAHAN: KOLOM OPSIONAL UNTUK FILE PO
+  //  TAMBAHAN: KOLOM OPSIONAL UNTUK FILE PO
   @IsOptional()
   clientPoFile?: any;
 

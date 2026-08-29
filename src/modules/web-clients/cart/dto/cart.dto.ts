@@ -26,7 +26,7 @@ export class AddToCartDTO {
   customization?: any; // Bisa berupa JSON Object
 
   @IsOptional()
-  selectedAttributes?: any; // ✨ Tambahkan properti ini untuk menampung pilihan atribut user
+  selectedAttributes?: any; //  Tambahkan properti ini untuk menampung pilihan atribut user
 
   @IsString()
   @IsOptional()
@@ -43,7 +43,7 @@ export class UpdateCartItemDTO {
   customization?: any;
 
   @IsOptional()
-  selectedAttributes?: any; // ✨ Tambahkan juga di sini jika ingin bisa di-update
+  selectedAttributes?: any; //  Tambahkan juga di sini jika ingin bisa di-update
 
   @IsString()
   @IsOptional()

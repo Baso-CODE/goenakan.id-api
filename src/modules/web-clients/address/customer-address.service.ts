@@ -55,7 +55,7 @@ export class CustomerAddressService {
         province: data.province,
         city: data.city,
         district: data.district,
-        subDistrict: data.subDistrict, // ✨ TAMBAHAN BARU: Menyimpan kelurahan
+        subDistrict: data.subDistrict, //  TAMBAHAN BARU: Menyimpan kelurahan
         postalCode: data.postalCode,
         fullAddress: data.fullAddress,
         isDefault: isDefault,

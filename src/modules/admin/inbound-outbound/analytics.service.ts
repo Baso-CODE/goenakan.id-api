@@ -236,7 +236,7 @@ export class OrderAnalyticsService {
           return "Outbound: Diproses";
         if (status === "DISPATCHED") return "Outbound: Perjalanan ke Client";
 
-        // ✨ NEW: Jika Outbound sudah sampai (ARRIVED), berarti seluruh pesanan benar-benar selesai!
+        //  NEW: Jika Outbound sudah sampai (ARRIVED), berarti seluruh pesanan benar-benar selesai!
         if (status === "ARRIVED") return "Selesai (Diterima Client)";
       }
     }

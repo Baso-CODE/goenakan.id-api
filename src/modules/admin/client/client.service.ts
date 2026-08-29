@@ -237,7 +237,7 @@ export class ClientService {
           newLogoId = uploadResult.public_id;
           console.log("✅ [CLOUDINARY] Upload berhasil! URL:", newLogoUrl);
         } catch (uploadErr: any) {
-          // ✨ Tangkap dan cetak error mentah dari Cloudinary ke konsol backend
+          //  Tangkap dan cetak error mentah dari Cloudinary ke konsol backend
           console.error("🔥 [CLOUDINARY ERROR ASLI]:", uploadErr);
           throw new ApiError(
             `Gagal mengunggah logo ke Cloudinary: ${uploadErr?.message || "Unknown error"}`,

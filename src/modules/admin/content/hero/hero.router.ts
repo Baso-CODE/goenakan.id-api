@@ -10,7 +10,7 @@ import { HeroController } from "./hero.controller";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// ✨ Konfigurasi Multer untuk menerima banyak file berdasarkan nama field-nya
+//  Konfigurasi Multer untuk menerima banyak file berdasarkan nama field-nya
 const uploadFields = upload.fields([
   { name: "imageDesktop", maxCount: 1 },
   { name: "imageMobile", maxCount: 1 },

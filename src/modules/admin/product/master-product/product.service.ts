@@ -129,7 +129,7 @@ export class ProductService {
       validateTiers(data.priceTiers, "Base Product");
     }
 
-    // ✨ TAMBAHAN BARU: Validasi Price Tiers untuk setiap Varian
+    //  TAMBAHAN BARU: Validasi Price Tiers untuk setiap Varian
     if (data.variantImagesMetadata && data.variantImagesMetadata.length > 0) {
       data.variantImagesMetadata.forEach((meta) => {
         if (meta.priceTiers && meta.priceTiers.length > 0) {
@@ -397,7 +397,7 @@ export class ProductService {
                   })),
                 },
               },
-              // ✨ TAMBAHAN BARU: Memasukkan Price Tiers Varian jika ada
+              //  TAMBAHAN BARU: Memasukkan Price Tiers Varian jika ada
               priceTiers:
                 meta?.priceTiers && meta.priceTiers.length > 0
                   ? {
@@ -521,7 +521,7 @@ export class ProductService {
       }
     }
 
-    // ✨ TAMBAHAN BARU: Auto-translate ke bahasa Inggris jika nama/deskripsi diubah
+    //  TAMBAHAN BARU: Auto-translate ke bahasa Inggris jika nama/deskripsi diubah
     let translatedNameEn: string | undefined = undefined;
     let translatedDescEn: string | undefined = undefined;
 
@@ -2117,7 +2117,7 @@ export class ProductService {
         productVariants: {
           orderBy: { createdAt: "asc" },
           include: {
-            // ✨ TAMBAHAN BARU: Mengambil Price Tiers khusus Varian
+            //  TAMBAHAN BARU: Mengambil Price Tiers khusus Varian
             priceTiers: {
               orderBy: { minQuantity: "asc" },
             },
@@ -2324,7 +2324,7 @@ export class ProductService {
                       name: true,
                       type: true,
                       position: true, // Ambil posisi atribut utama
-                      // ✨ TAMBAHAN BARU: Ambil relasi isCustom dari AttributeType
+                      //  TAMBAHAN BARU: Ambil relasi isCustom dari AttributeType
                       attrType: {
                         select: {
                           isCustom: true,
@@ -2397,12 +2397,12 @@ export class ProductService {
           });
         });
 
-        // ✨ Urutkan Atribut Utama Berdasarkan 'position'
+        //  Urutkan Atribut Utama Berdasarkan 'position'
         const sortedAttributes = Object.values(groupedAttributes).sort(
           (a: any, b: any) => a.position - b.position,
         );
 
-        // ✨ Urutkan Nilai (Values) di Dalam Masing-masing Atribut Berdasarkan 'position'
+        //  Urutkan Nilai (Values) di Dalam Masing-masing Atribut Berdasarkan 'position'
         sortedAttributes.forEach((attr: any) => {
           attr.values.sort((a: any, b: any) => a.position - b.position);
         });
@@ -3108,7 +3108,7 @@ export class ProductService {
     const page = Number(query.page || 1);
     const take = Number(query.take || 6);
 
-    // ✨ AMBIL DATA PRODUK DAN APP SETTING SECARA BERSAMAAN (PARALLEL)
+    //  AMBIL DATA PRODUK DAN APP SETTING SECARA BERSAMAAN (PARALLEL)
     const [count, rawData, appSetting] = await Promise.all([
       this.prisma.product.count({ where }),
       this.prisma.product.findMany({
@@ -3170,7 +3170,7 @@ export class ProductService {
       const basePriceValue = Number(product.basePrice);
       let calculatedPrice = basePriceValue;
 
-      // ✨ HITUNG KENAIKAN HARGA JIKA TRANSAKSI DILUAR INDONESIA
+      //  HITUNG KENAIKAN HARGA JIKA TRANSAKSI DILUAR INDONESIA
       if (isForeignTransaction) {
         // Tentukan persentase: Prioritaskan produk, jika 0/null gunakan global app setting
         const productAdjuster = product.foreignPriceAdjuster ?? 0;
@@ -3230,7 +3230,7 @@ export class ProductService {
 
       const productIds = topSelling.map((item) => item.productId);
 
-      // ✨ PERBAIKAN: Berikan tipe 'any[]' secara eksplisit
+      //  PERBAIKAN: Berikan tipe 'any[]' secara eksplisit
       let rawProducts: any[] = [];
 
       // 2. Ambil detail produk berdasarkan ID yang laris tersebut
@@ -3414,7 +3414,7 @@ export class ProductService {
       }
 
       // 🛠️ ==========================================================
-      // ✨ PERBAIKAN DI SINI: Logika pemilihan bahasa yang lebih aman
+      //  PERBAIKAN DI SINI: Logika pemilihan bahasa yang lebih aman
       // ==========================================================
       let productName = product.name;
       if (lang === "en") {

@@ -296,7 +296,7 @@ export class QuotationService {
       const item = data.items[i];
       const img = uploadedImages[i];
 
-      // ✨ PERBAIKAN UTAMA KUANTITAS: Pastikan dibaca sebagai angka dengan benar
+      //  PERBAIKAN UTAMA KUANTITAS: Pastikan dibaca sebagai angka dengan benar
       const mainQty =
         item.quantity !== undefined && item.quantity !== null
           ? Number(item.quantity)
@@ -315,7 +315,7 @@ export class QuotationService {
         select: {
           name: true,
           basePrice: true,
-          // ✨ PERBAIKAN: Menggunakan 'attributeValues' sesuai skema Prisma kamu
+          //  PERBAIKAN: Menggunakan 'attributeValues' sesuai skema Prisma kamu
           attributeValues: {
             select: {
               attributeValueId: true,
@@ -344,7 +344,7 @@ export class QuotationService {
           .flat()
           .filter(Boolean) as string[];
 
-        // ✨ PERBAIKAN: Mengambil data dari attributeValues
+        //  PERBAIKAN: Mengambil data dari attributeValues
         const productAttributes = productRecord.attributeValues as any[];
 
         if (
@@ -372,7 +372,7 @@ export class QuotationService {
         }
       }
 
-      // ✨ Hitung total harga per baris menggunakan kuantitas yang benar (Kuantitas * Harga Akhir - Diskon)
+      //  Hitung total harga per baris menggunakan kuantitas yang benar (Kuantitas * Harga Akhir - Diskon)
       const lineTotal = mainQty * finalUnitPrice - itemDiscount;
       subTotal += lineTotal < 0 ? 0 : lineTotal;
 
@@ -484,7 +484,7 @@ export class QuotationService {
 
         let calculatedSubTotal = 0;
 
-        // ✨ GUNAKAN FOR OF LOOP AGAR BISA MELAKUKAN AWAIT KE DATABASE
+        //  GUNAKAN FOR OF LOOP AGAR BISA MELAKUKAN AWAIT KE DATABASE
         for (const item of items) {
           const mainQty = item.quantity ? Number(item.quantity) : 1;
           const itemDiscount = item.discount ? Number(item.discount) : 0;
@@ -503,7 +503,7 @@ export class QuotationService {
             select: {
               name: true,
               basePrice: true,
-              // ✨ PERBAIKAN: Mengambil modifier atribut dari database
+              //  PERBAIKAN: Mengambil modifier atribut dari database
               attributeValues: {
                 select: {
                   attributeValueId: true,
@@ -520,10 +520,10 @@ export class QuotationService {
             );
           }
 
-          // ✨ Kalkulasi awal: Unit Price = Base Price
+          //  Kalkulasi awal: Unit Price = Base Price
           let finalUnitPrice = Number(productRecord.basePrice);
 
-          // ✨ PERBAIKAN: 3. Tambahkan harga dari atribut yang dipilih (Multi-Select Attributes)
+          //  PERBAIKAN: 3. Tambahkan harga dari atribut yang dipilih (Multi-Select Attributes)
           if (
             item.selectedAttributes &&
             typeof item.selectedAttributes === "object"
@@ -587,7 +587,7 @@ export class QuotationService {
               productName: item.productName || productRecord.name,
               description: item.description,
               quantity: mainQty,
-              unitPrice: finalUnitPrice, // ✨ Menggunakan harga kalkulasi yang aman
+              unitPrice: finalUnitPrice, //  Menggunakan harga kalkulasi yang aman
               discount: itemDiscount,
               selectedAttributes: item.selectedAttributes ?? Prisma.JsonNull,
               customization: item.customization ?? Prisma.JsonNull,
@@ -865,7 +865,7 @@ export class QuotationService {
         }
       }
 
-      // ✨ KUNCI PERBAIKAN LOGIKA: Filter atribut yang benar-benar ada isinya
+      //  KUNCI PERBAIKAN LOGIKA: Filter atribut yang benar-benar ada isinya
       const validAttrKeys = Object.keys(rawAttrs || {}).filter((key) => {
         const val = rawAttrs[key];
         if (Array.isArray(val)) return val.length > 0; // Abaikan array kosong []
@@ -888,7 +888,7 @@ export class QuotationService {
 
           let shouldInclude = false;
 
-          // ✨ LOGIKA BERCABANG TEGAS
+          //  LOGIKA BERCABANG TEGAS
           if (hasAnySelection) {
             // KONDISI 1: Ada atribut yang dipilih -> HANYA masukkan yang cocok
             if (validAttrKeys.includes(attrId)) {

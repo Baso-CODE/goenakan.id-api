@@ -69,7 +69,7 @@ export class ArticleController {
           .json({ message: "Unauthorized. Author ID is missing." });
       }
 
-      // ✨ TAMBAHAN 3: Meneruskan coverMobileFile ke Service
+      //  TAMBAHAN 3: Meneruskan coverMobileFile ke Service
       const result = await this.articleService.createArticle(
         data,
         authorId,
@@ -90,7 +90,7 @@ export class ArticleController {
       const { id } = req.params;
       const data: UpdateArticleDTO = req.body;
 
-      // ✨ TAMBAHAN 1: Menangkap multiple files dari Multer
+      //  TAMBAHAN 1: Menangkap multiple files dari Multer
       const files = req.files as
         | { [fieldname: string]: Express.Multer.File[] }
         | undefined;
@@ -98,24 +98,24 @@ export class ArticleController {
       const coverFile = files?.coverFile?.[0];
       const coverMobileFile = files?.coverMobileFile?.[0];
 
-      // ✨ Parsing tipe data boolean
+      //  Parsing tipe data boolean
       if (typeof data.published === "string") {
         data.published = data.published === "true";
       }
 
-      // ✨ Parsing tipe data array (productIds)
+      //  Parsing tipe data array (productIds)
       if (typeof data.productIds === "string") {
         data.productIds = (data.productIds as string)
           .split(",")
           .filter(Boolean);
       }
 
-      // ✨ TAMBAHAN 2: Parsing tipe data array (tagIds)
+      //  TAMBAHAN 2: Parsing tipe data array (tagIds)
       if (typeof data.tagIds === "string") {
         data.tagIds = (data.tagIds as string).split(",").filter(Boolean);
       }
 
-      // ✨ TAMBAHAN 3: Meneruskan coverMobileFile ke Service
+      //  TAMBAHAN 3: Meneruskan coverMobileFile ke Service
       const updatedArticle = await this.articleService.updateArticle(
         id,
         data,
@@ -132,7 +132,7 @@ export class ArticleController {
   // === GET ALL ARTICLES (Pagination & Filter) ===
   getAllArticles = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // ✨ Ambil authorId dari req.query
+      //  Ambil authorId dari req.query
       const { page, take, search, categoryId, published, authorId } = req.query;
 
       const articles = await this.articleService.getAllArticles({

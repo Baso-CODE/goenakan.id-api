@@ -256,7 +256,7 @@ export class InvoiceService {
       },
     });
 
-    // ✨ 3. Pengecekan otomatis: Cek apakah setelah invoice ini dibayar, PO client perlu dihapus
+    //  3. Pengecekan otomatis: Cek apakah setelah invoice ini dibayar, PO client perlu dihapus
     if (invoice.orderId) {
       try {
         // Asumsikan order service tersedia atau kita panggil logika pengecekannya
@@ -417,7 +417,7 @@ export class InvoiceService {
                 paidAt: true,
               },
             },
-            // ✨ PERBAIKAN: Mengganti 'sales' menjadi 'createdBy' (User)
+            //  PERBAIKAN: Mengganti 'sales' menjadi 'createdBy' (User)
             createdBy: {
               select: {
                 name: true,

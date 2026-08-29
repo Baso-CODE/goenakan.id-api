@@ -31,7 +31,7 @@ export class CreateAddressDTO {
 
   @IsString()
   @IsOptional()
-  subDistrict?: string; // ✨ TAMBAHAN BARU: Validasi untuk Kelurahan saat pembuatan alamat
+  subDistrict?: string; //  TAMBAHAN BARU: Validasi untuk Kelurahan saat pembuatan alamat
 
   @IsString()
   @IsOptional()
@@ -77,7 +77,7 @@ export class UpdateAddressDTO {
 
   @IsString()
   @IsOptional()
-  subDistrict?: string; // ✨ TAMBAHAN BARU: Validasi untuk Kelurahan saat pembaruan alamat
+  subDistrict?: string; //  TAMBAHAN BARU: Validasi untuk Kelurahan saat pembaruan alamat
 
   @IsString()
   @IsOptional()

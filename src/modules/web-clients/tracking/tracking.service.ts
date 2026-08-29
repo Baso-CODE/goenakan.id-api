@@ -28,12 +28,12 @@ export class TrackingService {
           include: {
             product: {
               include: {
-                images: { take: 1 }, // ✨ Tarik gambar produk utama
+                images: { take: 1 }, //  Tarik gambar produk utama
               },
             },
             variant: {
               include: {
-                images: { take: 1 }, // ✨ Tarik gambar varian jika ada
+                images: { take: 1 }, //  Tarik gambar varian jika ada
                 attributeValues: {
                   include: {
                     attributeValue: {
@@ -150,7 +150,7 @@ export class TrackingService {
     }
 
     // =========================================================================
-    // ✨ PERBAIKAN: Format Alamat agar Menjadi Alamat Lengkap yang Utuh
+    //  PERBAIKAN: Format Alamat agar Menjadi Alamat Lengkap yang Utuh
     // =========================================================================
     let formattedAddress = order.shippingAddress;
     try {

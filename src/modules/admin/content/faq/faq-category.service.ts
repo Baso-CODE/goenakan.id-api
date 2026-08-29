@@ -38,7 +38,7 @@ export class FaqCategoryService {
       const where: any = {};
 
       if (query.search) {
-        // ✨ Pembaruan: Mencari di kedua bahasa (Bilingual Search)
+        //  Pembaruan: Mencari di kedua bahasa (Bilingual Search)
         where.OR = [
           { nameId: { contains: query.search } },
           { nameEn: { contains: query.search } },
@@ -117,7 +117,7 @@ export class FaqCategoryService {
 
     if (!existing) throw new ApiError("FAQ Category not found", 404);
 
-    // ✨ Pembaruan: Logic update slug jika nama berubah
+    //  Pembaruan: Logic update slug jika nama berubah
     let newSlug = existing.slug;
     if (data.slug) {
       newSlug = this.slug.create(data.slug);
@@ -171,7 +171,7 @@ export class FaqCategoryService {
     try {
       return await this.prisma.faqCategory.findMany({
         where: { isActive: true },
-        // ✨ Pembaruan: Mengambil nameId dan nameEn
+        //  Pembaruan: Mengambil nameId dan nameEn
         select: { id: true, nameId: true, nameEn: true },
         orderBy: { displayOrder: "asc" },
       });
@@ -211,7 +211,7 @@ export class FaqCategoryService {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("FAQ Categories");
 
-    // ✨ Pembaruan: Menambahkan kolom Bahasa Indonesia dan Inggris
+    //  Pembaruan: Menambahkan kolom Bahasa Indonesia dan Inggris
     worksheet.columns = [
       { header: "Nama Kategori (ID)", key: "nameId", width: 30 },
       { header: "Category Name (EN)", key: "nameEn", width: 30 },

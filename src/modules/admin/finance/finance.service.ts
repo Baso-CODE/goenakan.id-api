@@ -71,7 +71,7 @@ export class FinanceTransactionService {
         category: { select: { name: true, type: true } },
         user: { select: { name: true } }, // Siapa yang mencatat
         sales: { select: { name: true } }, // Jika terkait komisi sales
-        currency: true, // ✨ Tambahan: Tarik info mata uang
+        currency: true, //  Tambahan: Tarik info mata uang
       },
     });
 
@@ -92,7 +92,7 @@ export class FinanceTransactionService {
         category: true,
         user: { select: { name: true, email: true } },
         sales: true,
-        currency: true, // ✨ Tambahan: Tarik info mata uang
+        currency: true, //  Tambahan: Tarik info mata uang
       },
     });
 
@@ -138,7 +138,7 @@ export class FinanceTransactionService {
         referenceNumber: data.referenceNumber,
         method: data.method,
 
-        // ✨ Tambahan: Simpan relasi mata uang
+        //  Tambahan: Simpan relasi mata uang
         currency: { connect: { code: data.currencyCode } },
 
         // Relasi Wajib
@@ -150,7 +150,7 @@ export class FinanceTransactionService {
       },
       include: {
         category: true,
-        currency: true, // ✨ Tambahan: Balikan data mata uang
+        currency: true, //  Tambahan: Balikan data mata uang
       },
     });
   }
@@ -187,7 +187,7 @@ export class FinanceTransactionService {
       updateRelations.category = { connect: { id: data.categoryId } };
     }
 
-    // ✨ Tambahan: Update mata uang jika dikirim dari DTO
+    //  Tambahan: Update mata uang jika dikirim dari DTO
     if (data.currencyCode) {
       updateRelations.currency = { connect: { code: data.currencyCode } };
     }
@@ -216,7 +216,7 @@ export class FinanceTransactionService {
       },
       include: {
         category: true,
-        currency: true, // ✨ Tambahan: Balikan data mata uang
+        currency: true, //  Tambahan: Balikan data mata uang
       },
     });
   }

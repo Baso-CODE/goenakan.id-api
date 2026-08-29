@@ -2,7 +2,7 @@ import { Router } from "express";
 import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
-// ✨ Import autoVerifyPermission dan hapus verifyRole
+//  Import autoVerifyPermission dan hapus verifyRole
 import { autoVerifyPermission } from "../../../middleware/permission.middleware";
 import { validateBody } from "../../../middleware/validation.middleware";
 import { CreateRoleDTO, UpdateRoleDTO } from "./dto/roles.dto";

@@ -9,8 +9,6 @@ import { env } from "./config";
 
 import { errorMiddleware } from "./middleware/error.middleware";
 
-import { AuthRouter } from "./modules/auth/auth.router";
-
 import {
   authLimiter,
   globalLimiter,
@@ -68,9 +66,9 @@ import { HeroRouter } from "./modules/admin/content/hero/hero.router";
 import { PolicyRouter } from "./modules/admin/content/policy/policy.router";
 import { PortfolioRouter } from "./modules/admin/content/portfolio/portfolio.router";
 import { AppSettingRouter } from "./modules/admin/content/setting/setting.router";
+import { AuthWebClientRouter } from "./modules/web-clients/auth-client/auth-client.router";
 import { CartRouter } from "./modules/web-clients/cart/cart.router";
 import { CustomerProfileRouter } from "./modules/web-clients/customer-profile/customer-profile.router";
-import { AuthWebClientRouter } from "./modules/web-clients/register-user/register-user.router";
 import { TrackingRouter } from "./modules/web-clients/tracking/tracking.router";
 import { WebOrderRouter } from "./modules/web-clients/web-order/web-order.router";
 import { WhatsappCronService } from "./modules/whatsapp/notification/whatsapp-cron.service";
@@ -112,7 +110,6 @@ export default class App {
     this.app.use(cookieParser());
   }
   private routes(): void {
-    const authRouter = container.resolve(AuthRouter);
     const categoryVendorRouter = container.resolve(VendorCategoryRouter);
     const itemVendorRouter = container.resolve(ItemVendorRouter);
     const vendorRouter = container.resolve(VendorRouter);
@@ -180,7 +177,6 @@ export default class App {
       res.send("Welcome");
     });
 
-    this.app.use("/auth", authLimiter, authRouter.getRouter());
     this.app.use("/vendors", vendorRouter.getRouter());
     this.app.use("/vendor-categories", categoryVendorRouter.getRouter());
     this.app.use("/vendor-items", itemVendorRouter.getRouter());

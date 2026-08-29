@@ -191,6 +191,8 @@ model User {
   password            String?
   image               String?
   phone               String?
+  verificationToken   String?              @unique
+  tokenExpiresAt      DateTime?
   roleId              String
   createdAt           DateTime             @default(now())
   articles            Article[]

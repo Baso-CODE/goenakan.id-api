@@ -42,7 +42,7 @@ export class CloudinaryService {
     const isImage = file.mimetype.startsWith("image/");
     const shouldOptimize = options.optimize !== false;
 
-    // ✨ SOLUSI UTAMA: Periksa apakah file yang di-upload berformat PDF
+    //  SOLUSI UTAMA: Periksa apakah file yang di-upload berformat PDF
     const isPdf = file.mimetype === "application/pdf";
 
     if (isPdf) {

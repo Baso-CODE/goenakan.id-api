@@ -114,7 +114,7 @@ export class ContactService {
       throw new ApiError("Pesan tidak ditemukan", 404);
     }
 
-    // ✨ FITUR PINTAR: Jika pesan belum dibaca, otomatis ubah statusnya menjadi "Sudah Dibaca"
+    //  FITUR PINTAR: Jika pesan belum dibaca, otomatis ubah statusnya menjadi "Sudah Dibaca"
     if (!message.isRead) {
       const updatedMessage = await this.prisma.contactMessage.update({
         where: { id },

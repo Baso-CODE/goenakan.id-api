@@ -27,7 +27,7 @@ export class CartController {
     return profile.id;
   }
 
-  // ✨ 2. HELPER BARU: Ubah Country menjadi Currency di Backend ✨
+  //  2. HELPER BARU: Ubah Country menjadi Currency di Backend
   private getTargetCurrency(req: Request): string {
     const countryHeader = req.headers["x-country"];
 
@@ -175,12 +175,10 @@ export class CartController {
       const { items } = req.body; // Data dari localStorage
 
       if (!items || !Array.isArray(items) || items.length === 0) {
-        return res
-          .status(200)
-          .json({
-            success: true,
-            data: { currencyCode: targetCurrency, items: [] },
-          });
+        return res.status(200).json({
+          success: true,
+          data: { currencyCode: targetCurrency, items: [] },
+        });
       }
 
       // Hitung harganya menjadi dolar dsb.

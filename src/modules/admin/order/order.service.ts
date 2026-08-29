@@ -75,7 +75,7 @@ export class OrderService {
     const isSampleOrder = orderCore.salesCategory === "SAMPLE";
 
     // ====================================================================
-    // ✨ PERBAIKAN: UPLOAD FILE KE CLOUDINARY (Lakukan di luar transaksi DB)
+    //  PERBAIKAN: UPLOAD FILE KE CLOUDINARY (Lakukan di luar transaksi DB)
     // ====================================================================
     let uploadedPoData: {
       url: string;
@@ -274,7 +274,7 @@ export class OrderService {
       });
 
       // ====================================================================
-      // ✨ PERBAIKAN: SIMPAN DATA CLIENT PURCHASE ORDER KE DATABASE
+      //  PERBAIKAN: SIMPAN DATA CLIENT PURCHASE ORDER KE DATABASE
       // ====================================================================
       if (orderCore.clientPoNumber || uploadedPoData) {
         await tx.clientPurchaseOrder.create({
@@ -683,7 +683,7 @@ export class OrderService {
           },
         },
         createdBy: true,
-        // ✨ TAMBAHAN BARU: Sertakan data Client Purchase Order
+        //  TAMBAHAN BARU: Sertakan data Client Purchase Order
         clientPurchaseOrder: true,
 
         products: {
@@ -918,7 +918,7 @@ export class OrderService {
         createdAt: fu.createdAt,
       })),
 
-      // ✨ TAMBAHAN BARU: Kirim data PO client ke frontend
+      //  TAMBAHAN BARU: Kirim data PO client ke frontend
       clientPurchaseOrder: order.clientPurchaseOrder
         ? {
             id: order.clientPurchaseOrder.id,
@@ -938,7 +938,7 @@ export class OrderService {
     salesCategory?: string;
     startDate?: string;
     endDate?: string;
-    purchaseChannelId?: string; // ✨ TAMBAHAN TIPE DATA
+    purchaseChannelId?: string; //  TAMBAHAN TIPE DATA
   }) {
     const where: any = {};
 
@@ -970,7 +970,7 @@ export class OrderService {
       where.salesCategory = query.salesCategory;
     }
 
-    // ✨ TAMBAHAN LOGIKA FILTER PURCHASE CHANNEL
+    //  TAMBAHAN LOGIKA FILTER PURCHASE CHANNEL
     if (query.purchaseChannelId && query.purchaseChannelId !== "ALL") {
       where.purchaseChannelId = query.purchaseChannelId;
     }
@@ -1016,7 +1016,7 @@ export class OrderService {
         updatedBy: { select: { name: true } },
         referenceQuotation: { select: { quotationNumber: true } },
         referenceSample: { select: { orderNumber: true } },
-        purchaseChannel: { select: { id: true, name: true } }, // ✨ TAMBAHAN AGAR CHANNEL KETAMPIL JIKA PERLU
+        purchaseChannel: { select: { id: true, name: true } }, //  TAMBAHAN AGAR CHANNEL KETAMPIL JIKA PERLU
         shipments: {
           where: { type: "OUTBOUND" },
           orderBy: { updatedAt: "desc" },
@@ -1096,7 +1096,7 @@ export class OrderService {
         currencyCode: order.currencyCode,
         salesCategory: order.salesCategory,
 
-        // ✨ TAMBAHAN INFORMASI PURCHASE CHANNEL KE FORMAT RESPONSE
+        //  TAMBAHAN INFORMASI PURCHASE CHANNEL KE FORMAT RESPONSE
         purchaseChannel: order.purchaseChannel
           ? order.purchaseChannel.name
           : "-",
@@ -1842,7 +1842,7 @@ export class OrderService {
     const orderWhere: any = {};
     const replacementWhere: any = {};
 
-    // ✨ TAMBAHAN: Filter berdasarkan purchaseChannelId (Hanya untuk Order)
+    //  TAMBAHAN: Filter berdasarkan purchaseChannelId (Hanya untuk Order)
     if (purchaseChannelId && purchaseChannelId !== "ALL") {
       orderWhere.purchaseChannelId = purchaseChannelId;
     }
@@ -1925,7 +1925,7 @@ export class OrderService {
           updatedBy: { select: { name: true } },
           referenceQuotation: { select: { quotationNumber: true } },
           referenceSample: { select: { orderNumber: true } },
-          purchaseChannel: { select: { id: true, name: true } }, // ✨ TAMBAHAN: Ambil data purchase channel
+          purchaseChannel: { select: { id: true, name: true } }, //  TAMBAHAN: Ambil data purchase channel
           shipments: {
             where: { type: "OUTBOUND" },
             orderBy: { updatedAt: "desc" },
@@ -2003,7 +2003,7 @@ export class OrderService {
         updatedBy: order.updatedBy?.name || "-",
         updatedTime: order.updatedAt,
         salesCategory: order.salesCategory,
-        // ✨ TAMBAHAN: Menyertakan informasi purchase channel pada hasil mapping
+        //  TAMBAHAN: Menyertakan informasi purchase channel pada hasil mapping
         purchaseChannel: order.purchaseChannel
           ? order.purchaseChannel.name
           : "-",

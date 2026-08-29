@@ -71,7 +71,7 @@ export class CartService {
 
     if (!rawCart) return null;
 
-    // ✨ 1. AMBIL NILAI KURS JIKA BUKAN IDR
+    //  1. AMBIL NILAI KURS JIKA BUKAN IDR
     let conversionRate = 1;
     if (targetCurrency && targetCurrency !== "IDR") {
       try {
@@ -89,7 +89,7 @@ export class CartService {
       }
     }
 
-    // ✨ 2. KALKULASI HARGA
+    //  2. KALKULASI HARGA
     const processedItems = await Promise.all(
       rawCart.items.map(async (item) => {
         let productName = item.product.name;
@@ -146,7 +146,7 @@ export class CartService {
 
         let resolvedAttributes: any[] = [];
 
-        // ✨ EKSTRAKSI ATRIBUT BERBASIS NAMA TEKS (SELARAS DENGAN WEB ORDER)
+        //  EKSTRAKSI ATRIBUT BERBASIS NAMA TEKS (SELARAS DENGAN WEB ORDER)
         if (
           item.selectedAttributes &&
           typeof item.selectedAttributes === "object"
@@ -352,7 +352,7 @@ export class CartService {
             customData = JSON.parse(customData);
         } catch (e) {}
 
-        // ✨ Tambahkan Price Modifier Berdasarkan Nama Teks Attribute untuk Guest
+        //  Tambahkan Price Modifier Berdasarkan Nama Teks Attribute untuk Guest
         if (
           item.selectedAttributes &&
           typeof item.selectedAttributes === "object"

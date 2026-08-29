@@ -33,7 +33,7 @@ export class UpdatePortfolioDTO {
   @IsOptional()
   @IsString()
   eventCategoryId?: string;
-  // ✨ AKHIR TAMBAHAN BARU
+  //  AKHIR TAMBAHAN BARU
 
   @IsOptional()
   @Type(() => Number)

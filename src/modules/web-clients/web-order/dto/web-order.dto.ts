@@ -89,7 +89,7 @@ class OrderItemDTO {
   @IsOptional()
   customization?: any;
 
-  // ✨ TAMBAHAN BARU: Menerima atribut pilihan (seperti warna, bahan) dari frontend
+  //  TAMBAHAN BARU: Menerima atribut pilihan (seperti warna, bahan) dari frontend
   @IsOptional()
   selectedAttributes?: any;
 }

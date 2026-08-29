@@ -11,7 +11,7 @@ export const snap = new midtransClient.Snap({
   clientKey: clientKey,
 });
 
-// ✨ TAMBAHAN: Inisialisasi CoreApi (Khusus untuk proses Backend & Webhook)
+//  TAMBAHAN: Inisialisasi CoreApi (Khusus untuk proses Backend & Webhook)
 export const coreApi = new midtransClient.CoreApi({
   isProduction: isProduction,
   serverKey: serverKey,

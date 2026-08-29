@@ -425,7 +425,7 @@ export class ArticleService {
       focusKeywords_en,
       slug: newSlug,
 
-      // ✨ SIMPAN STATUS TRANSLATE KE DATABASE
+      //  SIMPAN STATUS TRANSLATE KE DATABASE
       isTranslated: hasTranslation,
 
       ...(data.source && { source: data.source }),
