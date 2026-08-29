@@ -48,11 +48,13 @@ export class NextAuthMiddleware {
 
       const authReq = req as AuthenticatedRequest;
 
+      // ✨ PERBAIKAN: Sertakan permissions dari payload token agar terbaca oleh middleware permission
       authReq.user = {
         id: payload.id || payload.sub,
         email: payload.email,
         role: payload.role || "CUSTOMER",
         roleId: payload.roleId || "",
+        permissions: payload.permissions || [], // <--- TAMBAHAN INI SANGAT PENTING
       };
 
       next();

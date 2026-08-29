@@ -11,7 +11,6 @@ import { errorMiddleware } from "./middleware/error.middleware";
 
 import { AuthRouter } from "./modules/auth/auth.router";
 
-import { syncPermissionsToDatabase } from "./helpers/syncPermissions";
 import {
   authLimiter,
   globalLimiter,
@@ -263,7 +262,7 @@ export default class App {
     try {
       const prismaService = container.resolve(PrismaService);
       // matikan kalau sudah di deploy
-      await syncPermissionsToDatabase(prismaService);
+      // await syncPermissionsToDatabase(prismaService);
       console.log("✅ Sinkronisasi permissions berhasil dijalankan!");
     } catch (error) {
       console.error("❌ Gagal menjalankan sinkronisasi permissions:", error);

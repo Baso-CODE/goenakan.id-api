@@ -4,6 +4,7 @@ import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../../middleware/nextAuth.middleware";
 import { autoVerifyPermission } from "../../../../middleware/permission.middleware";
+import { UserController } from "../../user/userManagement.controller";
 import { ArticleController } from "./article.controller";
 
 const upload = multer({
@@ -19,6 +20,7 @@ export class ArticleRouter {
 
   constructor(
     private readonly articleController: ArticleController,
+    private readonly userController: UserController,
     private readonly nextAuthMiddleware: NextAuthMiddleware,
   ) {
     this.initializeRoutes();
@@ -49,6 +51,8 @@ export class ArticleRouter {
     // ==========================================
 
     this.router.get("/", this.articleController.getAllArticles);
+
+    this.router.get("/authors", this.userController.getAuthorsForFilter);
 
     this.router.get(
       "/simple-list",
