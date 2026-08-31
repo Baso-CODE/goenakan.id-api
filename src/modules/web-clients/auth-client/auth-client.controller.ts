@@ -8,11 +8,15 @@ export class AuthWebClientController {
 
   register = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const user = await this.authService.registerCustomer(req.body);
+      const lang = (req.headers["accept-language"] as "id" | "en") || "id";
+
+      // Kirim parameter lang ke service
+      const user = await this.authService.registerCustomer(req.body, lang);
+
       res.status(201).json({
         success: true,
         message:
-          "Registrasi berhasil! Silakan periksa kotak masuk email Anda untuk memverifikasi akun.",
+          lang === "en" ? "Registration successful!" : "Registrasi berhasil!",
         data: user,
       });
     } catch (error) {

@@ -4,6 +4,7 @@ import { coreApi, snap } from "../../../lib/midtrans";
 import { ApiError } from "../../../utils/api-error";
 import { CounterService } from "../../../utils/counter.service";
 import { PrismaService } from "../../prisma/prisma.service";
+import { EmailService } from "../auth-client/email.service";
 import { CreateWebOrderDTO } from "./dto/web-order.dto";
 
 @injectable()
@@ -11,6 +12,7 @@ export class WebOrderService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly counterService: CounterService,
+    private readonly emailService: EmailService,
   ) {}
 
   // ====================================================================
@@ -140,17 +142,9 @@ export class WebOrderService {
   async createOrder(data: CreateWebOrderDTO, profileId: string | null) {
     const { form, items, note, shippingCost } = data;
 
-    console.log(
-      "\n📥 [DEBUG ORDER] Payload items masuk:",
-      JSON.stringify(items, null, 2),
-    );
-
     let calculatedSubtotal = 0;
     const validatedItems = await Promise.all(
       items.map(async (item: any, index: number) => {
-        console.log(`\n🔍 [DEBUG ITEM ${index}] Nama:`, item.name);
-
-        // 1. Ambil Data Product & Tier Harga dari Database
         const dbProduct = await this.prisma.product.findUnique({
           where: { id: item.productId },
           include: { priceTiers: { orderBy: { minQuantity: "desc" } } },
@@ -167,7 +161,6 @@ export class WebOrderService {
         let productName = dbProduct.name;
         let activeTiers: any[] = dbProduct.priceTiers || [];
 
-        // 2. Cek Varian Produk
         if (item.variantId) {
           const dbVariant = await this.prisma.productVariant.findUnique({
             where: { id: item.variantId },
@@ -195,7 +188,6 @@ export class WebOrderService {
           }
         }
 
-        // 3. TERAPKAN HARGA TIER (POTONGAN GROSIR) BERDASARKAN KUANTITAS
         const matchedTier = activeTiers.find(
           (tier) => item.quantity >= tier.minQuantity,
         );
@@ -203,7 +195,6 @@ export class WebOrderService {
           actualPrice = Number(matchedTier.price);
         }
 
-        // 4. PARSING SELECTED ATTRIBUTES & HITUNG PRICE MODIFIER DARI NAMA TEKS
         let parsedSelectedAttributes: any = null;
         let attributePriceAddition = 0;
 
@@ -223,7 +214,6 @@ export class WebOrderService {
               for (const [attrName, attrValue] of attrEntries) {
                 if (!attrValue) continue;
 
-                // Cari data product attribute value berdasarkan nama atribut dan nilai teks
                 const dbAttrValue =
                   await this.prisma.productAttributeValue.findFirst({
                     where: {
@@ -254,13 +244,11 @@ export class WebOrderService {
           }
         }
 
-        // 5. Total Akhir per Item (Harga Tier + Modifier Atribut)
         const finalItemPrice = actualPrice + attributePriceAddition;
         const actualTotalItem = finalItemPrice * item.quantity;
 
         calculatedSubtotal += actualTotalItem;
 
-        // 6. Parsing Customization opsional
         let parsedCustomization: any = null;
         if (item.customization) {
           try {
@@ -333,10 +321,6 @@ export class WebOrderService {
       },
     });
 
-    console.log(
-      "✅ [DEBUG ORDER] Berhasil membuat WebOrder:",
-      createdWebOrder.id,
-    );
     return createdWebOrder;
   }
 
@@ -350,10 +334,11 @@ export class WebOrderService {
     console.log(
       `\n🚀 [WEBHOOK START] Memulai proses konversi Web Order: ${orderNumber}`,
     );
-    console.log(`💳 Metode Pembayaran: ${paymentMethod}`);
 
     try {
-      await this.prisma.$transaction(async (tx) => {
+      // ✨ PERUBAHAN: Kita membungkus transaction ke dalam variabel resultData
+      // agar kita bisa mengambil email pembeli untuk dikirimkan di luar transaksi.
+      const resultData = await this.prisma.$transaction(async (tx) => {
         const webOrder = await tx.webOrder.findUnique({
           where: { orderNumber },
           include: {
@@ -363,15 +348,11 @@ export class WebOrderService {
         });
 
         if (!webOrder) {
-          console.error("❌ [ERROR] Web Order tidak ditemukan!");
           throw new Error("Web Order tidak ditemukan");
         }
 
         if (webOrder.status === "PAID" || webOrder.status === "PROCESSING") {
-          console.log(
-            `⚠️ [INFO] Web Order sudah berstatus ${webOrder.status}. Proses dihentikan agar tidak duplikat.`,
-          );
-          return;
+          return null; // Menghentikan jika sudah berstatus PAID (Mencegah duplikat)
         }
 
         const webChannel = await tx.purchaseChannel.findUnique({
@@ -390,9 +371,7 @@ export class WebOrderService {
             typeof webOrder.shippingAddress === "string"
               ? JSON.parse(webOrder.shippingAddress)
               : webOrder.shippingAddress;
-        } catch (e) {
-          console.error("⚠️ Gagal mem-parsing alamat pengiriman.");
-        }
+        } catch (e) {}
 
         const formattedAddressString = [
           addressData.fullAddress,
@@ -422,12 +401,6 @@ export class WebOrderService {
               .update({
                 where: { id: clientIdToUse },
                 data: {
-                  country: addressData.country || null,
-                  province: addressData.province || null,
-                  city: addressData.city || null,
-                  district: addressData.district || null,
-                  subDistrict: addressData.subDistrict || null,
-                  postalCode: addressData.postalCode || null,
                   fullAddress: addressData.fullAddress || "-",
                 },
               })
@@ -437,12 +410,6 @@ export class WebOrderService {
               .update({
                 where: { id: clientIdToUse },
                 data: {
-                  country: addressData.country || null,
-                  province: addressData.province || null,
-                  city: addressData.city || null,
-                  district: addressData.district || null,
-                  subDistrict: addressData.subDistrict || null,
-                  postalCode: addressData.postalCode || null,
                   fullAddress: addressData.fullAddress || "-",
                 },
               })
@@ -451,7 +418,6 @@ export class WebOrderService {
         } else {
           const isCorporate = webOrder.profile?.accountType === "CORPORATE";
           const clientType = isCorporate ? ClientType.B2B : ClientType.B2C;
-
           const prefix = clientType === ClientType.B2B ? "B" : "C";
           const counterType =
             clientType === ClientType.B2B ? "CLIENT_B2B_OFF" : "CLIENT_B2C_OFF";
@@ -462,7 +428,6 @@ export class WebOrderService {
             "",
             5,
           );
-
           const custCode = `${prefix}${sequence}`;
 
           const newClient = await tx.client.create({
@@ -485,16 +450,7 @@ export class WebOrderService {
                 companyName: webOrder.profile?.companyName || "Perusahaan Web",
                 departmentId: defaultDept.id,
                 website: "-",
-                phone:
-                  webOrder.profile?.picPhone ||
-                  webOrder.guestPhone ||
-                  addressData.phone,
-                country: addressData.country || null,
-                province: addressData.province || null,
-                city: addressData.city || null,
-                district: addressData.district || null,
-                subDistrict: addressData.subDistrict || null,
-                postalCode: addressData.postalCode || null,
+                phone: webOrder.guestPhone || addressData.phone,
                 fullAddress: addressData.fullAddress || "-",
               },
             });
@@ -505,12 +461,6 @@ export class WebOrderService {
                 prefix: "Mr/Ms",
                 name: webOrder.guestName || addressData.recipient || "Guest",
                 phone: webOrder.guestPhone || addressData.phone,
-                country: addressData.country || null,
-                province: addressData.province || null,
-                city: addressData.city || null,
-                district: addressData.district || null,
-                subDistrict: addressData.subDistrict || null,
-                postalCode: addressData.postalCode || null,
                 fullAddress: addressData.fullAddress || "-",
               },
             });
@@ -522,7 +472,6 @@ export class WebOrderService {
         const processedOrderProducts = await Promise.all(
           webOrder.items.map(async (item: any) => {
             let mappedSelectedAttributes: Record<string, string> | null = null;
-
             if (
               item.selectedAttributes &&
               typeof item.selectedAttributes === "object"
@@ -534,18 +483,10 @@ export class WebOrderService {
                 const dbAttrValue = await tx.productAttributeValue.findFirst({
                   where: {
                     productId: item.productId,
-                    attribute: {
-                      name: attrName,
-                    },
+                    attribute: { name: attrName },
                     attributeValue: {
-                      value: {
-                        contains: attrValue as string,
-                      },
+                      value: { contains: attrValue as string },
                     },
-                  },
-                  include: {
-                    attribute: true,
-                    attributeValue: true,
                   },
                 });
 
@@ -568,6 +509,7 @@ export class WebOrderService {
           }),
         );
 
+        // ✨ TAMBAHAN: Set warrantyDays ke 30 secara default untuk setiap order baru
         await tx.order.create({
           data: {
             orderNumber: generatedOrderNumber,
@@ -578,6 +520,7 @@ export class WebOrderService {
             shippingAddress: finalAddress,
             totalAmount: webOrder.totalAmount,
             webOrderId: webOrder.id,
+            warrantyDays: 30, // <== Penambahan Warranty 30 Hari
             products: {
               create: processedOrderProducts,
             },
@@ -591,7 +534,49 @@ export class WebOrderService {
             paymentMethod: paymentMethod,
           },
         });
+
+        // ✨ TAMBAHAN: Mengumpulkan data untuk dikirimkan melalui Email
+        let customerEmail = webOrder.guestEmail;
+        let customerName =
+          webOrder.guestName || addressData.recipient || "Pelanggan";
+
+        // Jika Guest Email kosong, coba ambil dari data User jika dia login
+        if (!customerEmail && webOrder.profile?.userId) {
+          const user = await tx.user.findUnique({
+            where: { id: webOrder.profile.userId },
+            select: { email: true, name: true },
+          });
+          if (user) {
+            customerEmail = user.email;
+            customerName = user.name || customerName;
+          }
+        }
+
+        return {
+          email: customerEmail,
+          name: customerName,
+          orderNumber: generatedOrderNumber,
+        };
       });
+
+      // ✨ TAMBAHAN: Eksekusi pengiriman email DILUAR prisma transaction
+      if (resultData && resultData.email) {
+        try {
+          await this.emailService.sendOrderConfirmationEmail(
+            resultData.email,
+            resultData.name,
+            resultData.orderNumber,
+          );
+          console.log(
+            `✉️ Email konfirmasi pesanan berhasil dikirim ke ${resultData.email}`,
+          );
+        } catch (emailError) {
+          console.error(
+            "❌ Gagal mengirim email konfirmasi pesanan:",
+            emailError,
+          );
+        }
+      }
     } catch (error) {
       console.error(
         `🚨 [WEBHOOK FAILED] Terjadi kesalahan saat memproses Order ${orderNumber}:`,

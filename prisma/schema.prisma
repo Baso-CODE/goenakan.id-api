@@ -190,7 +190,7 @@ model User {
   emailVerified       DateTime?
   password            String?
   image               String?
-  phone               String?
+  phone               String?              @unique
   verificationToken   String?              @unique
   tokenExpiresAt      DateTime?
   roleId              String

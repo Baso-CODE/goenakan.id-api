@@ -12,33 +12,57 @@ export class AuthServiceWebClient {
     private readonly emailService: EmailService,
   ) {}
 
-  async registerCustomer(data: RegisterUserDTO) {
-    // 1. Cek apakah email sudah terdaftar
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: data.email },
-    });
-
-    if (existingUser) {
-      throw new Error(
-        "Email sudah terdaftar. Silakan gunakan email lain atau login.",
-      );
-    }
-
-    // 2. Hash Password menggunakan Argon2
-    const hashedPassword = await argon2.hash(data.password);
-
-    // 3. Tentukan nama dan nomor HP utama untuk keperluan Address
+  // ✨ Tambahkan parameter 'lang' dengan nilai default 'id' (Indonesia)
+  async registerCustomer(data: RegisterUserDTO, lang: "id" | "en" = "id") {
+    // 1. Tentukan nama dan nomor HP utama sejak awal untuk keperluan pengecekan
     const primaryName =
       data.accountType === "INDIVIDUAL" ? data.fullName! : data.picName!;
     const primaryPhone =
       data.accountType === "INDIVIDUAL" ? data.phone! : data.picNumbers!;
 
-    // 4. Buat Token Verifikasi (Acak 64 karakter) & Batas Waktu (24 jam)
+    // 2. Siapkan kamus pesan error dua bahasa
+    const errorMessages = {
+      id: {
+        emailTaken:
+          "Email sudah terdaftar. Silakan gunakan email lain atau login.",
+        phoneTaken:
+          "Nomor telepon sudah terdaftar. Silakan gunakan nomor lain.",
+      },
+      en: {
+        emailTaken:
+          "This email is already registered. Please use another email or login.",
+        phoneTaken:
+          "This phone number is already registered. Please use another phone number.",
+      },
+    };
+    const messages = errorMessages[lang] || errorMessages["id"];
+
+    // 3. Cek apakah email ATAU nomor telepon sudah terdaftar
+    const existingUser = await this.prisma.user.findFirst({
+      where: {
+        OR: [{ email: data.email }, { phone: primaryPhone }],
+      },
+    });
+
+    // Jika ditemukan data yang kembar, tampilkan error sesuai bahasa
+    if (existingUser) {
+      if (existingUser.email === data.email) {
+        throw new Error(messages.emailTaken);
+      }
+      if (existingUser.phone === primaryPhone) {
+        throw new Error(messages.phoneTaken);
+      }
+    }
+
+    // 4. Hash Password menggunakan Argon2
+    const hashedPassword = await argon2.hash(data.password);
+
+    // 5. Buat Token Verifikasi (Acak 64 karakter) & Batas Waktu (24 jam)
     const verificationToken = crypto.randomBytes(32).toString("hex");
     const tokenExpiresAt = new Date();
     tokenExpiresAt.setHours(tokenExpiresAt.getHours() + 24);
 
-    // 5. Jalankan Prisma Transaction (Atomicity)
+    // 6. Jalankan Prisma Transaction (Atomicity)
     const result = await this.prisma.$transaction(async (tx) => {
       // A. Buat Akun User (Tabel Inti)
       const newUser = await tx.user.create({
@@ -46,8 +70,9 @@ export class AuthServiceWebClient {
           email: data.email,
           password: hashedPassword,
           name: primaryName,
-          verificationToken: verificationToken, // Simpan token ke database
-          tokenExpiresAt: tokenExpiresAt, // Simpan batas waktu token
+          phone: primaryPhone, // ✨ PENTING: Simpan nomor HP ke tabel User agar @unique berfungsi
+          verificationToken: verificationToken,
+          tokenExpiresAt: tokenExpiresAt,
           role: {
             connect: { name: "CUSTOMER" },
           },
@@ -88,8 +113,7 @@ export class AuthServiceWebClient {
       return newUser;
     });
 
-    // 6. Kirim Email Verifikasi
-    // Dilakukan di luar transaksi database agar jika SMTP lambat, database tidak terkunci (blocking).
+    // 7. Kirim Email Verifikasi
     try {
       await this.emailService.sendVerificationEmail(
         result.email,
@@ -99,7 +123,7 @@ export class AuthServiceWebClient {
       console.error("❌ Gagal mengirim email verifikasi:", emailError);
     }
 
-    // 7. Keamanan: Hapus password dari objek sebelum dikembalikan ke Frontend
+    // 8. Keamanan: Hapus password dari objek sebelum dikembalikan ke Frontend
     const { password, ...safeUser } = result;
     return safeUser;
   }

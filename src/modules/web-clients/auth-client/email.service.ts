@@ -51,4 +51,26 @@ export class EmailService {
 
     await this.transporter.sendMail(mailOptions);
   }
+
+  // Tambahkan di dalam kelas EmailService (email.service.ts)
+
+  async sendOrderConfirmationEmail(
+    toEmail: string,
+    customerName: string,
+    orderNumber: string,
+  ) {
+    const mailOptions = {
+      from: `"Goenakan" <${process.env.SMTP_USER}>`,
+      to: toEmail,
+      subject: `Pesanan Berhasil Dibayar - ${orderNumber}`,
+      html: `
+      <h2>Halo ${customerName},</h2>
+      <p>Terima kasih atas pesanan Anda. Pembayaran untuk pesanan dengan nomor seri <strong>${orderNumber}</strong> telah berhasil kami terima dan saat ini sedang dalam proses.</p>
+      <p>Anda dapat menggunakan Nomor Pesanan tersebut untuk melacak status pengiriman dan detail pesanan Anda melalui website kami meskipun Anda tidak login.</p>
+      <p>Salam hangat,<br>Tim Goenakan</p>
+    `,
+    };
+
+    await this.transporter.sendMail(mailOptions);
+  }
 }
