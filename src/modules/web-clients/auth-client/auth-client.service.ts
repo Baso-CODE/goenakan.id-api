@@ -116,14 +116,14 @@ export class AuthServiceWebClient {
     try {
       // Rangkai domain frontend dengan rute verifikasi, bahasa, dan token
       const frontendDomain =
-        process.env.NEXT_PUBLIC_BASE_DOMAIN || "http://localhost:3000";
+        process.env.NEXT_PUBLIC_BASE_DOMAIN || "https://client.goenakan.tech";
 
       // Contoh hasil: http://localhost:3000/id/verify-email?token=abcd...
       const verificationUrl = `${frontendDomain}/${lang}/verify-email?token=${verificationToken}`;
 
       await this.emailService.sendVerificationEmail(
         result.email,
-        verificationUrl, // Kirim URL yang sudah utuh ke EmailService
+        verificationUrl,
       );
     } catch (emailError) {
       console.error("❌ Gagal mengirim email verifikasi:", emailError);
@@ -158,7 +158,7 @@ export class AuthServiceWebClient {
 
     // ✨ PERBAIKAN: Rangkai domain frontend dengan rute /reset-password dan token
     const frontendDomain =
-      process.env.NEXT_PUBLIC_BASE_DOMAIN || "http://localhost:3000";
+      process.env.NEXT_PUBLIC_BASE_DOMAIN || "https://client.goenakan.tech";
     const resetUrl = `${frontendDomain}/en/reset-password?token=${resetToken}`;
 
     // ✨ PERBAIKAN: Kirim resetUrl yang sudah utuh, bukan hanya resetToken
@@ -201,12 +201,11 @@ export class AuthServiceWebClient {
   }
 
   async verifyEmail(token: string) {
-    // 1. Cari user berdasarkan token dan pastikan belum kedaluwarsa
     const user = await this.prisma.user.findFirst({
       where: {
         verificationToken: token,
         tokenExpiresAt: {
-          gt: new Date(), // Token harus masih berlaku
+          gt: new Date(),
         },
       },
     });
@@ -215,7 +214,6 @@ export class AuthServiceWebClient {
       throw new Error("Token verifikasi tidak valid atau sudah kedaluwarsa.");
     }
 
-    // 2. Update user: tandai sudah terverifikasi dan hapus tokennya
     await this.prisma.user.update({
       where: { id: user.id },
       data: {
