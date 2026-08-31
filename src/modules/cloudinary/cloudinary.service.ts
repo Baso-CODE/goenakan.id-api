@@ -54,6 +54,7 @@ export class CloudinaryService {
     if (isImage && shouldOptimize) {
       try {
         bufferToUpload = await sharp(file.buffer)
+          .rotate()
           .webp({
             quality: options.quality || 80,
           })
