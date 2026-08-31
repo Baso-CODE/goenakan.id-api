@@ -20,6 +20,8 @@ export class AuthWebClientRouter {
       this.authController.register,
     );
 
+    this.router.post("/verify-email", this.authController.verifyEmail);
+
     // Endpoint Meminta Reset Password (Lupa Password)
     this.router.post("/forgot-password", this.authController.forgotPassword);
 

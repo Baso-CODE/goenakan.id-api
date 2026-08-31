@@ -1,5 +1,4 @@
 import nodemailer from "nodemailer";
-import { BASE_DOMAIN } from "../../../lib/config";
 
 export class EmailService {
   private transporter;
@@ -17,9 +16,7 @@ export class EmailService {
   }
 
   // Fungsi untuk mengirim email verifikasi akun baru
-  async sendVerificationEmail(toEmail: string, token: string) {
-    const verificationUrl = `${BASE_DOMAIN}/verify-email?token=${token}`;
-
+  async sendVerificationEmail(toEmail: string, verificationUrl: string) {
     const mailOptions = {
       from: `"Support Team" <${process.env.SMTP_USER}>`,
       to: toEmail,

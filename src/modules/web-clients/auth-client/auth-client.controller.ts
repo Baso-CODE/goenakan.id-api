@@ -55,4 +55,19 @@ export class AuthWebClientController {
       next(error);
     }
   };
+
+  verifyEmail = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { token } = req.body;
+      if (!token) {
+        res.status(400).json({ message: "Token verifikasi wajib diisi" });
+        return;
+      }
+
+      const result = await this.authService.verifyEmail(token);
+      res.status(200).json({ success: true, ...result });
+    } catch (error) {
+      next(error);
+    }
+  };
 }

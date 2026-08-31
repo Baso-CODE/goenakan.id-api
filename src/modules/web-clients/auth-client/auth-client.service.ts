@@ -12,7 +12,6 @@ export class AuthServiceWebClient {
     private readonly emailService: EmailService,
   ) {}
 
-  // ✨ Tambahkan parameter 'lang' dengan nilai default 'id' (Indonesia)
   async registerCustomer(data: RegisterUserDTO, lang: "id" | "en" = "id") {
     // 1. Tentukan nama dan nomor HP utama sejak awal untuk keperluan pengecekan
     const primaryName =
@@ -70,7 +69,7 @@ export class AuthServiceWebClient {
           email: data.email,
           password: hashedPassword,
           name: primaryName,
-          phone: primaryPhone, // ✨ PENTING: Simpan nomor HP ke tabel User agar @unique berfungsi
+          phone: primaryPhone,
           verificationToken: verificationToken,
           tokenExpiresAt: tokenExpiresAt,
           role: {
@@ -113,11 +112,18 @@ export class AuthServiceWebClient {
       return newUser;
     });
 
-    // 7. Kirim Email Verifikasi
+    // 7. Kirim Email Verifikasi (✨ KODE YANG SUDAH DIPERBARUI)
     try {
+      // Rangkai domain frontend dengan rute verifikasi, bahasa, dan token
+      const frontendDomain =
+        process.env.NEXT_PUBLIC_BASE_DOMAIN || "http://localhost:3000";
+
+      // Contoh hasil: http://localhost:3000/id/verify-email?token=abcd...
+      const verificationUrl = `${frontendDomain}/${lang}/verify-email?token=${verificationToken}`;
+
       await this.emailService.sendVerificationEmail(
         result.email,
-        verificationToken,
+        verificationUrl, // Kirim URL yang sudah utuh ke EmailService
       );
     } catch (emailError) {
       console.error("❌ Gagal mengirim email verifikasi:", emailError);
@@ -150,7 +156,13 @@ export class AuthServiceWebClient {
       },
     });
 
-    await this.emailService.sendPasswordResetEmail(user.email, resetToken);
+    // ✨ PERBAIKAN: Rangkai domain frontend dengan rute /reset-password dan token
+    const frontendDomain =
+      process.env.NEXT_PUBLIC_BASE_DOMAIN || "http://localhost:3000";
+    const resetUrl = `${frontendDomain}/en/reset-password?token=${resetToken}`;
+
+    // ✨ PERBAIKAN: Kirim resetUrl yang sudah utuh, bukan hanya resetToken
+    await this.emailService.sendPasswordResetEmail(user.email, resetUrl);
 
     return { message: "Tautan reset password telah dikirim ke email Anda." };
   }
@@ -186,5 +198,33 @@ export class AuthServiceWebClient {
     return {
       message: "Kata sandi berhasil diperbarui. Silakan login kembali.",
     };
+  }
+
+  async verifyEmail(token: string) {
+    // 1. Cari user berdasarkan token dan pastikan belum kedaluwarsa
+    const user = await this.prisma.user.findFirst({
+      where: {
+        verificationToken: token,
+        tokenExpiresAt: {
+          gt: new Date(), // Token harus masih berlaku
+        },
+      },
+    });
+
+    if (!user) {
+      throw new Error("Token verifikasi tidak valid atau sudah kedaluwarsa.");
+    }
+
+    // 2. Update user: tandai sudah terverifikasi dan hapus tokennya
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerified: new Date(),
+        verificationToken: null,
+        tokenExpiresAt: null,
+      },
+    });
+
+    return { message: "Email berhasil diverifikasi." };
   }
 }
