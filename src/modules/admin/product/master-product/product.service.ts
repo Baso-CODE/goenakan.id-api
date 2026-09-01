@@ -202,6 +202,64 @@ export class ProductService {
       throw new ApiError("Failed to upload image files to Cloudinary", 500);
     }
 
+    const isProductActive =
+      data.isActive !== undefined
+        ? typeof data.isActive === "string"
+          ? data.isActive === "true"
+          : Boolean(data.isActive)
+        : true;
+
+    if (isProductActive) {
+      if (data.categoryId) {
+        const cat = await this.prisma.productCategory.findUnique({
+          where: { id: data.categoryId },
+          select: { isActive: true, name_id: true },
+        });
+        if (cat && !cat.isActive) {
+          throw new ApiError(
+            `Kategori "${cat.name_id}" sedang nonaktif. Tidak dapat membuat produk aktif menggunakan kategori yang nonaktif.`,
+            400,
+          );
+        }
+      }
+      if (data.itemCategoryId) {
+        const ic = await this.prisma.itemCategory.findUnique({
+          where: { id: data.itemCategoryId },
+          select: { isActive: true, name: true },
+        });
+        if (ic && !ic.isActive) {
+          throw new ApiError(
+            `Item category "${ic.name}" sedang nonaktif. Tidak dapat membuat produk aktif menggunakan item category yang nonaktif.`,
+            400,
+          );
+        }
+      }
+      if (data.itemNameId) {
+        const iname = await this.prisma.itemName.findUnique({
+          where: { id: data.itemNameId },
+          select: { isActive: true, name: true },
+        });
+        if (iname && !iname.isActive) {
+          throw new ApiError(
+            `Item name "${iname.name}" sedang nonaktif. Tidak dapat membuat produk aktif menggunakan item name yang nonaktif.`,
+            400,
+          );
+        }
+      }
+      if (data.materialTypeId) {
+        const mat = await this.prisma.materialType.findUnique({
+          where: { id: data.materialTypeId },
+          select: { isActive: true, name: true },
+        });
+        if (mat && !mat.isActive) {
+          throw new ApiError(
+            `Material "${mat.name}" sedang nonaktif. Tidak dapat membuat produk aktif menggunakan material yang nonaktif.`,
+            400,
+          );
+        }
+      }
+    }
+
     try {
       const newProduct = await this.prisma.$transaction(async (tx) => {
         // 1. CREATE PRODUCT
@@ -618,6 +676,76 @@ export class ProductService {
       updateData.tags = {
         set: tagIds.map((tagId) => ({ id: tagId })),
       };
+    }
+
+    const resultingIsActive =
+      updateData.isActive !== undefined ? updateData.isActive : existing.isActive;
+
+    if (resultingIsActive) {
+      const catId = updateData.categoryId || existing.categoryId;
+      if (catId) {
+        const cat = await this.prisma.productCategory.findUnique({
+          where: { id: catId },
+          select: { isActive: true, name_id: true },
+        });
+        if (cat && !cat.isActive) {
+          throw new ApiError(
+            `Kategori "${cat.name_id}" sedang nonaktif. Tidak dapat mengaktifkan atau menetapkan produk aktif ke kategori nonaktif.`,
+            400,
+          );
+        }
+      }
+
+      const itemCatId =
+        updateData.itemCategoryId !== undefined
+          ? updateData.itemCategoryId
+          : existing.itemCategoryId;
+      if (itemCatId) {
+        const ic = await this.prisma.itemCategory.findUnique({
+          where: { id: itemCatId },
+          select: { isActive: true, name: true },
+        });
+        if (ic && !ic.isActive) {
+          throw new ApiError(
+            `Item category "${ic.name}" sedang nonaktif. Tidak dapat mengaktifkan atau menetapkan produk aktif ke item category nonaktif.`,
+            400,
+          );
+        }
+      }
+
+      const inameId =
+        updateData.itemNameId !== undefined
+          ? updateData.itemNameId
+          : existing.itemNameId;
+      if (inameId) {
+        const iname = await this.prisma.itemName.findUnique({
+          where: { id: inameId },
+          select: { isActive: true, name: true },
+        });
+        if (iname && !iname.isActive) {
+          throw new ApiError(
+            `Item name "${iname.name}" sedang nonaktif. Tidak dapat mengaktifkan atau menetapkan produk aktif ke item name nonaktif.`,
+            400,
+          );
+        }
+      }
+
+      const matId =
+        updateData.materialTypeId !== undefined
+          ? updateData.materialTypeId
+          : existing.materialTypeId;
+      if (matId) {
+        const mat = await this.prisma.materialType.findUnique({
+          where: { id: matId },
+          select: { isActive: true, name: true },
+        });
+        if (mat && !mat.isActive) {
+          throw new ApiError(
+            `Material "${mat.name}" sedang nonaktif. Tidak dapat mengaktifkan atau menetapkan produk aktif ke material nonaktif.`,
+            400,
+          );
+        }
+      }
     }
 
     const updated = await this.prisma.product.update({
@@ -2931,7 +3059,10 @@ export class ProductService {
     targetCurrency?: string;
     lang?: string; // ✨ BARU: Parameter bahasa (id / en)
   }) {
-    const where: any = { isActive: true };
+    const where: any = {
+      isActive: true,
+      category: { isActive: true },
+    };
     const lang = query.lang || "id";
 
     if (query.search) {
@@ -2956,6 +3087,7 @@ export class ProductService {
       where.categoryId = query.categoryId;
     } else if (query.category && query.category !== "all") {
       where.category = {
+        isActive: true,
         OR: [
           { name_id: { equals: query.category } },
           { name_en: { equals: query.category } },
@@ -2966,6 +3098,7 @@ export class ProductService {
 
     if (query.itemCategory && query.itemCategory !== "all") {
       where.itemCategory = {
+        isActive: true,
         OR: [
           { name: { equals: query.itemCategory } },
           { slug: { equals: query.itemCategory } },
@@ -2975,6 +3108,7 @@ export class ProductService {
 
     if (query.itemName && query.itemName !== "all") {
       where.itemName = {
+        isActive: true,
         OR: [
           { name: { equals: query.itemName } },
           { slug: { equals: query.itemName } },
@@ -3181,6 +3315,8 @@ export class ProductService {
         rawProducts = await this.prisma.product.findMany({
           where: {
             id: { in: productIds },
+            isActive: true,
+            category: { isActive: true },
           },
           include: {
             category: true,
@@ -3201,6 +3337,10 @@ export class ProductService {
       // 3. FALLBACK: Jika belum ada penjualan sama sekali, ambil 6 produk terbaru
       if (rawProducts.length === 0) {
         rawProducts = await this.prisma.product.findMany({
+          where: {
+            isActive: true,
+            category: { isActive: true },
+          },
           take: 6,
           orderBy: { createdAt: "desc" },
           include: {
@@ -3306,8 +3446,17 @@ export class ProductService {
         },
       });
 
-      if (!product || !product.isActive) {
+      if (
+        !product ||
+        !product.isActive ||
+        (product.category && !product.category.isActive)
+      ) {
         throw new Error("Product not found");
+      }
+
+      // If materialType is inactive, don't expose it to client
+      if (product.materialType && !product.materialType.isActive) {
+        (product as any).materialType = null;
       }
 
       this.injectLegacyMockupArea(product);
@@ -3642,17 +3791,20 @@ export class ProductService {
 
   async getProductFilterOptions(lang: string = "id") {
     const categories = await this.prisma.productCategory.findMany({
+      where: { isActive: true },
       select: {
         id: true,
         name_id: true,
         name_en: true,
         slug: true,
         itemCategories: {
+          where: { isActive: true },
           select: {
             id: true,
             name: true,
             slug: true,
             itemNames: {
+              where: { isActive: true },
               select: { id: true, name: true, slug: true },
               orderBy: { name: "asc" },
             },

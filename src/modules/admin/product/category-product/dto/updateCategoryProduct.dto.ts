@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from "class-validator";
+import { IsBoolean, IsOptional, IsString } from "class-validator";
 
 export class UpdateProductCategoryDTO {
   @IsOptional()
@@ -24,4 +24,8 @@ export class UpdateProductCategoryDTO {
   @IsOptional()
   @IsString()
   description_en?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }

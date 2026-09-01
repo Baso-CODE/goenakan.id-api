@@ -56,6 +56,13 @@ export class ItemCategoryService {
         take,
         include: {
           productCategory: { select: { name_id: true } }, // Ambil nama kategori induk
+          _count: {
+            select: {
+              products: {
+                where: { isActive: true },
+              },
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
       });
@@ -69,7 +76,19 @@ export class ItemCategoryService {
 
   // === 2. CREATE ITEM CATEGORY (WITH AUTO-CODE) ===
   async createItemCategory(data: CreateItemCategoryDTO) {
-    const slug = this.slug.create(data.name);
+    const baseSlug = this.slug.create(data.name);
+    let finalSlug = baseSlug;
+    let slugExists = await this.prisma.itemCategory.findUnique({
+      where: { slug: finalSlug },
+    });
+    let slugCounter = 1;
+    while (slugExists) {
+      finalSlug = `${baseSlug}-${slugCounter}`;
+      slugExists = await this.prisma.itemCategory.findUnique({
+        where: { slug: finalSlug },
+      });
+      slugCounter++;
+    }
 
     // 1. Ambil 3 huruf kapital pertama
     const prefix = data.name.substring(0, 3).toUpperCase();
@@ -101,16 +120,22 @@ export class ItemCategoryService {
       return await this.prisma.itemCategory.create({
         data: {
           name: data.name,
-          slug,
+          slug: finalSlug,
           code: generatedCode, // ✨ Sekarang menggunakan kode yang pasti unik
           description: data.description,
           productCategoryId: data.productCategoryId,
+          isActive:
+            data.isActive !== undefined
+              ? typeof data.isActive === "string"
+                ? data.isActive === "true"
+                : Boolean(data.isActive)
+              : true,
         },
       });
     } catch (error: any) {
-      // Jika masih error P2002 di sini, berarti slug-nya yang duplikat
+      if (error instanceof ApiError) throw error;
       if (error.code === "P2002") {
-        throw new ApiError("Item category name or slug already exists", 400);
+        throw new ApiError("Item category name, code, or slug already exists", 400);
       }
       throw new ApiError("Failed to create item category", 500);
     }
@@ -129,21 +154,83 @@ export class ItemCategoryService {
   async updateItemCategory(id: string, data: UpdateItemCategoryDTO) {
     const existing = await this.getItemCategoryById(id);
 
-    const slug = data.name ? this.slug.create(data.name) : existing.slug;
-    const code = data.name
-      ? data.name.substring(0, 3).toUpperCase()
-      : existing.code;
+    let finalSlug = existing.slug;
+    let generatedCode = existing.code;
+
+    if (data.name && data.name !== existing.name) {
+      const baseSlug = this.slug.create(data.name);
+      finalSlug = baseSlug;
+      let slugExists = await this.prisma.itemCategory.findFirst({
+        where: { slug: finalSlug, id: { not: id } },
+      });
+      let slugCounter = 1;
+      while (slugExists) {
+        finalSlug = `${baseSlug}-${slugCounter}`;
+        slugExists = await this.prisma.itemCategory.findFirst({
+          where: { slug: finalSlug, id: { not: id } },
+        });
+        slugCounter++;
+      }
+
+      const prefix = data.name.substring(0, 3).toUpperCase();
+      generatedCode = prefix;
+      let codeExists = await this.prisma.itemCategory.findFirst({
+        where: { code: generatedCode, id: { not: id } },
+      });
+      let counter = 1;
+      while (codeExists) {
+        generatedCode = `${prefix}${counter}`;
+        codeExists = await this.prisma.itemCategory.findFirst({
+          where: { code: generatedCode, id: { not: id } },
+        });
+        counter++;
+      }
+    }
+
+    // Lock: Jangan izinkan menonaktifkan item category jika masih ada produk aktif yang menggunakannya
+    if (data.isActive !== undefined) {
+      const targetActive =
+        typeof data.isActive === "string"
+          ? data.isActive === "true"
+          : Boolean(data.isActive);
+      if (!targetActive && existing.isActive) {
+        const activeProductsCount = await this.prisma.product.count({
+          where: {
+            isActive: true,
+            OR: [
+              { itemCategoryId: id },
+              { itemName: { itemCategoryId: id } },
+            ],
+          },
+        });
+        if (activeProductsCount > 0) {
+          throw new ApiError(
+            `Tidak dapat menonaktifkan item category ini karena masih digunakan oleh ${activeProductsCount} produk aktif. Nonaktifkan atau ubah kategori item pada produk-produk tersebut terlebih dahulu.`,
+            400,
+          );
+        }
+      }
+    }
 
     try {
       return await this.prisma.itemCategory.update({
         where: { id },
         data: {
           ...data,
-          slug,
-          code,
+          slug: finalSlug,
+          code: generatedCode,
+          ...(data.isActive !== undefined
+            ? {
+                isActive:
+                  typeof data.isActive === "string"
+                    ? data.isActive === "true"
+                    : Boolean(data.isActive),
+              }
+            : {}),
         },
       });
     } catch (error: any) {
+      if (error instanceof ApiError) throw error;
       if (error.code === "P2002")
         throw new ApiError("Duplicate name or code", 400);
       throw new ApiError("Failed to update item category", 500);

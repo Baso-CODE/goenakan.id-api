@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString, MinLength } from "class-validator";
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, MinLength } from "class-validator";
 
 export class CreateMaterialTypeDTO {
   @IsString({ message: "Nama material harus berupa string" })
@@ -9,6 +9,10 @@ export class CreateMaterialTypeDTO {
   @IsString({ message: "Deskripsi harus berupa string" })
   @IsOptional()
   description?: string;
+
+  @IsBoolean({ message: "Status aktif harus berupa boolean" })
+  @IsOptional()
+  isActive?: boolean;
 }
 
 export class UpdateMaterialTypeDTO {
@@ -20,4 +24,8 @@ export class UpdateMaterialTypeDTO {
   @IsString({ message: "Deskripsi harus berupa string" })
   @IsOptional()
   description?: string;
+
+  @IsBoolean({ message: "Status aktif harus berupa boolean" })
+  @IsOptional()
+  isActive?: boolean;
 }
