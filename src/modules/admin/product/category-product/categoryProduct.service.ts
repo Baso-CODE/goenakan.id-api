@@ -50,6 +50,15 @@ export class ProductCategoryService {
         where,
         skip,
         take,
+        include: {
+          _count: {
+            select: {
+              products: {
+                where: { isActive: true },
+              },
+            },
+          },
+        },
       });
 
       // === Metadata pagination ===
@@ -76,16 +85,33 @@ export class ProductCategoryService {
     data: CreateProductCategoryDTO,
     file?: Express.Multer.File,
   ) {
-    const slug = this.slug.create(data.name_id);
-
-    const generatedCode = data.name_id.substring(0, 3).toUpperCase();
-
-    const existing = await this.prisma.productCategory.findUnique({
-      where: { name_id: data.name_id },
+    const baseSlug = this.slug.create(data.name_id);
+    let finalSlug = baseSlug;
+    let slugExists = await this.prisma.productCategory.findUnique({
+      where: { slug: finalSlug },
     });
+    let slugCounter = 1;
+    while (slugExists) {
+      finalSlug = `${baseSlug}-${slugCounter}`;
+      slugExists = await this.prisma.productCategory.findUnique({
+        where: { slug: finalSlug },
+      });
+      slugCounter++;
+    }
 
-    if (existing) {
-      throw new ApiError("Category name already exists", 400);
+    const prefix = data.name_id.substring(0, 3).toUpperCase();
+    let generatedCode = prefix;
+
+    let codeExists = await this.prisma.productCategory.findUnique({
+      where: { code: generatedCode },
+    });
+    let counter = 1;
+    while (codeExists) {
+      generatedCode = `${prefix}${counter}`;
+      codeExists = await this.prisma.productCategory.findUnique({
+        where: { code: generatedCode },
+      });
+      counter++;
     }
 
     let imageUrl = data.image;
@@ -112,7 +138,7 @@ export class ProductCategoryService {
     try {
       const category = await this.prisma.productCategory.create({
         data: {
-          slug: slug,
+          slug: finalSlug,
           code: generatedCode, // Menyimpan kode otomatis
           image: imageUrl,
           imageId: imageId,
@@ -122,6 +148,12 @@ export class ProductCategoryService {
 
           name_en: data.name_en,
           description_en: data.description_en,
+          isActive:
+            data.isActive !== undefined
+              ? typeof data.isActive === "string"
+                ? data.isActive === "true"
+                : Boolean(data.isActive)
+              : true,
         },
       });
 
@@ -161,17 +193,38 @@ export class ProductCategoryService {
 
     if (!existing) throw new ApiError("Category not found", 404);
 
-    // 🔄 Update slug jika nama berubah
-    const slug =
-      data.name_id && data.name_id !== existing.name_id
-        ? this.slug.create(data.name_id)
-        : existing.slug;
+    let finalSlug = existing.slug;
+    let generatedCode = existing.code;
 
-    // 🔄 Update code jika nama berubah
-    const generatedCode =
-      data.name_id && data.name_id !== existing.name_id
-        ? data.name_id.substring(0, 3).toUpperCase()
-        : existing.code;
+    if (data.name_id && data.name_id !== existing.name_id) {
+      const baseSlug = this.slug.create(data.name_id);
+      finalSlug = baseSlug;
+      let slugExists = await this.prisma.productCategory.findFirst({
+        where: { slug: finalSlug, id: { not: id } },
+      });
+      let slugCounter = 1;
+      while (slugExists) {
+        finalSlug = `${baseSlug}-${slugCounter}`;
+        slugExists = await this.prisma.productCategory.findFirst({
+          where: { slug: finalSlug, id: { not: id } },
+        });
+        slugCounter++;
+      }
+
+      const prefix = data.name_id.substring(0, 3).toUpperCase();
+      generatedCode = prefix;
+      let codeExists = await this.prisma.productCategory.findFirst({
+        where: { code: generatedCode, id: { not: id } },
+      });
+      let counter = 1;
+      while (codeExists) {
+        generatedCode = `${prefix}${counter}`;
+        codeExists = await this.prisma.productCategory.findFirst({
+          where: { code: generatedCode, id: { not: id } },
+        });
+        counter++;
+      }
+    }
 
     let imageUrl = data.image;
     let imageId = data.imageId;
@@ -198,12 +251,34 @@ export class ProductCategoryService {
       }
     }
 
+    // Lock: Jangan izinkan menonaktifkan kategori jika masih ada produk aktif yang menggunakannya
+    if (data.isActive !== undefined) {
+      const targetActive =
+        typeof data.isActive === "string"
+          ? data.isActive === "true"
+          : Boolean(data.isActive);
+      if (!targetActive && existing.isActive) {
+        const activeProductsCount = await this.prisma.product.count({
+          where: {
+            categoryId: id,
+            isActive: true,
+          },
+        });
+        if (activeProductsCount > 0) {
+          throw new ApiError(
+            `Tidak dapat menonaktifkan kategori ini karena masih digunakan oleh ${activeProductsCount} produk aktif. Nonaktifkan atau ubah kategori produk-produk tersebut terlebih dahulu.`,
+            400,
+          );
+        }
+      }
+    }
+
     // 4. Update Database
     try {
       const updated = await this.prisma.productCategory.update({
         where: { id },
         data: {
-          slug: slug,
+          slug: finalSlug,
           code: generatedCode, // Update kode jika nama berubah
           image: imageUrl,
           imageId: imageId,
@@ -212,11 +287,20 @@ export class ProductCategoryService {
           name_en: data.name_en,
           description_id: data.description_id,
           description_en: data.description_en,
+          ...(data.isActive !== undefined
+            ? {
+                isActive:
+                  typeof data.isActive === "string"
+                    ? data.isActive === "true"
+                    : Boolean(data.isActive),
+              }
+            : {}),
         },
       });
 
       return updated;
     } catch (error: any) {
+      if (error instanceof ApiError) throw error;
       console.error("🔥 DATABASE UPDATE ERROR:", error);
       if (error.code === "P2002") {
         throw new ApiError(`Category code already exists.`, 400);
@@ -243,6 +327,9 @@ export class ProductCategoryService {
   async getAllCategoriesList() {
     try {
       const categories = await this.prisma.productCategory.findMany({
+        where: {
+          isActive: true,
+        },
         orderBy: {
           name_id: "asc",
         },
@@ -252,10 +339,16 @@ export class ProductCategoryService {
           name_en: true,
           code: true,
           itemCategories: {
+            where: {
+              isActive: true,
+            },
             select: {
               id: true,
               name: true,
               itemNames: {
+                where: {
+                  isActive: true,
+                },
                 select: {
                   id: true,
                   name: true,
@@ -370,6 +463,9 @@ export class ProductCategoryService {
   async getPublicCategories(lang: string = "id") {
     try {
       const categories = await this.prisma.productCategory.findMany({
+        where: {
+          isActive: true,
+        },
         select: {
           id: true,
           slug: true,
@@ -381,7 +477,7 @@ export class ProductCategoryService {
           description_en: true,
 
           _count: {
-            select: { products: true },
+            select: { products: { where: { isActive: true } } },
           },
         },
         orderBy: {

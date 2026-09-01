@@ -443,6 +443,7 @@ model ProductCategory {
   image          String?
   imageId        String?
   code           String?        @unique
+  isActive       Boolean        @default(true)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   products       Product[]
@@ -461,6 +462,7 @@ model ItemCategory {
   productCategoryId String
   productCategory   ProductCategory      @relation(fields: [productCategoryId], references: [id])
   itemNames         ItemName[]
+  isActive          Boolean              @default(true)
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
   products          Product[]
@@ -478,6 +480,7 @@ model ItemName {
   itemCategoryId String
   itemCategory   ItemCategory @relation(fields: [itemCategoryId], references: [id])
   products       Product[]
+  isActive       Boolean      @default(true)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -558,6 +561,7 @@ model MaterialType {
   slug        String    @unique
   description String?   @db.Text
   code        String?   @unique
+  isActive    Boolean   @default(true)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   products    Product[]

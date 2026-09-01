@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -25,6 +26,10 @@ export class CreateItemCategoryDTO {
   @IsString({ message: "Deskripsi harus berupa string" })
   @IsOptional()
   description?: string;
+
+  @IsBoolean({ message: "Status aktif harus berupa boolean" })
+  @IsOptional()
+  isActive?: boolean;
 }
 
 /**
@@ -46,4 +51,8 @@ export class UpdateItemCategoryDTO {
   @IsString({ message: "Deskripsi harus berupa string" })
   @IsOptional()
   description?: string;
+
+  @IsBoolean({ message: "Status aktif harus berupa boolean" })
+  @IsOptional()
+  isActive?: boolean;
 }

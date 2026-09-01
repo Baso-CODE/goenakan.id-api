@@ -64,6 +64,15 @@ export class MaterialTypeService {
         where,
         skip,
         take,
+        include: {
+          _count: {
+            select: {
+              products: {
+                where: { isActive: true },
+              },
+            },
+          },
+        },
         orderBy: { createdAt: "desc" },
       });
 
@@ -78,36 +87,58 @@ export class MaterialTypeService {
 
   // === CREATE MATERIAL TYPE ===
   async createMaterialType(data: CreateMaterialTypeDTO) {
-    const slug = this.slug.create(data.name);
-
-    // Autogenerate code: Ambil 3 huruf pertama dan jadikan huruf kapital
-    const generatedCode = data.name.substring(0, 3).toUpperCase();
-
-    // Validasi Duplikasi Nama
-    const existing = await this.prisma.materialType.findUnique({
-      where: { name: data.name },
+    const baseSlug = this.slug.create(data.name);
+    let finalSlug = baseSlug;
+    let slugExists = await this.prisma.materialType.findUnique({
+      where: { slug: finalSlug },
     });
+    let slugCounter = 1;
+    while (slugExists) {
+      finalSlug = `${baseSlug}-${slugCounter}`;
+      slugExists = await this.prisma.materialType.findUnique({
+        where: { slug: finalSlug },
+      });
+      slugCounter++;
+    }
 
-    if (existing) {
-      throw new ApiError("Material type name already exists", 400);
+    // Autogenerate code: Ambil 3 huruf pertama dan jadikan huruf kapital. Jika sudah ada, tambahkan penomoran berurut
+    const prefix = data.name.substring(0, 3).toUpperCase();
+    let generatedCode = prefix;
+
+    let codeExists = await this.prisma.materialType.findUnique({
+      where: { code: generatedCode },
+    });
+    let counter = 1;
+    while (codeExists) {
+      generatedCode = `${prefix}${counter}`;
+      codeExists = await this.prisma.materialType.findUnique({
+        where: { code: generatedCode },
+      });
+      counter++;
     }
 
     try {
       return await this.prisma.materialType.create({
         data: {
           name: data.name,
-          slug: slug,
-          code: generatedCode, // Menyimpan kode yang sudah di-generate
+          slug: finalSlug,
+          code: generatedCode,
           description: data.description,
+          isActive:
+            data.isActive !== undefined
+              ? typeof data.isActive === "string"
+                ? data.isActive === "true"
+                : Boolean(data.isActive)
+              : true,
         },
       });
     } catch (error: any) {
+      if (error instanceof ApiError) throw error;
       console.error("🔥 DATABASE ERROR:", error);
 
-      // Menangkap error jika kebetulan ada kode (3 huruf) yang sama persis di database
       if (error.code === "P2002") {
         throw new ApiError(
-          "Material code already exists. Please use a different name.",
+          "Material dengan nama atau kode tersebut sudah ada.",
           400,
         );
       }
@@ -132,18 +163,59 @@ export class MaterialTypeService {
 
     if (!existing) throw new ApiError("Material type not found", 404);
 
-    const slug = data.name ? this.slug.create(data.name) : existing.slug;
+    let finalSlug = existing.slug;
+    let generatedCode = existing.code;
 
-    const generatedCode = data.name
-      ? data.name.substring(0, 3).toUpperCase()
-      : existing.code;
-
-    // Cek duplikasi jika nama berubah
     if (data.name && data.name !== existing.name) {
-      const duplicate = await this.prisma.materialType.findUnique({
-        where: { name: data.name },
+      const baseSlug = this.slug.create(data.name);
+      finalSlug = baseSlug;
+      let slugExists = await this.prisma.materialType.findFirst({
+        where: { slug: finalSlug, id: { not: id } },
       });
-      if (duplicate) throw new ApiError("Material name already used", 400);
+      let slugCounter = 1;
+      while (slugExists) {
+        finalSlug = `${baseSlug}-${slugCounter}`;
+        slugExists = await this.prisma.materialType.findFirst({
+          where: { slug: finalSlug, id: { not: id } },
+        });
+        slugCounter++;
+      }
+
+      const prefix = data.name.substring(0, 3).toUpperCase();
+      generatedCode = prefix;
+      let codeExists = await this.prisma.materialType.findFirst({
+        where: { code: generatedCode, id: { not: id } },
+      });
+      let counter = 1;
+      while (codeExists) {
+        generatedCode = `${prefix}${counter}`;
+        codeExists = await this.prisma.materialType.findFirst({
+          where: { code: generatedCode, id: { not: id } },
+        });
+        counter++;
+      }
+    }
+
+    // Lock: Jangan izinkan menonaktifkan material jika masih ada produk aktif yang menggunakannya
+    if (data.isActive !== undefined) {
+      const targetActive =
+        typeof data.isActive === "string"
+          ? data.isActive === "true"
+          : Boolean(data.isActive);
+      if (!targetActive && existing.isActive) {
+        const activeProductsCount = await this.prisma.product.count({
+          where: {
+            materialTypeId: id,
+            isActive: true,
+          },
+        });
+        if (activeProductsCount > 0) {
+          throw new ApiError(
+            `Tidak dapat menonaktifkan material ini karena masih digunakan oleh ${activeProductsCount} produk aktif. Nonaktifkan atau ubah material pada produk-produk tersebut terlebih dahulu.`,
+            400,
+          );
+        }
+      }
     }
 
     try {
@@ -151,12 +223,21 @@ export class MaterialTypeService {
         where: { id },
         data: {
           name: data.name,
-          slug: slug,
-          code: generatedCode, // Memperbarui kode jika nama berubah
+          slug: finalSlug,
+          code: generatedCode,
           description: data.description,
+          ...(data.isActive !== undefined
+            ? {
+                isActive:
+                  typeof data.isActive === "string"
+                    ? data.isActive === "true"
+                    : Boolean(data.isActive),
+              }
+            : {}),
         },
       });
     } catch (error: any) {
+      if (error instanceof ApiError) throw error;
       console.error("🔥 DATABASE UPDATE ERROR:", error);
 
       if (error.code === "P2002") {
@@ -195,6 +276,7 @@ export class MaterialTypeService {
   // === GET LIST FOR DROPDOWN ===
   async getMaterialTypeList() {
     return await this.prisma.materialType.findMany({
+      where: { isActive: true },
       select: {
         id: true,
         name: true,
