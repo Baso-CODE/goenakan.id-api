@@ -38,7 +38,7 @@ export class BestPriceCategoryService {
       const where: any = {};
 
       if (query.search) {
-        // ✨ Bilingual Search
+        //  Bilingual Search
         where.OR = [
           { nameId: { contains: query.search } },
           { nameEn: { contains: query.search } },

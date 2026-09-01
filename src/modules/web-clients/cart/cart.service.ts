@@ -25,7 +25,7 @@ export class CartService {
     return cart;
   }
 
-  // === 1. GET CART (DENGAN KALKULASI HARGA DINAMIS, KURS, & BAHASA BILINGUAL) ===
+  // === 1. GET CART (DENGAN TIER & MODIFIER ATRIBUT BERBASIS NAMA TEKS) ===
   async getCart(
     profileId: string,
     targetCurrency: string = "IDR",
@@ -43,7 +43,7 @@ export class CartService {
               select: {
                 id: true,
                 name: true,
-                name_en: true, // ✨ Ambil nama bahasa Inggris untuk bilingual
+                name_en: true,
                 slug: true,
                 basePrice: true,
                 images: { take: 1, orderBy: { isFeatured: "desc" } },
@@ -52,6 +52,7 @@ export class CartService {
                 width: true,
                 height: true,
                 length: true,
+                priceTiers: { orderBy: { minQuantity: "desc" } },
               },
             },
             variant: {
@@ -60,6 +61,7 @@ export class CartService {
                 variantName: true,
                 sku: true,
                 price: true,
+                priceTiers: { orderBy: { minQuantity: "desc" } },
               },
             },
           },
@@ -69,7 +71,7 @@ export class CartService {
 
     if (!rawCart) return null;
 
-    // ✨ 1. AMBIL NILAI KURS JIKA BUKAN IDR ✨
+    //  1. AMBIL NILAI KURS JIKA BUKAN IDR
     let conversionRate = 1;
     if (targetCurrency && targetCurrency !== "IDR") {
       try {
@@ -87,10 +89,9 @@ export class CartService {
       }
     }
 
-    // ✨ 2. KALKULASI HARGA DINAMIS & FORMAT BILINGUAL UNTUK SETIAP ITEM ✨
+    //  2. KALKULASI HARGA
     const processedItems = await Promise.all(
       rawCart.items.map(async (item) => {
-        // A. Pemilihan Nama Produk Berdasarkan Bahasa (Bilingual Support)
         let productName = item.product.name;
         if (lang === "en") {
           productName =
@@ -100,14 +101,38 @@ export class CartService {
             item.product.name || item.product.name_en || "Produk Tanpa Nama";
         }
 
-        // B. Ambil Harga Dasar (MURNI IDR)
-        let calculatedPriceIdr = item.variant?.price
-          ? item.variant.price.toNumber()
-          : item.product.basePrice.toNumber();
+        let calculatedPriceIdr = item.product.basePrice.toNumber();
+        let activeTiers: any[] = item.product.priceTiers || [];
 
+        // Penyesuaian Varian
+        if (item.variantId && item.variant) {
+          if (item.variant.price) {
+            calculatedPriceIdr = item.variant.price.toNumber();
+          }
+
+          if (item.variant.priceTiers && item.variant.priceTiers.length > 0) {
+            activeTiers = item.variant.priceTiers;
+          } else if (activeTiers.length > 0 && item.variant.price) {
+            const diff =
+              item.variant.price.toNumber() - item.product.basePrice.toNumber();
+            activeTiers = activeTiers.map((t) => ({
+              ...t,
+              price: Number(t.price) + diff,
+            }));
+          }
+        }
+
+        // Cek Tier Berdasarkan Quantity User
+        const matchedTier = activeTiers.find(
+          (tier) => item.quantity >= tier.minQuantity,
+        );
+
+        if (matchedTier) {
+          calculatedPriceIdr = Number(matchedTier.price);
+        }
+
+        // Ekstrak Customization
         let customData: any = {};
-        let resolvedAttributes: any[] = [];
-
         try {
           if (item.customization) {
             customData =
@@ -119,57 +144,69 @@ export class CartService {
           console.error("Gagal mem-parsing customization keranjang", e);
         }
 
-        // C. Tambahkan Biaya Atribut (Bahan Premium, Ukuran XXL, dsb)
+        let resolvedAttributes: any[] = [];
+
+        //  EKSTRAKSI ATRIBUT BERBASIS NAMA TEKS (SELARAS DENGAN WEB ORDER)
         if (
-          customData.selectedAttributeValueIds &&
-          Array.isArray(customData.selectedAttributeValueIds)
+          item.selectedAttributes &&
+          typeof item.selectedAttributes === "object"
         ) {
-          const attributes = await this.prisma.productAttributeValue.findMany({
-            where: {
-              productId: item.productId,
-              attributeValueId: { in: customData.selectedAttributeValueIds },
-            },
-            include: { attributeValue: true },
-          });
+          const attrEntries = Object.entries(
+            item.selectedAttributes as Record<string, any>,
+          );
 
-          attributes.forEach((attr) => {
-            const modifierIdr = attr.priceModifier
-              ? Number(attr.priceModifier)
-              : 0;
-            calculatedPriceIdr += modifierIdr; // Tambahkan ke total IDR
+          for (const [attrName, attrValue] of attrEntries) {
+            if (!attrValue) continue;
 
-            resolvedAttributes.push({
-              name: attr.attributeValue.value,
-              modifier: parseFloat((modifierIdr * conversionRate).toFixed(2)),
-            });
-          });
-        }
+            const dbAttrVal = await this.prisma.productAttributeValue.findFirst(
+              {
+                where: {
+                  productId: item.productId,
+                  attribute: {
+                    name: { equals: attrName },
+                  },
+                  attributeValue: {
+                    value: { contains: String(attrValue) },
+                  },
+                },
+                include: { attributeValue: true },
+              },
+            );
 
-        // D. Tambahkan Biaya Sablon / Custom Logo (Opsional)
-        const COST_PER_LOGO_IDR = 15000;
-        if (customData.zones) {
-          const zones = Object.values(customData.zones);
-          zones.forEach((zone: any) => {
-            const count = zone.logoCount || 1;
-            calculatedPriceIdr += COST_PER_LOGO_IDR * count;
-          });
+            if (dbAttrVal) {
+              const modifierIdr = dbAttrVal.priceModifier
+                ? Number(dbAttrVal.priceModifier)
+                : 0;
+              calculatedPriceIdr += modifierIdr; // Ditambahkan ke Harga Dasar/Tier Per Pcs
+
+              resolvedAttributes.push({
+                name: String(attrValue),
+                modifier: parseFloat((modifierIdr * conversionRate).toFixed(2)),
+              });
+            }
+          }
         }
 
         customData.resolvedAttributes = resolvedAttributes;
 
-        // E. KONVERSI HARGA TOTAL ITEM KE MATA UANG TARGET
+        // F. Konversi Harga Total Unit ke Mata Uang Target
         const finalConvertedPrice = parseFloat(
           (calculatedPriceIdr * conversionRate).toFixed(2),
         );
+
+        const materialTypeName =
+          (item.product as any).materialType?.name || undefined;
 
         return {
           ...item,
           product: {
             ...item.product,
-            name: productName, // Mengganti nama produk sesuai bahasa
+            name: productName,
           },
           price: finalConvertedPrice,
+          materialType: materialTypeName,
           customization: customData,
+          selectedAttributes: item.selectedAttributes || null,
         };
       }),
     );
@@ -199,6 +236,8 @@ export class CartService {
         data: {
           quantity: existingItem.quantity + data.quantity,
           customization: data.customization || existingItem.customization,
+          selectedAttributes:
+            data.selectedAttributes || existingItem.selectedAttributes,
           notes: data.notes || existingItem.notes,
         },
       });
@@ -210,13 +249,182 @@ export class CartService {
           variantId: data.variantId || null,
           quantity: data.quantity,
           customization: data.customization || null,
+          selectedAttributes: data.selectedAttributes || null,
           notes: data.notes || null,
         },
       });
     }
   }
 
-  // === 3. UPDATE CART ITEM ===
+  // === 3. SYNC GUEST CART ===
+  async syncGuestCart(
+    profileId: string,
+    data: SyncCartDTO,
+    targetCurrency: string = "IDR",
+    lang: string = "id",
+  ) {
+    const syncPromises = data.items.map((item) =>
+      this.addToCart(profileId, item),
+    );
+    await Promise.all(syncPromises);
+
+    return this.getCart(profileId, targetCurrency, lang);
+  }
+
+  // === 4. HITUNG KERANJANG GUEST SECARA OFFLINE ===
+  async calculateGuestCartOffline(
+    items: any[],
+    targetCurrency: string = "IDR",
+    lang: string = "id",
+  ) {
+    let conversionRate = 1;
+
+    if (targetCurrency !== "IDR") {
+      try {
+        const conversionResult = await this.currencyConversion.convertCurrency({
+          fromCurrency: "IDR",
+          toCurrency: targetCurrency,
+          amount: 1,
+        });
+        conversionRate = conversionResult.rate;
+      } catch (error) {
+        console.error(
+          "Gagal mengambil nilai tukar untuk guest, fallback ke IDR",
+          error,
+        );
+      }
+    }
+
+    const processedItems = await Promise.all(
+      items.map(async (item) => {
+        const dbProduct = await this.prisma.product.findUnique({
+          where: { id: item.productId },
+          include: {
+            images: { take: 1 },
+            materialType: true,
+            priceTiers: { orderBy: { minQuantity: "desc" } },
+          },
+        });
+
+        if (!dbProduct) return null;
+
+        let productName = dbProduct.name;
+        if (lang === "en") {
+          productName = dbProduct.name_en || dbProduct.name;
+        }
+
+        let calculatedPriceIdr = dbProduct.basePrice.toNumber();
+        let activeTiers: any[] = dbProduct.priceTiers || [];
+
+        if (item.variantId) {
+          const dbVariant = await this.prisma.productVariant.findUnique({
+            where: { id: item.variantId },
+            include: { priceTiers: { orderBy: { minQuantity: "desc" } } },
+          });
+
+          if (dbVariant?.price) {
+            calculatedPriceIdr = dbVariant.price.toNumber();
+          }
+
+          if (dbVariant?.priceTiers && dbVariant.priceTiers.length > 0) {
+            activeTiers = dbVariant.priceTiers;
+          } else if (activeTiers.length > 0 && dbVariant?.price) {
+            const diff =
+              dbVariant.price.toNumber() - dbProduct.basePrice.toNumber();
+            activeTiers = activeTiers.map((t) => ({
+              ...t,
+              price: Number(t.price) + diff,
+            }));
+          }
+        }
+
+        const matchedTier = activeTiers.find(
+          (tier) => item.quantity >= tier.minQuantity,
+        );
+
+        if (matchedTier) {
+          calculatedPriceIdr = Number(matchedTier.price);
+        }
+
+        let customData: any = item.customization || {};
+        try {
+          if (typeof customData === "string")
+            customData = JSON.parse(customData);
+        } catch (e) {}
+
+        //  Tambahkan Price Modifier Berdasarkan Nama Teks Attribute untuk Guest
+        if (
+          item.selectedAttributes &&
+          typeof item.selectedAttributes === "object"
+        ) {
+          const attrEntries = Object.entries(
+            item.selectedAttributes as Record<string, any>,
+          );
+
+          for (const [attrName, attrValue] of attrEntries) {
+            if (!attrValue) continue;
+
+            const dbAttrVal = await this.prisma.productAttributeValue.findFirst(
+              {
+                where: {
+                  productId: item.productId,
+                  attribute: {
+                    name: { equals: attrName },
+                  },
+                  attributeValue: {
+                    value: { contains: String(attrValue) },
+                  },
+                },
+              },
+            );
+
+            if (dbAttrVal) {
+              calculatedPriceIdr += dbAttrVal.priceModifier
+                ? Number(dbAttrVal.priceModifier)
+                : 0;
+            }
+          }
+        }
+
+        const finalConvertedPrice = parseFloat(
+          (calculatedPriceIdr * conversionRate).toFixed(2),
+        );
+
+        const dimParts = [
+          dbProduct.length,
+          dbProduct.width,
+          dbProduct.height,
+        ].filter((v) => v != null);
+
+        const materialTypeName =
+          (dbProduct as any).materialType?.name || undefined;
+
+        return {
+          id: item.id,
+          productId: item.productId,
+          variantId: item.variantId,
+          name: productName,
+          price: finalConvertedPrice,
+          quantity: item.quantity,
+          image:
+            dbProduct.images?.[0]?.url || "/images/products/demo-products.png",
+          materialType: materialTypeName,
+          dimensions:
+            dimParts.length > 0 ? `${dimParts.join(" x ")} cm` : undefined,
+          weight: dbProduct.weight ? `${dbProduct.weight} gram` : undefined,
+          customization: customData,
+          selectedAttributes: item.selectedAttributes || null,
+        };
+      }),
+    );
+
+    return {
+      currencyCode: targetCurrency,
+      items: processedItems.filter((i) => i !== null),
+    };
+  }
+
+  // === 5. UPDATE CART ITEM ===
   async updateCartItem(
     profileId: string,
     cartItemId: string,
@@ -241,12 +449,16 @@ export class CartService {
           data.customization !== undefined
             ? data.customization
             : existingItem.customization,
+        selectedAttributes:
+          data.selectedAttributes !== undefined
+            ? data.selectedAttributes
+            : existingItem.selectedAttributes,
         notes: data.notes !== undefined ? data.notes : existingItem.notes,
       },
     });
   }
 
-  // === 4. REMOVE FROM CART ===
+  // === 6. REMOVE FROM CART ===
   async removeCartItem(profileId: string, cartItemId: string) {
     const cart = await this.getOrCreateCart(profileId);
 
@@ -263,128 +475,12 @@ export class CartService {
     });
   }
 
-  // === 5. CLEAR CART ===
+  // === 7. CLEAR CART ===
   async clearCart(profileId: string) {
     const cart = await this.getOrCreateCart(profileId);
 
     return this.prisma.cartItem.deleteMany({
       where: { cartId: cart.id },
     });
-  }
-
-  // === 6. SYNC GUEST CART ===
-  async syncGuestCart(
-    profileId: string,
-    data: SyncCartDTO,
-    targetCurrency: string = "IDR",
-    lang: string = "id",
-  ) {
-    const syncPromises = data.items.map((item) =>
-      this.addToCart(profileId, item),
-    );
-    await Promise.all(syncPromises);
-
-    return this.getCart(profileId, targetCurrency, lang);
-  }
-
-  // === 7. HITUNG KERANJANG GUEST SECARA OFFLINE (Backend Source of Truth) ===
-  async calculateGuestCartOffline(
-    items: any[],
-    targetCurrency: string = "IDR",
-    lang: string = "id",
-  ) {
-    let conversionRate = 1;
-
-    // 1. Ambil Rate Mata Uang
-    if (targetCurrency !== "IDR") {
-      try {
-        const conversionResult = await this.currencyConversion.convertCurrency({
-          fromCurrency: "IDR",
-          toCurrency: targetCurrency,
-          amount: 1,
-        });
-        conversionRate = conversionResult.rate;
-      } catch (error) {
-        console.error(
-          "Gagal mengambil nilai tukar untuk guest, fallback ke IDR",
-          error,
-        );
-      }
-    }
-
-    // 2. Hitung Ulang Data Murni dari Database
-    const processedItems = await Promise.all(
-      items.map(async (item) => {
-        // Ambil produk dari DB agar harga (basePrice) 100% akurat dari backend
-        const dbProduct = await this.prisma.product.findUnique({
-          where: { id: item.productId },
-          include: { images: { take: 1 }, materialType: true },
-        });
-
-        if (!dbProduct) return null;
-
-        // ✨ PERBAIKAN UTAMA DI SINI: Gunakan dbProduct.name (bukan name_id)
-        let productName = dbProduct.name;
-        if (lang === "en") {
-          productName = dbProduct.name_en || dbProduct.name;
-        }
-
-        // Tentukan Harga Awal (IDR)
-        let calculatedPriceIdr = dbProduct.basePrice.toNumber();
-        if (item.variantId) {
-          const dbVariant = await this.prisma.productVariant.findUnique({
-            where: { id: item.variantId },
-          });
-          if (dbVariant?.price) calculatedPriceIdr = dbVariant.price.toNumber();
-        }
-
-        // Kalkulasi Tambahan Kustomisasi Sablon
-        let customData: any = item.customization || {};
-        try {
-          if (typeof customData === "string")
-            customData = JSON.parse(customData);
-        } catch (e) {}
-
-        const COST_PER_LOGO_IDR = 15000;
-        if (customData.zones) {
-          Object.values(customData.zones).forEach((zone: any) => {
-            calculatedPriceIdr += COST_PER_LOGO_IDR * (zone.logoCount || 1);
-          });
-        }
-
-        // Konversi ke Target Mata Уang (Misal: Dolar)
-        const finalConvertedPrice = parseFloat(
-          (calculatedPriceIdr * conversionRate).toFixed(2),
-        );
-
-        // Format data yang dikirim balik ke frontend
-        const dimParts = [
-          dbProduct.length,
-          dbProduct.width,
-          dbProduct.height,
-        ].filter((v) => v != null);
-        return {
-          id: item.id,
-          productId: item.productId,
-          variantId: item.variantId,
-          name: productName,
-          price: finalConvertedPrice,
-          quantity: item.quantity,
-          image:
-            dbProduct.images?.[0]?.url || "/images/products/demo-products.png",
-          materialType: dbProduct.materialType?.name,
-          dimensions:
-            dimParts.length > 0 ? `${dimParts.join(" x ")} cm` : undefined,
-          weight: dbProduct.weight ? `${dbProduct.weight} gram` : undefined,
-          customization: customData,
-        };
-      }),
-    );
-
-    // Kembalikan ke Frontend (Mata Uang & Item yang Dikonversi)
-    return {
-      currencyCode: targetCurrency,
-      items: processedItems.filter((i) => i !== null),
-    };
   }
 }

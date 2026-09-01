@@ -176,6 +176,201 @@ export class ClientService {
       );
     }
   }
+
+  // === UPDATE CLIENT (DENGAN LOGGING ERROR UPLOAD) ===
+  async updateClient(
+    id: string,
+    data: UpdateClientDTO,
+    logoFile?: Express.Multer.File,
+  ) {
+    console.log("📥 [UPDATE CLIENT] Menerima data request untuk ID:", id);
+    console.log("📥 [UPDATE CLIENT] Data body:", JSON.stringify(data, null, 2));
+
+    if (logoFile) {
+      console.log("📸 [UPDATE CLIENT] File logo terdeteksi:", {
+        originalname: logoFile.originalname,
+        mimetype: logoFile.mimetype,
+        size: logoFile.size,
+      });
+    } else {
+      console.log("ℹ️ [UPDATE CLIENT] Tidak ada file logo baru yang diunggah.");
+    }
+
+    const existing = await this.prisma.client.findUnique({
+      where: { id },
+      include: {
+        b2b: { include: { pics: true, brandClients: true } },
+        b2c: true,
+      },
+    });
+
+    if (!existing) {
+      console.error(
+        "❌ [UPDATE CLIENT] Klien dengan ID tersebut tidak ditemukan.",
+      );
+      throw new ApiError("Client not found", 404);
+    }
+
+    const parsedJoinedDate = data.joinedDate
+      ? new Date(data.joinedDate)
+      : undefined;
+
+    // ====================================================
+    // ======================= B2B ========================
+    // ====================================================
+
+    if (existing.type === ClientType.B2B) {
+      let newLogoUrl: string | undefined = undefined;
+      let newLogoId: string | undefined = undefined;
+
+      if (logoFile) {
+        try {
+          console.log(
+            "🚀 [CLOUDINARY] Memulai proses upload logo ke Cloudinary...",
+          );
+          const uploadResult = await this.cloudinary.upload(logoFile, {
+            folder: "brand-clients",
+            resource_type: "image",
+          });
+
+          newLogoUrl = uploadResult.secure_url;
+          newLogoId = uploadResult.public_id;
+          console.log("✅ [CLOUDINARY] Upload berhasil! URL:", newLogoUrl);
+        } catch (uploadErr: any) {
+          //  Tangkap dan cetak error mentah dari Cloudinary ke konsol backend
+          console.error("🔥 [CLOUDINARY ERROR ASLI]:", uploadErr);
+          throw new ApiError(
+            `Gagal mengunggah logo ke Cloudinary: ${uploadErr?.message || "Unknown error"}`,
+            500,
+          );
+        }
+      }
+
+      // Logika Brand yang lebih aman
+      let brandOperation: any = undefined;
+      const existingBrand = existing.b2b?.brandClients?.[0];
+
+      if (
+        data.brandName ||
+        data.brandCountry ||
+        data.brandWebsiteUrl ||
+        logoFile
+      ) {
+        const brandData = {
+          name: data.brandName ?? existingBrand?.name ?? "Default Brand",
+          slug: data.brandName
+            ? this.slugService.create(data.brandName)
+            : (existingBrand?.slug ?? `brand-${Date.now()}`),
+          country:
+            data.brandCountry ??
+            existingBrand?.country ??
+            data.country ??
+            "Indonesia",
+          websiteUrl:
+            data.brandWebsiteUrl ??
+            existingBrand?.websiteUrl ??
+            data.website ??
+            null,
+          logo: newLogoUrl ?? existingBrand?.logo,
+          logoId: newLogoId ?? existingBrand?.logoId,
+          isActive: existing.status === "OFFICIAL",
+        };
+
+        if (existingBrand) {
+          brandOperation = {
+            update: {
+              where: { id: existingBrand.id },
+              data: brandData,
+            },
+          };
+        } else {
+          brandOperation = {
+            create: brandData,
+          };
+        }
+      }
+
+      console.log("💾 [PRISMA] Menyimpan pembaruan data B2B ke database...");
+      const updatedClient = await this.prisma.client.update({
+        where: { id },
+        data: {
+          joinedDate: parsedJoinedDate ?? existing.joinedDate,
+          b2b: {
+            update: {
+              companyName: data.companyName ?? existing.b2b?.companyName,
+              departmentId: data.departmentId ?? existing.b2b?.departmentId,
+              phone: data.phone ?? existing.b2b?.phone,
+              email: data.email ?? existing.b2b?.email,
+              website: data.website ?? existing.b2b?.website,
+
+              country: data.country ?? existing.b2b?.country,
+              province: data.province ?? existing.b2b?.province,
+              city: data.city ?? existing.b2b?.city,
+              district: data.district ?? existing.b2b?.district,
+              subDistrict: data.subDistrict ?? existing.b2b?.subDistrict,
+              postalCode: data.postalCode ?? existing.b2b?.postalCode,
+              fullAddress: data.fullAddress ?? existing.b2b?.fullAddress,
+
+              pics: Array.isArray(data.pics)
+                ? {
+                    deleteMany: {},
+                    create: data.pics.map((pic: any) => ({
+                      prefix: pic.prefix ?? "",
+                      name: pic.name ?? "",
+                      email: pic.email ?? null,
+                      phone: pic.phone ?? null,
+                    })),
+                  }
+                : undefined,
+
+              brandClients: brandOperation,
+            },
+          },
+        },
+        include: {
+          b2b: { include: { pics: true, brandClients: true } },
+        },
+      });
+
+      console.log("🎉 [UPDATE CLIENT] Data B2B berhasil diperbarui!");
+      return updatedClient;
+    }
+
+    // ====================================================
+    // ======================= B2C ========================
+    // ====================================================
+
+    if (existing.type === ClientType.B2C) {
+      console.log("💾 [PRISMA] Menyimpan pembaruan data B2C ke database...");
+      return await this.prisma.client.update({
+        where: { id },
+        data: {
+          joinedDate: parsedJoinedDate ?? existing.joinedDate,
+          b2c: {
+            update: {
+              prefix: data.prefix ?? existing.b2c?.prefix,
+              name: data.name ?? existing.b2c?.name,
+              phone: data.phone ?? existing.b2c?.phone,
+              country: data.country ?? existing.b2c?.country,
+              province: data.province ?? existing.b2c?.province,
+              city: data.city ?? existing.b2c?.city,
+              district: data.district ?? existing.b2c?.district,
+              subDistrict: data.subDistrict ?? existing.b2c?.subDistrict,
+              postalCode: data.postalCode ?? existing.b2c?.postalCode,
+              fullAddress:
+                data.fullAddressB2C ??
+                data.fullAddress ??
+                existing.b2c?.fullAddress,
+            },
+          },
+        },
+        include: { b2c: true },
+      });
+    }
+
+    throw new ApiError("Invalid client type", 400);
+  }
+
   // === GET ALL CLIENTS ===
   async getAllClients(query: {
     page?: number;
@@ -395,102 +590,6 @@ export class ClientService {
     if (!client) throw new ApiError("Client not found", 404);
 
     return client;
-  }
-
-  async updateClient(id: string, data: UpdateClientDTO) {
-    const existing = await this.prisma.client.findUnique({
-      where: { id },
-      include: {
-        b2b: { include: { pics: true } },
-        b2c: true,
-      },
-    });
-
-    if (!existing) throw new ApiError("Client not found", 404);
-    const parsedJoinedDate = data.joinedDate
-      ? new Date(data.joinedDate)
-      : undefined;
-
-    // ====================================================
-    // ======================= B2B ========================
-    // ====================================================
-
-    if (existing.type === ClientType.B2B) {
-      return await this.prisma.client.update({
-        where: { id },
-        data: {
-          joinedDate: parsedJoinedDate ?? existing.joinedDate,
-          b2b: {
-            update: {
-              companyName: data.companyName ?? existing.b2b?.companyName,
-              departmentId: data.departmentId ?? existing.b2b?.departmentId,
-              phone: data.phone ?? existing.b2b?.phone,
-              email: data.email ?? existing.b2b?.email,
-              website: data.website ?? existing.b2b?.website,
-
-              country: data.country ?? existing.b2b?.country,
-              province: data.province ?? existing.b2b?.province,
-              city: data.city ?? existing.b2b?.city,
-              district: data.district ?? existing.b2b?.district,
-              subDistrict: data.subDistrict ?? existing.b2b?.subDistrict,
-              postalCode: data.postalCode ?? existing.b2b?.postalCode,
-
-              fullAddress: data.fullAddress ?? existing.b2b?.fullAddress,
-
-              pics: data.pics
-                ? {
-                    deleteMany: {},
-                    create: data.pics.map((pic) => ({
-                      prefix: pic.prefix ?? null,
-                      name: pic.name ?? "",
-                      email: pic.email ?? null,
-                      phone: pic.phone ?? null,
-                    })),
-                  }
-                : undefined,
-            },
-          },
-        },
-        include: {
-          b2b: { include: { pics: true } },
-        },
-      });
-    }
-
-    // ====================================================
-    // ======================= B2C ========================
-    // ====================================================
-
-    if (existing.type === ClientType.B2C) {
-      return await this.prisma.client.update({
-        where: { id },
-        data: {
-          joinedDate: parsedJoinedDate ?? existing.joinedDate,
-          b2c: {
-            update: {
-              prefix: data.prefix ?? existing.b2c?.prefix,
-              name: data.name ?? existing.b2c?.name,
-              phone: data.phone ?? existing.b2c?.phone,
-
-              country: data.country ?? existing.b2c?.country,
-              province: data.province ?? existing.b2c?.province,
-              city: data.city ?? existing.b2c?.city,
-              district: data.district ?? existing.b2c?.district,
-              subDistrict: data.subDistrict ?? existing.b2c?.subDistrict,
-              postalCode: data.postalCode ?? existing.b2c?.postalCode,
-
-              fullAddress:
-                data.fullAddressB2C ??
-                data.fullAddress ??
-                existing.b2c?.fullAddress,
-            },
-          },
-        },
-        include: { b2c: true },
-      });
-    }
-
-    throw new ApiError("Invalid client type", 400);
   }
 
   // === DELETE CLIENT ===

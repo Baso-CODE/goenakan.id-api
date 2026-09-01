@@ -43,7 +43,7 @@ export class CashflowRevenueInputDTO {
   @IsOptional()
   exchangeRate?: number = 1;
 
-  // ✨ TAMBAHAN: Untuk mencatat kurs historis saat transaksi/save dilakukan
+  //  TAMBAHAN: Untuk mencatat kurs historis saat transaksi/save dilakukan
   @IsNumber()
   @Min(0.000001, { message: "Kurs historis minimal lebih dari 0" })
   @IsOptional()

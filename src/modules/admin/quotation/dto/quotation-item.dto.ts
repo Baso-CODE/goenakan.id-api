@@ -1,7 +1,6 @@
 import { Transform, Type } from "class-transformer";
 import {
   IsArray,
-  IsInt,
   IsNotEmpty,
   IsNumber,
   IsObject,
@@ -62,9 +61,9 @@ export class CreateQuotationItemDTO {
   description?: string;
 
   @IsOptional()
-  @IsInt()
-  @Min(0)
   @Type(() => Number)
+  @IsNumber()
+  @Min(1)
   quantity?: number;
 
   @IsOptional()

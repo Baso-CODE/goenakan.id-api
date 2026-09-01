@@ -296,7 +296,7 @@ export class QuotationService {
       const item = data.items[i];
       const img = uploadedImages[i];
 
-      // ✨ PERBAIKAN UTAMA KUANTITAS: Pastikan dibaca sebagai angka dengan benar
+      //  PERBAIKAN UTAMA KUANTITAS: Pastikan dibaca sebagai angka dengan benar
       const mainQty =
         item.quantity !== undefined && item.quantity !== null
           ? Number(item.quantity)
@@ -315,7 +315,7 @@ export class QuotationService {
         select: {
           name: true,
           basePrice: true,
-          // ✨ PERBAIKAN: Menggunakan 'attributeValues' sesuai skema Prisma kamu
+          //  PERBAIKAN: Menggunakan 'attributeValues' sesuai skema Prisma kamu
           attributeValues: {
             select: {
               attributeValueId: true,
@@ -344,7 +344,7 @@ export class QuotationService {
           .flat()
           .filter(Boolean) as string[];
 
-        // ✨ PERBAIKAN: Mengambil data dari attributeValues
+        //  PERBAIKAN: Mengambil data dari attributeValues
         const productAttributes = productRecord.attributeValues as any[];
 
         if (
@@ -372,7 +372,7 @@ export class QuotationService {
         }
       }
 
-      // ✨ Hitung total harga per baris menggunakan kuantitas yang benar (Kuantitas * Harga Akhir - Diskon)
+      //  Hitung total harga per baris menggunakan kuantitas yang benar (Kuantitas * Harga Akhir - Diskon)
       const lineTotal = mainQty * finalUnitPrice - itemDiscount;
       subTotal += lineTotal < 0 ? 0 : lineTotal;
 
@@ -484,7 +484,7 @@ export class QuotationService {
 
         let calculatedSubTotal = 0;
 
-        // ✨ GUNAKAN FOR OF LOOP AGAR BISA MELAKUKAN AWAIT KE DATABASE
+        //  GUNAKAN FOR OF LOOP AGAR BISA MELAKUKAN AWAIT KE DATABASE
         for (const item of items) {
           const mainQty = item.quantity ? Number(item.quantity) : 1;
           const itemDiscount = item.discount ? Number(item.discount) : 0;
@@ -503,7 +503,7 @@ export class QuotationService {
             select: {
               name: true,
               basePrice: true,
-              // ✨ PERBAIKAN: Mengambil modifier atribut dari database
+              //  PERBAIKAN: Mengambil modifier atribut dari database
               attributeValues: {
                 select: {
                   attributeValueId: true,
@@ -520,10 +520,10 @@ export class QuotationService {
             );
           }
 
-          // ✨ Kalkulasi awal: Unit Price = Base Price
+          //  Kalkulasi awal: Unit Price = Base Price
           let finalUnitPrice = Number(productRecord.basePrice);
 
-          // ✨ PERBAIKAN: 3. Tambahkan harga dari atribut yang dipilih (Multi-Select Attributes)
+          //  PERBAIKAN: 3. Tambahkan harga dari atribut yang dipilih (Multi-Select Attributes)
           if (
             item.selectedAttributes &&
             typeof item.selectedAttributes === "object"
@@ -587,7 +587,7 @@ export class QuotationService {
               productName: item.productName || productRecord.name,
               description: item.description,
               quantity: mainQty,
-              unitPrice: finalUnitPrice, // ✨ Menggunakan harga kalkulasi yang aman
+              unitPrice: finalUnitPrice, //  Menggunakan harga kalkulasi yang aman
               discount: itemDiscount,
               selectedAttributes: item.selectedAttributes ?? Prisma.JsonNull,
               customization: item.customization ?? Prisma.JsonNull,
@@ -656,6 +656,7 @@ export class QuotationService {
       });
     });
   }
+
   // ==========================================
   // 5. DELETE QUOTATION
   // ==========================================
@@ -778,13 +779,10 @@ export class QuotationService {
       include: {
         client: {
           include: {
-            b2b: {
-              include: { department: true },
-            },
+            b2b: { include: { department: true } },
             b2c: true,
           },
         },
-        // 2. PIC
         pic: {
           select: {
             id: true,
@@ -794,99 +792,47 @@ export class QuotationService {
             email: true,
           },
         },
-        // 3. User (Sales Internal)
         user: {
           select: { name: true, email: true },
         },
-        // 4. Items
         items: {
           include: {
             tiers: true,
             variant: {
-              select: {
-                variantName: true,
-              },
+              select: { variantName: true },
             },
             product: {
               select: {
                 sku: true,
                 name: true,
+                slug: true,
+                basePrice: true,
                 description: true,
                 images: {
-                  select: {
-                    url: true,
-                  },
+                  select: { url: true },
                   take: 1,
+                },
+                attributeValues: {
+                  include: {
+                    attribute: true,
+                    attributeValue: true,
+                  },
                 },
               },
             },
           },
         },
         notes: {
-          include: {
-            category: true,
-          },
+          include: { category: true },
           orderBy: { createdAt: "asc" },
         },
       },
     });
 
-    if (!quotation) {
-      throw new ApiError("Quotation not found", 404);
-    }
+    if (!quotation) throw new ApiError("Quotation not found", 404);
 
-    // ====================================================================
-    // LANGKAH 1: Kumpulkan semua UUID Atribut & Value dari JSON Customization
-    // ====================================================================
-    const attributeIds = new Set<string>();
-    const valueIds = new Set<string>();
-
-    (quotation.items as any[]).forEach((item) => {
-      if (item.customization) {
-        try {
-          const parsed =
-            typeof item.customization === "string"
-              ? JSON.parse(item.customization)
-              : item.customization;
-
-          const attrs = parsed?.selectedAttributes || parsed;
-          if (typeof attrs === "object" && attrs !== null) {
-            Object.entries(attrs).forEach(([attrId, valId]) => {
-              attributeIds.add(attrId);
-              valueIds.add(String(valId));
-            });
-          }
-        } catch (error) {}
-      }
-    });
-
-    // ====================================================================
-    // LANGKAH 2: Ambil Nama Asli dari Database (Prisma)
-    // Berdasarkan skema: model Attribute dan model AttributeValue
-    // ====================================================================
-    const attributes = await this.prisma.attribute.findMany({
-      where: { id: { in: Array.from(attributeIds) } },
-      select: { id: true, name: true },
-    });
-
-    const attributeValues = await this.prisma.attributeValue.findMany({
-      where: { id: { in: Array.from(valueIds) } },
-      select: { id: true, value: true },
-    });
-
-    const attrDictionary = Object.fromEntries(
-      attributes.map((a) => [a.id, a.name]),
-    );
-    const valDictionary = Object.fromEntries(
-      attributeValues.map((v) => [v.id, v.value]),
-    );
-
-    // ====================================================================
-    // LANGKAH 3: Terjemahkan dan Rapikan Data Item
-    // ====================================================================
-    const normalizedItems = (quotation.items as any[]).map((item) => {
+    const normalizedItems = quotation.items.map((item) => {
       let imageUrl: string | null = null;
-
       if (item.product?.images?.[0]?.url) {
         imageUrl = item.product.images[0].url;
       } else if (item.imageUrl) {
@@ -895,43 +841,109 @@ export class QuotationService {
 
       const finalDescription =
         item.description || item.product?.description || null;
-      let readableCustomization: Record<string, string> | string | null = null;
 
+      // 1. Ambil data atribut mentah
+      let rawAttrs: any = {};
+      if (item.selectedAttributes) {
+        try {
+          rawAttrs =
+            typeof item.selectedAttributes === "string"
+              ? JSON.parse(item.selectedAttributes)
+              : item.selectedAttributes;
+        } catch (error) {}
+      }
+
+      let readableCustomization: any = null;
       if (item.customization) {
         try {
-          const parsed =
+          readableCustomization =
             typeof item.customization === "string"
               ? JSON.parse(item.customization)
               : item.customization;
-
-          const attrs = parsed?.selectedAttributes || parsed;
-
-          if (typeof attrs === "object" && attrs !== null) {
-            const customizationObject: Record<string, string> = {};
-            Object.entries(attrs).forEach(([attrId, valId]) => {
-              const realName = attrDictionary[attrId] || attrId;
-              const realValue = valDictionary[String(valId)] || String(valId);
-
-              customizationObject[realName] = realValue;
-            });
-            readableCustomization = customizationObject;
-          } else {
-            // Jika format JSON-nya berbeda dari ekspektasi
-            readableCustomization = attrs;
-          }
-        } catch (error) {
-          // Jika data aslinya memang berupa teks biasa (bukan JSON)
+        } catch {
           readableCustomization = item.customization;
         }
       }
 
+      //  KUNCI PERBAIKAN LOGIKA: Filter atribut yang benar-benar ada isinya
+      const validAttrKeys = Object.keys(rawAttrs || {}).filter((key) => {
+        const val = rawAttrs[key];
+        if (Array.isArray(val)) return val.length > 0; // Abaikan array kosong []
+        return val !== null && val !== undefined && val !== ""; // Abaikan null/string kosong
+      });
+
+      // Jika validAttrKeys.length > 0, berarti ada atribut yang dipilih
+      const hasAnySelection = validAttrKeys.length > 0;
+      const isPriceStartFrom = !hasAnySelection; // Start From HANYA true jika tidak ada pilihan
+
+      let availableAttributes: any[] = [];
+      if (item.product && (item.product as any).attributeValues) {
+        const attrMap = new Map();
+
+        (item.product as any).attributeValues.forEach((pav: any) => {
+          if (!pav.attribute || !pav.attributeValue) return;
+
+          const attrId = pav.attribute.id;
+          const valId = pav.attributeValue.id;
+
+          let shouldInclude = false;
+
+          //  LOGIKA BERCABANG TEGAS
+          if (hasAnySelection) {
+            // KONDISI 1: Ada atribut yang dipilih -> HANYA masukkan yang cocok
+            if (validAttrKeys.includes(attrId)) {
+              const userSelectedVals = Array.isArray(rawAttrs[attrId])
+                ? rawAttrs[attrId].map(String)
+                : [String(rawAttrs[attrId])];
+
+              if (userSelectedVals.includes(String(valId))) {
+                shouldInclude = true;
+              }
+            }
+          } else {
+            // KONDISI 2: Tidak ada yang dipilih sama sekali -> Masukkan SEMUA
+            shouldInclude = true;
+          }
+
+          // Proses memasukkan data yang lolos seleksi
+          if (shouldInclude) {
+            if (!attrMap.has(attrId)) {
+              attrMap.set(attrId, {
+                attributeId: attrId,
+                attributeName: pav.attribute.name,
+                hasSelection: hasAnySelection, // Jika ada seleksi, tandai true untuk frontend
+                values: [],
+              });
+            }
+
+            // Membersihkan link https
+            let rawValue = pav.attributeValue.value;
+            let cleanValue = rawValue;
+            if (typeof rawValue === "string" && rawValue.includes("|")) {
+              cleanValue = rawValue.split("|")[0].trim();
+            }
+
+            attrMap.get(attrId).values.push({
+              valueId: valId,
+              value: cleanValue,
+              priceModifier: Number(pav.priceModifier || 0),
+            });
+          }
+        });
+
+        availableAttributes = Array.from(attrMap.values());
+      }
+
       return {
         ...item,
+        product: item.product ? { ...item.product, availableAttributes } : null,
         imageUrl,
         description: finalDescription,
-        customization: readableCustomization, // Kirimkan data yang sudah diterjemahkan!
+        customization: readableCustomization,
+        rawAttributes: rawAttrs || {},
         remarks: item.remarks ?? null,
         tiers: item.tiers || [],
+        isPriceStartFrom, // Kirimkan flag penentu Start From
       };
     });
 
@@ -942,6 +954,7 @@ export class QuotationService {
       createdBy: quotation.user,
     };
   }
+
   // ====================================================================
   // GET QUOTATION REFERENCES (Hanya ID dan Nomor untuk Dropdown Order)
   // ====================================================================

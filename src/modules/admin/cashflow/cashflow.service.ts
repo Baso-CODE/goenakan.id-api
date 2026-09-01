@@ -252,7 +252,7 @@ export class CashflowService {
         where: orderId ? { orderId } : { replacementOrderId },
       });
 
-      // ✨ PENGAMANAN (LOCKING): Cek apakah data sudah disetujui (APPROVED)
+      //  PENGAMANAN (LOCKING): Cek apakah data sudah disetujui (APPROVED)
       if (existingSummary && existingSummary.status === "APPROVED") {
         throw new ApiError(
           "Data cashflow ini sudah disetujui dan tidak dapat diubah!",
@@ -423,7 +423,7 @@ export class CashflowService {
       };
     });
 
-    // ✨ 3. AMBIL VENDOR KHUSUS DARI PO (Untuk Auto-fill Cashflow Cost)
+    //  3. AMBIL VENDOR KHUSUS DARI PO (Untuk Auto-fill Cashflow Cost)
     // Tidak perlu pakai if (orderId) lagi karena fungsi ini sudah dirancang untuk menangani keduanya.
     const poVendors = await this.getPOItemsForCashflow(
       orderId,

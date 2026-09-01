@@ -1,5 +1,3 @@
-// src/services/hero/hero.router.ts
-
 import { Router } from "express";
 import multer from "multer";
 import { autoInjectable } from "tsyringe";
@@ -11,6 +9,13 @@ import { CreateHeroSlideDTO, UpdateHeroSlideDTO } from "./dto/hero.dto";
 import { HeroController } from "./hero.controller";
 
 const upload = multer({ storage: multer.memoryStorage() });
+
+//  Konfigurasi Multer untuk menerima banyak file berdasarkan nama field-nya
+const uploadFields = upload.fields([
+  { name: "imageDesktop", maxCount: 1 },
+  { name: "imageMobile", maxCount: 1 },
+  { name: "imageTablet", maxCount: 1 },
+]);
 
 @autoInjectable()
 export class HeroRouter {
@@ -24,47 +29,33 @@ export class HeroRouter {
   }
 
   private initializeRoutes = (): void => {
-    // ==========================================
-    // === PUBLIC ROUTE (Tanpa Autentikasi)
-    // ==========================================
+    // === PUBLIC ROUTE ===
     this.router.get("/", this.heroController.getAllPublic);
 
-    // ==========================================
-    // 🛡️ GATEKEEPER LEVEL ROUTER
-    // Pasang pelindung token dan permission dinamis di sini satu kali saja.
-    // ==========================================
+    // === GATEKEEPER ===
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-
-    // ✨ Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
     this.router.use(autoVerifyPermission());
 
-    // ==========================================
-    // === ADMIN ROUTES (Otomatis Terlindungi)
-    // ==========================================
-
-    // Get All (Table Admin)
+    // === ADMIN ROUTES ===
     this.router.get("/admin/list", this.heroController.getAllAdmin);
-
-    // Get By ID
     this.router.get("/:id", this.heroController.getById);
 
-    // Create Slide
+    // Create Slide (Gunakan uploadFields)
     this.router.post(
       "/",
-      upload.single("image"),
+      uploadFields,
       validateBody(CreateHeroSlideDTO),
       this.heroController.create,
     );
 
-    // Update Slide
+    // Update Slide (Gunakan uploadFields)
     this.router.patch(
       "/:id",
-      upload.single("image"),
+      uploadFields,
       validateBody(UpdateHeroSlideDTO),
       this.heroController.update,
     );
 
-    // Delete Slide
     this.router.delete("/:id", this.heroController.delete);
   };
 

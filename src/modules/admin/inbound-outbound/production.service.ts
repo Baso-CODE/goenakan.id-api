@@ -59,7 +59,7 @@ export class ProductionService {
       }
     }
 
-    // ✨ PERBAIKAN: Gunakan Prisma Transaction
+    //  PERBAIKAN: Gunakan Prisma Transaction
     return await this.prisma.$transaction(async (tx) => {
       // 1. Buat riwayat produksinya
       const newProduction = await tx.productionTracker.create({

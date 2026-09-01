@@ -14,7 +14,7 @@ async function main() {
     create: { name: "SUPER_ADMIN" },
   });
 
-  // 2. ✨ TAMBAHKAN PERMISSIONS (Agar sistem bisa memvalidasi login)
+  // 2.  TAMBAHKAN PERMISSIONS (Agar sistem bisa memvalidasi login)
   const permissions = [
     "read_purchase_order",
     "create_purchase_order",

@@ -425,7 +425,7 @@ export class ArticleService {
       focusKeywords_en,
       slug: newSlug,
 
-      // ✨ SIMPAN STATUS TRANSLATE KE DATABASE
+      //  SIMPAN STATUS TRANSLATE KE DATABASE
       isTranslated: hasTranslation,
 
       ...(data.source && { source: data.source }),
@@ -536,6 +536,7 @@ export class ArticleService {
       );
     }
   }
+
   // === GET RELEVANT ARTICLES (BERDASARKAN KATEGORI) ===
   async getRelevantArticles(
     categoryId: string,
@@ -674,6 +675,7 @@ export class ArticleService {
     search?: string;
     categoryId?: string;
     published?: boolean | string;
+    authorId?: string;
   }) {
     const where: any = {};
 
@@ -686,6 +688,10 @@ export class ArticleService {
 
     if (query.categoryId) {
       where.categoryId = query.categoryId;
+    }
+
+    if (query.authorId) {
+      where.authorId = query.authorId;
     }
 
     if (query.published !== undefined) {

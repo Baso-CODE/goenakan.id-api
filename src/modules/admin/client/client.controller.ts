@@ -26,6 +26,24 @@ export class ClientController {
     }
   };
 
+  updateClient = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+
+      if (req.body.pics && typeof req.body.pics === "string") {
+        req.body.pics = JSON.parse(req.body.pics);
+      }
+
+      const body = req.body as UpdateClientDTO;
+      const file = req.file;
+
+      const result = await this.clientService.updateClient(id, body, file);
+      res.status(200).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
   getAllClients = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { page, take, type, status, search } = req.query;
@@ -51,17 +69,6 @@ export class ClientController {
     try {
       const { id } = req.params;
       const result = await this.clientService.getClientById(id);
-      res.status(200).send(result);
-    } catch (error) {
-      next(error);
-    }
-  };
-
-  updateClient = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const { id } = req.params;
-      const body = req.body as UpdateClientDTO;
-      const result = await this.clientService.updateClient(id, body);
       res.status(200).send(result);
     } catch (error) {
       next(error);

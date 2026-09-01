@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer"; //  Tambahkan Transform di sini
 import {
   IsArray,
   IsBoolean,
@@ -88,6 +88,7 @@ class OrderProductDTO {
     message: "selectedAttributes harus berupa objek JSON yang valid",
   })
   selectedAttributes?: Record<string, any>;
+
   @IsOptional()
   @IsString()
   customization?: string;
@@ -104,9 +105,14 @@ export class CreateOrderDTO {
   @IsEnum(["SALES", "SAMPLE"])
   salesCategory!: "SALES" | "SAMPLE";
 
+  //  KOLOM OPSIONAL UNTUK NOMOR PO
   @IsOptional()
   @IsString()
   clientPoNumber?: string;
+
+  //  TAMBAHAN: KOLOM OPSIONAL UNTUK FILE PO
+  @IsOptional()
+  clientPoFile?: any;
 
   @IsOptional()
   @IsString()
@@ -149,24 +155,38 @@ export class CreateOrderDTO {
   @Type(() => Number)
   warrantyDays?: number | null;
 
-  // @IsString()
-  // @IsNotEmpty()
-  // salesId!: string;
-
   @IsString()
   @IsNotEmpty()
   shippingAddress!: string;
 
-  // @IsArray()
-  // @IsString({ each: true })
-  // vendorIds!: string[];
-
   @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : [parsed];
+      } catch (e) {
+        return [];
+      }
+    }
+    return Array.isArray(value) ? value : [];
+  })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => SampleFollowUpDTO)
   sampleFollowUps?: SampleFollowUpDTO[];
 
+  @Transform(({ value }) => {
+    if (typeof value === "string") {
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : [parsed];
+      } catch (e) {
+        return [];
+      }
+    }
+    return Array.isArray(value) ? value : [];
+  })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => OrderProductDTO)

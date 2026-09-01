@@ -35,6 +35,19 @@ export class UserController {
     }
   };
 
+  getAuthorsForFilter = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const authors = await this.userService.getAllAuthors();
+      res.status(200).json(authors);
+    } catch (error) {
+      next(error);
+    }
+  };
+
   // =========================================================================
   // BOILERPLATE UNTUK FITUR SELANJUTNYA (GET BY ID, UPDATE, DELETE)
   // Anda bisa mengisinya nanti jika sudah membuat fungsinya di UserService

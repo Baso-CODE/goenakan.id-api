@@ -129,7 +129,7 @@ export class ProductService {
       validateTiers(data.priceTiers, "Base Product");
     }
 
-    // ✨ TAMBAHAN BARU: Validasi Price Tiers untuk setiap Varian
+    //  TAMBAHAN BARU: Validasi Price Tiers untuk setiap Varian
     if (data.variantImagesMetadata && data.variantImagesMetadata.length > 0) {
       data.variantImagesMetadata.forEach((meta) => {
         if (meta.priceTiers && meta.priceTiers.length > 0) {
@@ -286,7 +286,12 @@ export class ProductService {
                 : null,
             isCustom: data.isCustom,
             isMadeByOrder: data.isMadeByOrder || false,
-            isActive: data.isActive !== undefined ? (typeof data.isActive === "string" ? data.isActive === "true" : Boolean(data.isActive)) : true,
+            isActive:
+              data.isActive !== undefined
+                ? typeof data.isActive === "string"
+                  ? data.isActive === "true"
+                  : Boolean(data.isActive)
+                : true,
             materialTypeId: data.materialTypeId,
             stock: !data.isCustom ? data.stock || 0 : 0,
             weight: data.weight,
@@ -450,7 +455,7 @@ export class ProductService {
                   })),
                 },
               },
-              // ✨ TAMBAHAN BARU: Memasukkan Price Tiers Varian jika ada
+              //  TAMBAHAN BARU: Memasukkan Price Tiers Varian jika ada
               priceTiers:
                 meta?.priceTiers && meta.priceTiers.length > 0
                   ? {
@@ -574,7 +579,7 @@ export class ProductService {
       }
     }
 
-    // ✨ TAMBAHAN BARU: Auto-translate ke bahasa Inggris jika nama/deskripsi diubah
+    //  TAMBAHAN BARU: Auto-translate ke bahasa Inggris jika nama/deskripsi diubah
     let translatedNameEn: string | undefined = undefined;
     let translatedDescEn: string | undefined = undefined;
 
@@ -632,7 +637,10 @@ export class ProductService {
     }
 
     if (data.isActive !== undefined) {
-      updateData.isActive = typeof data.isActive === "string" ? data.isActive === "true" : Boolean(data.isActive);
+      updateData.isActive =
+        typeof data.isActive === "string"
+          ? data.isActive === "true"
+          : Boolean(data.isActive);
     }
 
     if (data.stock !== undefined) {
@@ -892,10 +900,15 @@ export class ProductService {
       // 1. Get the current product details before update to compare basePrice and tiers
       const oldProduct = await tx.product.findUnique({
         where: { id },
-        include: { priceTiers: true, productVariants: { include: { priceTiers: true } } },
+        include: {
+          priceTiers: true,
+          productVariants: { include: { priceTiers: true } },
+        },
       });
 
-      const oldBasePrice = oldProduct?.basePrice ? Number(oldProduct.basePrice) : 0;
+      const oldBasePrice = oldProduct?.basePrice
+        ? Number(oldProduct.basePrice)
+        : 0;
       const oldTiers = oldProduct?.priceTiers || [];
 
       const product = await tx.product.update({
@@ -943,23 +956,28 @@ export class ProductService {
       if (oldProduct && oldProduct.productVariants.length > 0) {
         for (const variant of oldProduct.productVariants) {
           const vPrice = variant.price ? Number(variant.price) : 0;
-          
+
           // Check if variant price should be updated:
           // If the price is 0, or is equal to the old base price of the product
           const shouldUpdatePrice = vPrice === 0 || vPrice === oldBasePrice;
-          
+
           // Check if variant tiers should be updated:
           // We check if variant has no tiers, or if all variant tiers match old product tiers (or are 0)
           const vTiers = variant.priceTiers || [];
           let shouldUpdateTiers = vTiers.length === 0;
-          
+
           if (!shouldUpdateTiers && oldTiers.length === vTiers.length) {
             // Check if they match exactly
             const allMatch = vTiers.every((vt: any) => {
               const matchingOldTier = oldTiers.find(
-                (ot: any) => ot.minQuantity === vt.minQuantity && ot.maxQuantity === vt.maxQuantity
+                (ot: any) =>
+                  ot.minQuantity === vt.minQuantity &&
+                  ot.maxQuantity === vt.maxQuantity,
               );
-              return matchingOldTier && Number(matchingOldTier.price) === Number(vt.price);
+              return (
+                matchingOldTier &&
+                Number(matchingOldTier.price) === Number(vt.price)
+              );
             });
             if (allMatch) {
               shouldUpdateTiers = true;
@@ -967,7 +985,9 @@ export class ProductService {
           }
 
           // If the variant tiers are all 0 or empty, we also want to update/recreate them
-          const isAllTiersZero = vTiers.length > 0 && vTiers.every((vt: any) => Number(vt.price) === 0);
+          const isAllTiersZero =
+            vTiers.length > 0 &&
+            vTiers.every((vt: any) => Number(vt.price) === 0);
           if (isAllTiersZero) {
             shouldUpdateTiers = true;
           }
@@ -984,7 +1004,7 @@ export class ProductService {
           if (shouldUpdateTiers) {
             // Clear variant's old tiers
             await tx.priceTier.deleteMany({ where: { variantId: variant.id } });
-            
+
             // Re-create them mirroring the new product's price tiers
             if (priceTiers.length > 0) {
               await tx.priceTier.createMany({
@@ -1387,12 +1407,17 @@ export class ProductService {
         newPrice: finalPriceRounded,
         difference: finalPriceRounded - (Number(p.basePrice) || 0),
         priceTiers: calculatedTiers.map((t) => {
-          const originalTier = p.priceTiers?.find((pt) => pt.minQuantity === t.minQuantity);
+          const originalTier = p.priceTiers?.find(
+            (pt) => pt.minQuantity === t.minQuantity,
+          );
           if (originalTier) {
             const oldBase = Number(p.basePrice) || 0;
             const oldTierPrice = Number(originalTier.price) || 0;
             const existingDiscount = Math.max(0, oldBase - oldTierPrice);
-            const newTierPrice = Math.max(0, finalPriceRounded - existingDiscount);
+            const newTierPrice = Math.max(
+              0,
+              finalPriceRounded - existingDiscount,
+            );
             return {
               minQuantity: t.minQuantity,
               maxQuantity: t.maxQuantity,
@@ -1523,7 +1548,10 @@ export class ProductService {
       try {
         await this.cloudinary.remove(img.colorMaskUrl);
       } catch (err) {
-        console.warn("⚠️ Failed to delete color mask from Cloudinary on deleteImage:", err);
+        console.warn(
+          "⚠️ Failed to delete color mask from Cloudinary on deleteImage:",
+          err,
+        );
       }
     }
 
@@ -1560,10 +1588,7 @@ export class ProductService {
   }
 
   // === UPLOAD COLOR MASK ===
-  async uploadColorMask(
-    imageId: string,
-    file?: Express.Multer.File,
-  ) {
+  async uploadColorMask(imageId: string, file?: Express.Multer.File) {
     if (!file) {
       throw new ApiError("No color mask file provided", 400);
     }
@@ -1581,7 +1606,10 @@ export class ProductService {
       try {
         await this.cloudinary.remove(existingImage.colorMaskUrl);
       } catch (err) {
-        console.warn("⚠️ Failed to delete old color mask from Cloudinary:", err);
+        console.warn(
+          "⚠️ Failed to delete old color mask from Cloudinary:",
+          err,
+        );
       }
     }
 
@@ -2217,7 +2245,7 @@ export class ProductService {
         productVariants: {
           orderBy: { createdAt: "asc" },
           include: {
-            // ✨ TAMBAHAN BARU: Mengambil Price Tiers khusus Varian
+            //  TAMBAHAN BARU: Mengambil Price Tiers khusus Varian
             priceTiers: {
               orderBy: { minQuantity: "asc" },
             },
@@ -2363,7 +2391,7 @@ export class ProductService {
     return { data, meta };
   }
 
-  // === GET ALL PRODUCTS FOR ORDER (WITHOUT PAGINATION, BUT WITH CATEGORY & CUSTOM FILTER) ===
+  // === GET ALL PRODUCTS FOR ORDER (DENGAN URUTAN BERDASARKAN POSITION & CUSTOM STATUS) ===
   async getAllProductsForOrder(query?: {
     categoryId?: string;
     isCustom?: boolean | string;
@@ -2408,7 +2436,7 @@ export class ProductService {
             orderBy: { minQuantity: "asc" },
           },
 
-          // --- TAMBAHAN BARU 1: Ambil Opsi Atribut yang tersedia untuk produk ini ---
+          // --- AMBIL ATRIBUT PRODUK BESERTA POSITION & ATTR TYPE ---
           attributeValues: {
             select: {
               id: true,
@@ -2417,11 +2445,19 @@ export class ProductService {
                 select: {
                   id: true,
                   value: true,
+                  position: true, // Ambil posisi nilai atribut
                   attribute: {
                     select: {
                       id: true,
                       name: true,
                       type: true,
+                      position: true, // Ambil posisi atribut utama
+                      //  TAMBAHAN BARU: Ambil relasi isCustom dari AttributeType
+                      attrType: {
+                        select: {
+                          isCustom: true,
+                        },
+                      },
                     },
                   },
                 },
@@ -2429,7 +2465,7 @@ export class ProductService {
             },
           },
 
-          // --- TAMBAHAN 2: Ambil Product Variants beserta komposisi atributnya ---
+          // --- PRODUCT VARIANTS ---
           productVariants: {
             select: {
               id: true,
@@ -2443,10 +2479,12 @@ export class ProductService {
                     select: {
                       id: true,
                       value: true,
+                      position: true,
                       attribute: {
                         select: {
                           id: true,
                           name: true,
+                          position: true,
                         },
                       },
                     },
@@ -2459,32 +2497,49 @@ export class ProductService {
         },
       });
 
-      // === Map Response untuk Frontend ===
+      // === Map Response & Urutkan Berdasarkan Position di JavaScript ===
       return products.map((p) => {
         const groupedAttributes: Record<string, any> = {};
+
         p.attributeValues.forEach((pav) => {
-          const attrName = pav.attributeValue.attribute.name;
+          const attr = pav.attributeValue.attribute;
+          const attrName = attr.name;
+
           if (!groupedAttributes[attrName]) {
             groupedAttributes[attrName] = {
-              attributeId: pav.attributeValue.attribute.id,
+              attributeId: attr.id,
               attributeName: attrName,
-              attributeType: pav.attributeValue.attribute.type,
+              attributeType: attr.type,
+              isCustom: attr.attrType?.isCustom || false,
+              position: attr.position,
               values: [],
             };
           }
+
           groupedAttributes[attrName].values.push({
             valueId: pav.attributeValue.id,
             value: pav.attributeValue.value,
+            position: pav.attributeValue.position,
             priceModifier: pav.priceModifier ? Number(pav.priceModifier) : 0,
             productAttributeValueId: pav.id,
           });
+        });
+
+        //  Urutkan Atribut Utama Berdasarkan 'position'
+        const sortedAttributes = Object.values(groupedAttributes).sort(
+          (a: any, b: any) => a.position - b.position,
+        );
+
+        //  Urutkan Nilai (Values) di Dalam Masing-masing Atribut Berdasarkan 'position'
+        sortedAttributes.forEach((attr: any) => {
+          attr.values.sort((a: any, b: any) => a.position - b.position);
         });
 
         return {
           id: p.id,
           name: p.name,
           sku: p.sku,
-          basePrice: p.basePrice,
+          basePrice: p.basePrice ? Number(p.basePrice) : 0,
           isCustom: p.isCustom,
           category: p.category
             ? { id: p.category.id, name: p.category.name_id }
@@ -2496,7 +2551,7 @@ export class ProductService {
             price: Number(tier.price),
           })),
 
-          availableAttributes: Object.values(groupedAttributes),
+          availableAttributes: sortedAttributes,
 
           productVariants: p.productVariants.map((v) => ({
             id: v.id,
@@ -2505,11 +2560,11 @@ export class ProductService {
             price: v.price ? Number(v.price) : 0,
             stock: v.stock,
             combinationIds: v.attributeValues.map(
-              (vav) => vav.attributeValue.id,
+              (vav: any) => vav.attributeValue.id,
             ),
             attributesDescription: v.attributeValues
               .map(
-                (vav) =>
+                (vav: any) =>
                   `${vav.attributeValue.attribute.name}: ${vav.attributeValue.value}`,
               )
               .join(", "),
@@ -3041,7 +3096,7 @@ export class ProductService {
     return result;
   }
 
-  // === GET ALL PRODUCTS PUBLIC (WITH PAGINATION, SEARCH, AND ADVANCED FILTERS) ===
+  // === GET ALL PRODUCTS PUBLIC (DENGAN PENYESUAIAN HARGA LUAR NEGERI) ===
   async getAllProductsPublic(query: {
     page?: number;
     take?: number;
@@ -3057,7 +3112,7 @@ export class ProductService {
     availability?: string;
     sort?: string;
     targetCurrency?: string;
-    lang?: string; // ✨ BARU: Parameter bahasa (id / en)
+    lang?: string;
   }) {
     const where: any = {
       isActive: true,
@@ -3065,6 +3120,7 @@ export class ProductService {
     };
     const lang = query.lang || "id";
 
+    // ... (Logika filter search, category, attributes, dll. tetap sama seperti sebelumnya) ...
     if (query.search) {
       where.OR = [
         { name: { contains: query.search } },
@@ -3073,16 +3129,13 @@ export class ProductService {
       ];
     }
 
-    // 2. Filter Custom Status
     if (query.isCustom !== undefined) {
-      if (typeof query.isCustom === "string") {
-        where.isCustom = query.isCustom === "true";
-      } else {
-        where.isCustom = query.isCustom;
-      }
+      where.isCustom =
+        typeof query.isCustom === "string"
+          ? query.isCustom === "true"
+          : query.isCustom;
     }
 
-    // 3. Filter Hirarki Kategori
     if (query.categoryId) {
       where.categoryId = query.categoryId;
     } else if (query.category && query.category !== "all") {
@@ -3116,7 +3169,6 @@ export class ProductService {
       };
     }
 
-    // 4. Filter Attributes
     if (query.attributes) {
       try {
         const parsedAttrs = JSON.parse(query.attributes);
@@ -3158,21 +3210,18 @@ export class ProductService {
       }
     }
 
-    // 5. Filter Harga
     if (query.minPrice || query.maxPrice) {
       where.basePrice = {};
       if (query.minPrice) where.basePrice.gte = Number(query.minPrice);
       if (query.maxPrice) where.basePrice.lte = Number(query.maxPrice);
     }
 
-    // 6. Filter Ketersediaan
     if (query.availability && query.availability !== "all") {
       if (query.availability === "in_stock") where.stock = { gt: 0 };
       else if (query.availability === "out_of_stock")
         where.stock = { equals: 0 };
     }
 
-    // 7. Pengurutan Data
     let orderBy: any = { createdAt: "desc" };
     if (query.sort) {
       switch (query.sort) {
@@ -3190,11 +3239,11 @@ export class ProductService {
       }
     }
 
-    // === Pagination & Query Data Prisma ===
     const page = Number(query.page || 1);
     const take = Number(query.take || 6);
 
-    const [count, rawData] = await Promise.all([
+    //  AMBIL DATA PRODUK DAN APP SETTING SECARA BERSAMAAN (PARALLEL)
+    const [count, rawData, appSetting] = await Promise.all([
       this.prisma.product.count({ where }),
       this.prisma.product.findMany({
         where,
@@ -3206,10 +3255,10 @@ export class ProductService {
           itemCategory: true,
           itemName: true,
           images: { take: 1, orderBy: { isFeatured: "desc" } },
-          // priceTiers dihapus dari sini karena dipakai nanti di halaman detail produk
           orderProducts: { select: { quantity: true } },
         },
       }),
+      this.prisma.appSetting.findFirst(), // Mengambil pengaturan global aplikasi
     ]);
 
     let conversionRate = 1;
@@ -3233,29 +3282,39 @@ export class ProductService {
       }
     }
 
-    // ✨ Format Data & Terapkan Konversi Harga Berdasarkan Base Price Murni
+    // Ambil nilai global adjuster dari AppSetting (jika ada, jika tidak default ke 0)
+    const globalAdjuster = appSetting?.globalForeignPriceAdjuster || 0;
+    const isForeignTransaction = finalCurrency !== "IDR";
+
     const formattedData = rawData.map((product) => {
       const totalSold = product.orderProducts.reduce(
         (sum, order) => sum + (order.quantity || 1),
         0,
       );
 
-      // Pemilihan nama produk bilingual
-      let productName = product.name;
-      if (lang === "en") {
-        productName = product.name_en || product.name || "Unnamed Product";
-      } else {
-        productName = product.name || product.name_en || "Produk Tanpa Nama";
-      }
-
-      // Nama kategori bilingual
+      let productName =
+        lang === "en"
+          ? product.name_en || product.name || "Unnamed Product"
+          : product.name || product.name_en || "Produk Tanpa Nama";
       let categoryName = product.category?.name_id || "Uncategorized";
       if (lang === "en" && product.category?.name_en) {
         categoryName = product.category.name_en;
       }
 
-      // Menggunakan basePrice murni untuk regularPrice dan bulkPrice di halaman list
       const basePriceValue = Number(product.basePrice);
+      let calculatedPrice = basePriceValue;
+
+      //  HITUNG KENAIKAN HARGA JIKA TRANSAKSI DILUAR INDONESIA
+      if (isForeignTransaction) {
+        // Tentukan persentase: Prioritaskan produk, jika 0/null gunakan global app setting
+        const productAdjuster = product.foreignPriceAdjuster ?? 0;
+        const activeAdjuster =
+          productAdjuster !== 0 ? productAdjuster : globalAdjuster;
+
+        // Rumus: Harga Dasar + (Harga Dasar * Persentase / 100)
+        calculatedPrice =
+          basePriceValue + basePriceValue * (activeAdjuster / 100);
+      }
 
       const imageUrl =
         product.images.length > 0
@@ -3267,13 +3326,12 @@ export class ProductService {
         name: productName,
         image: imageUrl,
 
-        // Kedua harga disamakan menggunakan basePrice murni yang sudah dikonversi
-        regularPrice: parseFloat((basePriceValue * conversionRate).toFixed(2)),
-        bulkPrice: parseFloat((basePriceValue * conversionRate).toFixed(2)),
+        // Terapkan harga yang sudah disesuaikan dengan konversi mata uang
+        regularPrice: parseFloat((calculatedPrice * conversionRate).toFixed(2)),
+        bulkPrice: parseFloat((calculatedPrice * conversionRate).toFixed(2)),
 
         currencyCode: finalCurrency,
-
-        minOrder: 1, // Minimum order diset 1 karena tidak pakai tier di halaman list
+        minOrder: 1,
         sold: totalSold,
         isCustom: product.isCustom,
         categoryId: product.categoryId,
@@ -3288,7 +3346,6 @@ export class ProductService {
 
     return { data: formattedData, meta };
   }
-
   // === GET BEST SELLER PRODUCTS (CLIENT HOME PAGE) ===
   async getBestSellerProducts() {
     try {
@@ -3307,7 +3364,7 @@ export class ProductService {
 
       const productIds = topSelling.map((item) => item.productId);
 
-      // ✨ PERBAIKAN: Berikan tipe 'any[]' secara eksplisit
+      //  PERBAIKAN: Berikan tipe 'any[]' secara eksplisit
       let rawProducts: any[] = [];
 
       // 2. Ambil detail produk berdasarkan ID yang laris tersebut
@@ -3471,20 +3528,27 @@ export class ProductService {
               amount: 1,
             });
           conversionRate = conversionResult.rate;
-          
-          const appSetting = await this.prisma.appSetting.findFirst();
-          const globalAdjuster = appSetting?.globalForeignPriceAdjuster ? Number(appSetting.globalForeignPriceAdjuster) : 0;
-          const productAdjuster = product.foreignPriceAdjuster !== null && product.foreignPriceAdjuster !== undefined
-            ? Number(product.foreignPriceAdjuster)
-            : 0;
 
-          const effectiveAdjuster = productAdjuster > 0 ? productAdjuster : globalAdjuster;
+          const appSetting = await this.prisma.appSetting.findFirst();
+          const globalAdjuster = appSetting?.globalForeignPriceAdjuster
+            ? Number(appSetting.globalForeignPriceAdjuster)
+            : 0;
+          const productAdjuster =
+            product.foreignPriceAdjuster !== null &&
+            product.foreignPriceAdjuster !== undefined
+              ? Number(product.foreignPriceAdjuster)
+              : 0;
+
+          const effectiveAdjuster =
+            productAdjuster > 0 ? productAdjuster : globalAdjuster;
 
           if (effectiveAdjuster > 0) {
             conversionRate = conversionRate * (1 + effectiveAdjuster / 100);
           }
 
-          console.log(`[CURRENCY ADJUSTMENT] Slug: ${slug}, Target: ${targetCurrency}`);
+          console.log(
+            `[CURRENCY ADJUSTMENT] Slug: ${slug}, Target: ${targetCurrency}`,
+          );
           console.log(` - Original rate: ${conversionResult.rate}`);
           console.log(` - Global adjuster: ${globalAdjuster}%`);
           console.log(` - Product adjuster: ${productAdjuster}%`);
@@ -3499,7 +3563,7 @@ export class ProductService {
       }
 
       // 🛠️ ==========================================================
-      // ✨ PERBAIKAN DI SINI: Logika pemilihan bahasa yang lebih aman
+      //  PERBAIKAN DI SINI: Logika pemilihan bahasa yang lebih aman
       // ==========================================================
       let productName = product.name;
       if (lang === "en") {

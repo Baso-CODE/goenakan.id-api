@@ -71,6 +71,7 @@ export class FinanceTransactionService {
         category: { select: { name: true, type: true } },
         user: { select: { name: true } }, // Siapa yang mencatat
         sales: { select: { name: true } }, // Jika terkait komisi sales
+        currency: true, //  Tambahan: Tarik info mata uang
       },
     });
 
@@ -91,6 +92,7 @@ export class FinanceTransactionService {
         category: true,
         user: { select: { name: true, email: true } },
         sales: true,
+        currency: true, //  Tambahan: Tarik info mata uang
       },
     });
 
@@ -136,6 +138,9 @@ export class FinanceTransactionService {
         referenceNumber: data.referenceNumber,
         method: data.method,
 
+        //  Tambahan: Simpan relasi mata uang
+        currency: { connect: { code: data.currencyCode } },
+
         // Relasi Wajib
         category: { connect: { id: data.categoryId } },
         user: { connect: { id: userId } },
@@ -145,6 +150,7 @@ export class FinanceTransactionService {
       },
       include: {
         category: true,
+        currency: true, //  Tambahan: Balikan data mata uang
       },
     });
   }
@@ -181,6 +187,11 @@ export class FinanceTransactionService {
       updateRelations.category = { connect: { id: data.categoryId } };
     }
 
+    //  Tambahan: Update mata uang jika dikirim dari DTO
+    if (data.currencyCode) {
+      updateRelations.currency = { connect: { code: data.currencyCode } };
+    }
+
     if (data.salesId !== undefined) {
       if (data.salesId) {
         updateRelations.sales = { connect: { id: data.salesId } };
@@ -205,6 +216,7 @@ export class FinanceTransactionService {
       },
       include: {
         category: true,
+        currency: true, //  Tambahan: Balikan data mata uang
       },
     });
   }
@@ -225,6 +237,7 @@ export class FinanceTransactionService {
   }
 
   async getDebtAndReceivablesSummary() {
+    // ... [Kode ini tetap sama] ...
     const unpaidInvoices = await this.prisma.invoice.findMany({
       where: {
         status: { in: ["UNPAID", "OVERDUE"] },

@@ -28,8 +28,8 @@ export class MaterialTypeService {
     page?: number;
     take?: number;
     search?: string;
-    startDate?: string; // ✨ Tambahkan ini
-    endDate?: string; // ✨ Tambahkan ini
+    startDate?: string; //  Tambahkan ini
+    endDate?: string; //  Tambahkan ini
   }) {
     try {
       const page = Number(query.page) || 1;
@@ -46,7 +46,7 @@ export class MaterialTypeService {
         ];
       }
 
-      // 2. ✨ Tambahkan Logika Filter Tanggal
+      // 2.  Tambahkan Logika Filter Tanggal
       if (query.startDate || query.endDate) {
         where.createdAt = {};
         if (query.startDate) {

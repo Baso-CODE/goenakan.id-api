@@ -52,7 +52,7 @@ export class VendorService {
         }
       }
 
-      // ✨ PERBAIKAN 1: Validasi item berdasarkan tipe vendor
+      //  PERBAIKAN 1: Validasi item berdasarkan tipe vendor
       if (data.itemIds?.length) {
         if (data.type === "SERVICE") {
           const items = await this.prisma.vendorItem.findMany({
@@ -93,7 +93,7 @@ export class VendorService {
         },
       });
 
-      // ✨ PERBAIKAN 2: Simpan relasi item ke tabel yang tepat berdasarkan tipe
+      //  PERBAIKAN 2: Simpan relasi item ke tabel yang tepat berdasarkan tipe
       if (data.itemIds?.length) {
         if (data.type === "SERVICE") {
           await this.prisma.vendorVendorItem.createMany({
@@ -288,8 +288,8 @@ export class VendorService {
             select: {
               item: {
                 select: {
-                  id: true, // ✨ PERBAIKAN 1: Wajib agar frontend bisa mendeteksi ID Jasa
-                  name: true, // ✨ PERBAIKAN 1: Wajib agar nama jasa muncul di Dropdown
+                  id: true, //  PERBAIKAN 1: Wajib agar frontend bisa mendeteksi ID Jasa
+                  name: true, //  PERBAIKAN 1: Wajib agar nama jasa muncul di Dropdown
                   category: {
                     select: {
                       id: true,
@@ -339,7 +339,7 @@ export class VendorService {
           categoryNames,
           picName: v.picName,
           contacts: v.contacts,
-          vendorItems: v.vendorItems, // ✨ PERBAIKAN 2: Meneruskan data ke frontend!
+          vendorItems: v.vendorItems, //  PERBAIKAN 2: Meneruskan data ke frontend!
         };
       });
     } catch (error) {

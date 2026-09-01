@@ -113,4 +113,20 @@ export class UserService {
       },
     });
   }
+
+  async getAllAuthors() {
+    return await this.prisma.user.findMany({
+      where: {
+        role: {
+          name: {
+            not: "CUSTOMER",
+          },
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+  }
 }

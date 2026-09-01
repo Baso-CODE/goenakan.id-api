@@ -50,7 +50,7 @@ export class UpdateEventCategoryDTO {
   @IsString()
   isActive?: string;
 
-  // ✨ TAMBAHAN: Konsisten dengan DTO Portfolio untuk update gambar
+  //  TAMBAHAN: Konsisten dengan DTO Portfolio untuk update gambar
   @IsOptional()
   @IsString()
   image?: string;

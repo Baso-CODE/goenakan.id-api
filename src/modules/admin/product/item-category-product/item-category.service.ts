@@ -102,7 +102,7 @@ export class ItemCategoryService {
       throw new ApiError("Product Category (Parent) not found", 404);
     }
 
-    // ✨ 3. LOGIKA PINTAR: Cek apakah kode sudah terpakai, jika ya tambahkan angka berurut
+    //  3. LOGIKA PINTAR: Cek apakah kode sudah terpakai, jika ya tambahkan angka berurut
     let codeExists = await this.prisma.itemCategory.findUnique({
       where: { code: generatedCode },
     });

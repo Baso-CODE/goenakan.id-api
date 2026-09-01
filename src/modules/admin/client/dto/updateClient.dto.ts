@@ -46,6 +46,18 @@ export class UpdateClientDTO {
   phone?: string;
 
   @IsOptional()
+  @IsString()
+  brandName?: string;
+
+  @IsOptional()
+  @IsString()
+  brandWebsiteUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  brandCountry?: string;
+
+  @IsOptional()
   @IsDateString(
     {},
     {

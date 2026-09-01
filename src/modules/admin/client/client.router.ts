@@ -8,7 +8,6 @@ import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
 import { autoVerifyPermission } from "../../../middleware/permission.middleware";
 import { validateBody } from "../../../middleware/validation.middleware";
 import { CreateClientDTO } from "./dto/createClient.dto";
-import { UpdateClientDTO } from "./dto/updateClient.dto";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -59,7 +58,7 @@ export class ClientRouter {
     // 6. Update Client -> Otomatis butuh 'update'
     this.router.patch(
       "/:id",
-      validateBody(UpdateClientDTO),
+      upload.single("logoFile"),
       this.clientController.updateClient,
     );
 

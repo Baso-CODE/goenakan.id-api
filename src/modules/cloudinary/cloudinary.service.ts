@@ -40,12 +40,21 @@ export class CloudinaryService {
     let bufferToUpload = file.buffer;
 
     const isImage = file.mimetype.startsWith("image/");
-
     const shouldOptimize = options.optimize !== false;
+
+    //  SOLUSI UTAMA: Periksa apakah file yang di-upload berformat PDF
+    const isPdf = file.mimetype === "application/pdf";
+
+    if (isPdf) {
+      // Paksa resource_type menjadi "raw" agar Cloudinary menyimpannya
+      // sebagai dokumen utuh dan menghasilkan URL /raw/upload/
+      options.resource_type = "raw";
+    }
 
     if (isImage && shouldOptimize) {
       try {
         bufferToUpload = await sharp(file.buffer)
+          .rotate()
           .webp({
             quality: options.quality || 80,
           })
@@ -66,8 +75,13 @@ export class CloudinaryService {
         options.chunk_size = 6000000;
       }
 
+      const uploadOptions = {
+        ...options,
+        access_mode: "public",
+      };
+
       const uploadStream = cloudinary.uploader.upload_stream(
-        options,
+        uploadOptions,
         (error?: UploadApiErrorResponse, result?: UploadApiResponse) => {
           if (error) return reject(error);
           if (!result)

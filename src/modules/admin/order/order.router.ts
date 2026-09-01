@@ -1,14 +1,13 @@
 import { Router } from "express";
+import multer from "multer";
 import { autoInjectable } from "tsyringe";
-
 import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
-// ✨ Import autoVerifyPermission dan hapus verifyRole
 import { autoVerifyPermission } from "../../../middleware/permission.middleware";
 import { validateBody } from "../../../middleware/validation.middleware";
-import { CreateOrderDTO } from "./dto/createOrder.dto";
 import { UpdateOrderDTO } from "./dto/upadateOrder.dto";
 import { OrderController } from "./order.controller";
 
+const upload = multer({ storage: multer.memoryStorage() });
 @autoInjectable()
 export class OrderRouter {
   private readonly router: Router = Router();
@@ -69,9 +68,11 @@ export class OrderRouter {
     // 11. Create Order (Otomatis butuh 'create')
     this.router.post(
       "/",
-      validateBody(CreateOrderDTO),
+      upload.single("clientPoFile"),
       this.orderController.createOrder,
     );
+
+    this.router.patch("/:id/cancel", this.orderController.cancelOrder);
 
     // 12. Tracking by ID (Statis di atas `/:id`) -> Otomatis butuh 'read'
     this.router.get("/:id/tracking", this.orderController.getForTracking);

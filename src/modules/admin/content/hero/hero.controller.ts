@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
 import { CreateHeroSlideDTO, UpdateHeroSlideDTO } from "./dto/hero.dto";
-import { HeroService } from "./hero.service";
+import { HeroService, HeroSlideFiles } from "./hero.service";
 
 @injectable()
 export class HeroController {
@@ -43,16 +43,26 @@ export class HeroController {
 
   create = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // req.body sudah divalidasi dan diparsing oleh middleware
       const body = req.body as CreateHeroSlideDTO;
-      const file = req.file;
 
-      if (!file) {
-        res.status(400).json({ message: "Image file is required" });
+      // Ambil file dari request fields
+      const reqFiles = req.files as {
+        [fieldname: string]: Express.Multer.File[];
+      };
+      const files: HeroSlideFiles = {
+        imageDesktop: reqFiles?.imageDesktop?.[0],
+        imageMobile: reqFiles?.imageMobile?.[0],
+        imageTablet: reqFiles?.imageTablet?.[0],
+      };
+
+      if (!files.imageDesktop || !files.imageMobile) {
+        res
+          .status(400)
+          .json({ message: "Desktop and Mobile image files are required" });
         return;
       }
 
-      const result = await this.heroService.createSlide(body, file);
+      const result = await this.heroService.createSlide(body, files);
       res.status(201).json(result);
     } catch (error) {
       next(error);
@@ -63,9 +73,17 @@ export class HeroController {
     try {
       const { id } = req.params;
       const body = req.body as UpdateHeroSlideDTO;
-      const file = req.file;
 
-      const result = await this.heroService.updateSlide(id, body, file);
+      const reqFiles = req.files as {
+        [fieldname: string]: Express.Multer.File[];
+      };
+      const files: HeroSlideFiles = {
+        imageDesktop: reqFiles?.imageDesktop?.[0],
+        imageMobile: reqFiles?.imageMobile?.[0],
+        imageTablet: reqFiles?.imageTablet?.[0],
+      };
+
+      const result = await this.heroService.updateSlide(id, body, files);
       res.status(200).json(result);
     } catch (error) {
       next(error);

@@ -88,7 +88,7 @@ export class ProductController {
         lang,
       } = req.query;
 
-      // ✨ 2. TAMBAHKAN CONSOLE.LOG UNTUK MENGECEK DATA MASUK
+      //  2. TAMBAHKAN CONSOLE.LOG UNTUK MENGECEK DATA MASUK
       console.log("--- DEBUG QUERY DARI FRONTEND ---");
       console.log("Country diterima:", country);
       console.log("Lang diterima:", lang);
@@ -126,7 +126,7 @@ export class ProductController {
         sort: sort as string,
         attributes: attributes as string,
         targetCurrency,
-        lang: (lang as string) || "id", // ✨ 3. Teruskan lang ke service
+        lang: (lang as string) || "id", //  3. Teruskan lang ke service
       });
 
       res.status(200).json(products);
@@ -551,7 +551,7 @@ export class ProductController {
       const { slug } = req.params;
       const { country, lang } = req.query;
 
-      // ✨ DEBUGGING: Cek data apa yang masuk dari frontend
+      //  DEBUGGING: Cek data apa yang masuk dari frontend
       console.log("🔍 [DEBUG DETAIL PRODUCT] Slug:", slug);
       console.log("🔍 [DEBUG DETAIL PRODUCT] Country from Query:", country);
       console.log("🔍 [DEBUG DETAIL PRODUCT] Lang from Query:", lang);

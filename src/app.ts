@@ -9,9 +9,6 @@ import { env } from "./config";
 
 import { errorMiddleware } from "./middleware/error.middleware";
 
-import { AuthRouter } from "./modules/auth/auth.router";
-
-import { syncPermissionsToDatabase } from "./helpers/syncPermissions";
 import {
   authLimiter,
   globalLimiter,
@@ -69,9 +66,10 @@ import { HeroRouter } from "./modules/admin/content/hero/hero.router";
 import { PolicyRouter } from "./modules/admin/content/policy/policy.router";
 import { PortfolioRouter } from "./modules/admin/content/portfolio/portfolio.router";
 import { AppSettingRouter } from "./modules/admin/content/setting/setting.router";
+import { AuthWebClientRouter } from "./modules/web-clients/auth-client/auth-client.router";
 import { CartRouter } from "./modules/web-clients/cart/cart.router";
 import { CustomerProfileRouter } from "./modules/web-clients/customer-profile/customer-profile.router";
-import { AuthWebClientRouter } from "./modules/web-clients/register-user/register-user.router";
+import { TrackingRouter } from "./modules/web-clients/tracking/tracking.router";
 import { WebOrderRouter } from "./modules/web-clients/web-order/web-order.router";
 import { WhatsappCronService } from "./modules/whatsapp/notification/whatsapp-cron.service";
 import { WhatsappRouter } from "./modules/whatsapp/whatsapp.routes";
@@ -112,7 +110,6 @@ export default class App {
     this.app.use(cookieParser());
   }
   private routes(): void {
-    const authRouter = container.resolve(AuthRouter);
     const categoryVendorRouter = container.resolve(VendorCategoryRouter);
     const itemVendorRouter = container.resolve(ItemVendorRouter);
     const vendorRouter = container.resolve(VendorRouter);
@@ -174,12 +171,12 @@ export default class App {
     const wilayahRouter = container.resolve(WilayahRouter);
     const whatsappRouter = container.resolve(WhatsappRouter);
     const replacementOrderRouter = container.resolve(ReplacementOrderRouter);
+    const trackingRouter = container.resolve(TrackingRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
     });
 
-    this.app.use("/auth", authLimiter, authRouter.getRouter());
     this.app.use("/vendors", vendorRouter.getRouter());
     this.app.use("/vendor-categories", categoryVendorRouter.getRouter());
     this.app.use("/vendor-items", itemVendorRouter.getRouter());
@@ -252,6 +249,7 @@ export default class App {
     this.app.use("/wilayah", wilayahRouter.getRouter());
     this.app.use("/whatsapp", whatsappRouter.getRouter());
     this.app.use("/replacement-orders", replacementOrderRouter.getRouter());
+    this.app.use("/tracking", trackingRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);
@@ -259,7 +257,7 @@ export default class App {
   public async start(): Promise<void> {
     try {
       const prismaService = container.resolve(PrismaService);
-
+      // matikan kalau sudah di deploy
       // await syncPermissionsToDatabase(prismaService);
       console.log("✅ Sinkronisasi permissions berhasil dijalankan!");
     } catch (error) {

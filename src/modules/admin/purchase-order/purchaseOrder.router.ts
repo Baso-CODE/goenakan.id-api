@@ -2,7 +2,7 @@ import { Router } from "express";
 import { autoInjectable } from "tsyringe";
 
 import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
-import { autoVerifyPermission } from "../../../middleware/permission.middleware"; // ✨ Import auto middleware
+import { autoVerifyPermission } from "../../../middleware/permission.middleware"; //  Import auto middleware
 import { validateBody } from "../../../middleware/validation.middleware";
 import { CreatePurchaseOrderDTO } from "./dto/createPurchaseOrder.dto";
 import { UpdatePurchaseOrderDTO } from "./dto/updatePurchaseOrder.dto";

@@ -21,7 +21,7 @@ export class CreateArticleDTO {
   @IsOptional()
   title_en?: string; // Opsional: Bisa diisi manual atau auto
 
-  // ✨ TAMBAHAN: Nama Penulis
+  //  TAMBAHAN: Nama Penulis
   @IsString()
   @IsNotEmpty({ message: "Nama penulis wajib diisi" })
   @MinLength(2, { message: "Nama penulis minimal 2 karakter" })
@@ -52,7 +52,7 @@ export class CreateArticleDTO {
   @IsOptional()
   coverImageAlt?: string | null; // Tambahkan | null
 
-  // ✨ TAMBAHAN: Gambar Mobile
+  //  TAMBAHAN: Gambar Mobile
   @IsString()
   @IsOptional()
   coverImageMobile?: string | null; // Tambahkan | null
@@ -106,7 +106,7 @@ export class UpdateArticleDTO {
   @IsOptional()
   title?: string;
 
-  // ✨ TAMBAHAN: Translasi Judul
+  //  TAMBAHAN: Translasi Judul
   @IsString()
   @IsOptional()
   title_en?: string;
@@ -141,7 +141,7 @@ export class UpdateArticleDTO {
   @IsOptional()
   coverImageAlt?: string | null; // Tambahkan | null
 
-  // ✨ TAMBAHAN: Gambar Mobile
+  //  TAMBAHAN: Gambar Mobile
   @IsString()
   @IsOptional()
   coverImageMobile?: string | null; // Tambahkan | null
