@@ -131,6 +131,15 @@ export class ProductRouter {
       upload.single("image"),
       this.productController.addImage,
     );
+    this.router.post(
+      "/:id/images",
+      upload.array("images", 10),
+      this.productController.addMultipleImages,
+    );
+    this.router.patch(
+      "/:id/media-order",
+      this.productController.reorderMedia,
+    );
     this.router.delete("/image/:imageId", this.productController.deleteImage);
     this.router.patch(
       "/image/:imageId/seo",

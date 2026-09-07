@@ -747,6 +747,7 @@ model ProductImage {
   publicId          String
   isFeatured        Boolean @default(false)
   altText           String?
+  sortOrder         Int     @default(0)
   mockupSideName    String?
   colorMaskUrl      String?
   colorMaskPublicId String?
@@ -800,6 +801,7 @@ model ProductVideo {
   title      String?
   isFeatured Boolean @default(false)
   altText    String?
+  sortOrder  Int     @default(0)
 
   // Relasi ke Produk
   productId String
