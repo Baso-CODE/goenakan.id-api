@@ -39,7 +39,16 @@ export class CloudinaryService {
   ): Promise<UploadApiResponse> => {
     let bufferToUpload = file.buffer;
 
-    const isImage = file.mimetype.startsWith("image/");
+    const originalName = file.originalname || "";
+    const isHeic =
+      file.mimetype === "image/heic" ||
+      file.mimetype === "image/heif" ||
+      /\.(heic|heif)$/i.test(originalName);
+
+    const isImage =
+      file.mimetype.startsWith("image/") ||
+      isHeic ||
+      /\.(jpg|jpeg|png|webp|gif|svg|avif)$/i.test(originalName);
     const shouldOptimize = options.optimize !== false;
 
     //  SOLUSI UTAMA: Periksa apakah file yang di-upload berformat PDF
@@ -51,7 +60,11 @@ export class CloudinaryService {
       options.resource_type = "raw";
     }
 
-    if (isImage && shouldOptimize) {
+    if (isHeic) {
+      // Format HEIC/HEIF tidak didukung oleh sharp standar tanpa libde265.
+      // Kirim buffer asli ke Cloudinary dan biarkan Cloudinary mengonversi ke webp.
+      options.format = "webp";
+    } else if (isImage && shouldOptimize) {
       try {
         bufferToUpload = await sharp(file.buffer)
           .rotate()
@@ -62,8 +75,12 @@ export class CloudinaryService {
 
         options.format = "webp";
       } catch (error) {
-        console.error("❌ Sharp image compression failed:", error);
-        throw new Error("Gagal mengompresi gambar sebelum diupload");
+        console.warn(
+          "⚠️ Sharp image compression failed. Falling back to direct Cloudinary upload:",
+          error,
+        );
+        bufferToUpload = file.buffer;
+        options.format = "webp";
       }
     }
 
