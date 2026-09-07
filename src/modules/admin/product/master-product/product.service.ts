@@ -518,18 +518,20 @@ export class ProductService {
 
         if (uploadedImages.length > 0) {
           await tx.productImage.createMany({
-            data: uploadedImages.map((img) => ({
+            data: uploadedImages.map((img, index) => ({
               ...img,
               productId: product.id,
+              sortOrder: index,
             })),
           });
         }
 
         if (uploadedVideos.length > 0) {
           await tx.productVideo.createMany({
-            data: uploadedVideos.map((video) => ({
+            data: uploadedVideos.map((video, index) => ({
               ...video,
               productId: product.id,
+              sortOrder: index,
             })),
           });
         }
@@ -1511,6 +1513,13 @@ export class ProductService {
       throw new ApiError("No image file or URL provided", 400);
     }
 
+    const lastImage = await this.prisma.productImage.findFirst({
+      where: { productId: id },
+      orderBy: { sortOrder: "desc" },
+      select: { sortOrder: true },
+    });
+    const nextOrder = (lastImage?.sortOrder ?? -1) + 1;
+
     await this.prisma.productImage.create({
       data: {
         productId: id,
@@ -1518,21 +1527,68 @@ export class ProductService {
         publicId: publicId,
         isFeatured: metadata?.isFeatured || false,
         altText: metadata?.altText || "Product Image",
+        sortOrder: nextOrder,
       },
     });
-    // 3. AMBIL DAN KEMBALIKAN SELURUH OBJEK PRODUK DENGAN MEDIA TERBARU
-    const updatedProduct = await this.prisma.product.findUnique({
+
+    return this.getProductById(id);
+  }
+
+  // === ADD MULTIPLE IMAGES ===
+  async addMultipleImages(
+    id: string,
+    files: Express.Multer.File[],
+    metadataList?: { isFeatured?: boolean; altText?: string }[],
+  ) {
+    const product = await this.prisma.product.findUnique({
       where: { id },
-      include: {
-        images: true,
-        videos: true,
-      },
+    });
+    if (!product) throw new ApiError("Product not found", 404);
+
+    if (!files || files.length === 0) {
+      throw new ApiError("No image files provided", 400);
+    }
+
+    const lastImage = await this.prisma.productImage.findFirst({
+      where: { productId: id },
+      orderBy: { sortOrder: "desc" },
+      select: { sortOrder: true },
+    });
+    let currentOrder = (lastImage?.sortOrder ?? -1) + 1;
+
+    const uploadedData: {
+      productId: string;
+      url: string;
+      publicId: string;
+      isFeatured: boolean;
+      altText: string;
+      sortOrder: number;
+    }[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const meta = metadataList?.[i];
+
+      const upload = await this.cloudinary.upload(file, {
+        folder: "products",
+        resource_type: "image",
+      });
+
+      uploadedData.push({
+        productId: id,
+        url: upload.secure_url,
+        publicId: upload.public_id,
+        isFeatured: meta?.isFeatured || false,
+        altText: meta?.altText || product.name || "Product Image",
+        sortOrder: currentOrder++,
+      });
+    }
+
+    await this.prisma.productImage.createMany({
+      data: uploadedData,
     });
 
-    if (!updatedProduct)
-      throw new ApiError("Product not found after update", 404);
-
-    return updatedProduct;
+    return this.getProductById(id);
   }
 
   // === DELETE IMAGE ===
@@ -1651,6 +1707,13 @@ export class ProductService {
       throw new ApiError("Product not found", 404);
     }
 
+    const lastVideo = await this.prisma.productVideo.findFirst({
+      where: { productId: id },
+      orderBy: { sortOrder: "desc" },
+      select: { sortOrder: true },
+    });
+    const nextOrder = (lastVideo?.sortOrder ?? -1) + 1;
+
     await this.prisma.productVideo.create({
       data: {
         productId: id,
@@ -1659,10 +1722,49 @@ export class ProductService {
         title: data.title || product.name,
         altText: data.altText || product.name,
         isFeatured: data.isFeatured || false,
+        sortOrder: nextOrder,
       },
     });
 
     return this.getProductById(id);
+  }
+
+  // === REORDER MEDIA (IMAGES OR VIDEOS) ===
+  async reorderMedia(
+    productId: string,
+    type: "image" | "video",
+    orderedIds: string[],
+  ) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+    });
+    if (!product) throw new ApiError("Product not found", 404);
+
+    if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+      throw new ApiError("orderedIds must be a non-empty array of IDs", 400);
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (type === "image") {
+        for (let i = 0; i < orderedIds.length; i++) {
+          await tx.productImage.update({
+            where: { id: orderedIds[i], productId },
+            data: { sortOrder: i },
+          });
+        }
+      } else if (type === "video") {
+        for (let i = 0; i < orderedIds.length; i++) {
+          await tx.productVideo.update({
+            where: { id: orderedIds[i], productId },
+            data: { sortOrder: i },
+          });
+        }
+      } else {
+        throw new ApiError("Invalid media type. Must be 'image' or 'video'", 400);
+      }
+    });
+
+    return this.getProductById(productId);
   }
 
   // === DELETE VIDEO ===
@@ -2224,11 +2326,14 @@ export class ProductService {
         },
 
         images: {
+          orderBy: { sortOrder: "asc" },
           include: {
             mockupAreas: true,
           },
         },
-        videos: true,
+        videos: {
+          orderBy: { sortOrder: "asc" },
+        },
         tags: true,
         materialType: true,
 
@@ -2375,6 +2480,7 @@ export class ProductService {
           },
         },
         images: {
+          orderBy: { sortOrder: "asc" },
           include: {
             mockupAreas: true,
           },
@@ -3254,7 +3360,8 @@ export class ProductService {
           category: true,
           itemCategory: true,
           itemName: true,
-          images: { take: 1, orderBy: { isFeatured: "desc" } },
+          images: { take: 1, orderBy: { sortOrder: "asc" } },
+          // priceTiers dihapus dari sini karena dipakai nanti di halaman detail produk
           orderProducts: { select: { quantity: true } },
         },
       }),
@@ -3480,10 +3587,10 @@ export class ProductService {
           materialType: true,
           category: true,
           images: {
-            orderBy: { isFeatured: "desc" },
+            orderBy: { sortOrder: "asc" },
             include: { mockupAreas: true },
           },
-          videos: { orderBy: { isFeatured: "desc" } },
+          videos: { orderBy: { sortOrder: "asc" } },
           productVariants: {
             include: {
               images: { orderBy: { isFeatured: "desc" } },
@@ -3598,6 +3705,7 @@ export class ProductService {
             printSideValueId: img.printSideValueId,
             isFeatured: img.isFeatured || false,
             colorMaskUrl: img.colorMaskUrl,
+            sortOrder: img.sortOrder ?? 0,
           });
         });
       }
@@ -3608,6 +3716,7 @@ export class ProductService {
             type: "video",
             url: vid.url,
             isFeatured: vid.isFeatured || false,
+            sortOrder: vid.sortOrder ?? 0,
           });
         });
       }

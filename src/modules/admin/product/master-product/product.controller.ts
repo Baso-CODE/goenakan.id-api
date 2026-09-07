@@ -255,6 +255,48 @@ export class ProductController {
     }
   };
 
+  // === ADD MULTIPLE IMAGES ===
+  addMultipleImages = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { id } = req.params;
+      const files = req.files as Express.Multer.File[];
+      const metadataList = req.body.metadataList
+        ? typeof req.body.metadataList === "string"
+          ? JSON.parse(req.body.metadataList)
+          : req.body.metadataList
+        : undefined;
+
+      const updated = await this.productService.addMultipleImages(
+        id,
+        files,
+        metadataList,
+      );
+      res.status(201).send(updated);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // === REORDER MEDIA ===
+  reorderMedia = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const { type, orderedIds } = req.body;
+      const updated = await this.productService.reorderMedia(
+        id,
+        type,
+        orderedIds,
+      );
+      res.status(200).send(updated);
+    } catch (error) {
+      next(error);
+    }
+  };
+
   // === DELETE IMAGE ===
   deleteImage = async (req: Request, res: Response, next: NextFunction) => {
     try {
