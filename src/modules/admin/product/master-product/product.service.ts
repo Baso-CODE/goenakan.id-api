@@ -1,4 +1,3 @@
-import { translate } from "@vitalets/google-translate-api";
 import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
 
@@ -76,25 +75,6 @@ export class ProductService {
       if (!itemNameData) {
         throw new ApiError("Item Name yang dipilih tidak ditemukan", 404);
       }
-    }
-    let translatedNameEn: string | null = null;
-    let translatedDescEn: string | null = null;
-
-    try {
-      if (data.name) {
-        const resName = await translate(data.name, { to: "en" });
-        translatedNameEn = resName.text;
-      }
-      if (data.description) {
-        const resDesc = await translate(data.description, { to: "en" });
-        translatedDescEn = resDesc.text;
-      }
-    } catch (translateError) {
-      console.warn(
-        "⚠️ Gagal melakukan auto-translate ke bahasa Inggris:",
-        translateError,
-      );
-      // Lanjutkan proses pembuatan produk meskipun terjemahan gagal
     }
 
     // --- Helper untuk Validasi Price Tiers (Bisa dipakai ulang) ---
@@ -266,10 +246,10 @@ export class ProductService {
         const product = await tx.product.create({
           data: {
             name: data.name,
-            name_en: translatedNameEn,
+            name_en: null, // ✨ DIUBAH: Dikosongkan karena tidak ada auto-translate
             sku: data.sku,
             description: data.description,
-            description_en: translatedDescEn,
+            description_en: null, // ✨ DIUBAH: Dikosongkan karena tidak ada auto-translate
             basePrice: data.basePrice,
             foreignPrice:
               data.foreignPrice !== undefined && data.foreignPrice !== null
@@ -581,29 +561,6 @@ export class ProductService {
       }
     }
 
-    //  TAMBAHAN BARU: Auto-translate ke bahasa Inggris jika nama/deskripsi diubah
-    let translatedNameEn: string | undefined = undefined;
-    let translatedDescEn: string | undefined = undefined;
-
-    try {
-      if (data.name !== undefined && data.name !== existing.name) {
-        const resName = await translate(data.name, { to: "en" });
-        translatedNameEn = resName.text;
-      }
-      if (
-        data.description !== undefined &&
-        data.description !== existing.description
-      ) {
-        const resDesc = await translate(data.description, { to: "en" });
-        translatedDescEn = resDesc.text;
-      }
-    } catch (translateError) {
-      console.warn(
-        "⚠️ Gagal melakukan auto-translate saat update product:",
-        translateError,
-      );
-    }
-
     const updateData: any = {
       slug,
       materialTypeId:
@@ -612,18 +569,16 @@ export class ProductService {
           : existing.materialTypeId,
     };
 
+    // ✨ DIUBAH: Jika nama diubah, ubah namanya dan set versi Inggris ke null
     if (data.name !== undefined) {
       updateData.name = data.name;
-      if (translatedNameEn !== undefined) {
-        updateData.name_en = translatedNameEn;
-      }
+      updateData.name_en = null;
     }
 
+    // ✨ DIUBAH: Jika deskripsi diubah, ubah deskripsinya dan set versi Inggris ke null
     if (data.description !== undefined) {
       updateData.description = data.description;
-      if (translatedDescEn !== undefined) {
-        updateData.description_en = translatedDescEn;
-      }
+      updateData.description_en = null;
     }
 
     if (data.sku !== undefined) updateData.sku = data.sku;
@@ -689,7 +644,9 @@ export class ProductService {
     }
 
     const resultingIsActive =
-      updateData.isActive !== undefined ? updateData.isActive : existing.isActive;
+      updateData.isActive !== undefined
+        ? updateData.isActive
+        : existing.isActive;
 
     if (resultingIsActive) {
       const catId = updateData.categoryId || existing.categoryId;
@@ -1760,7 +1717,10 @@ export class ProductService {
           });
         }
       } else {
-        throw new ApiError("Invalid media type. Must be 'image' or 'video'", 400);
+        throw new ApiError(
+          "Invalid media type. Must be 'image' or 'video'",
+          400,
+        );
       }
     });
 
