@@ -30,7 +30,7 @@ export class HeroRouter {
 
   private initializeRoutes = (): void => {
     // === PUBLIC ROUTE ===
-    this.router.get("/", this.heroController.getAllPublic);
+    this.router.get("/public", this.heroController.getAllPublic);
 
     // === GATEKEEPER ===
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);

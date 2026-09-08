@@ -3413,6 +3413,7 @@ export class ProductService {
 
     return { data: formattedData, meta };
   }
+
   // === GET BEST SELLER PRODUCTS (CLIENT HOME PAGE) ===
   async getBestSellerProducts() {
     try {
@@ -3431,7 +3432,6 @@ export class ProductService {
 
       const productIds = topSelling.map((item) => item.productId);
 
-      //  PERBAIKAN: Berikan tipe 'any[]' secara eksplisit
       let rawProducts: any[] = [];
 
       // 2. Ambil detail produk berdasarkan ID yang laris tersebut
@@ -3503,16 +3503,15 @@ export class ProductService {
           minOrder = cheapestTier.minQuantity;
         }
 
+        // ✨ PERUBAHAN: Jika gambar ada ambil URL-nya, jika tidak ada kirim null / string kosong
         const imageUrl =
-          product.images.length > 0
-            ? product.images[0].url
-            : "/images/placeholder.jpg";
+          product.images.length > 0 ? product.images[0].url : null;
 
         return {
           id: product.id,
           name: product.name,
           slug: product.slug,
-          image: imageUrl,
+          image: imageUrl, // Akan bernilai null jika kosong, sehingga frontend bisa mendeteksinya
           regularPrice: regularPrice,
           bulkPrice: bulkPrice,
           minOrder: minOrder,
