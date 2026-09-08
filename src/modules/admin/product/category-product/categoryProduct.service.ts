@@ -324,7 +324,7 @@ export class ProductCategoryService {
   }
 
   // === GET ALL CATEGORIES LIST WITH ITEMS ===
-  async getAllCategoriesList() {
+  async getAllCategoriesList(lang: string = "id") {
     try {
       const categories = await this.prisma.productCategory.findMany({
         where: {
@@ -362,10 +362,11 @@ export class ProductCategoryService {
         },
       });
 
+      // ✨ Format ulang data berdasarkan bahasa yang dipilih (lang)
       const formattedCategories = categories.map((cat) => ({
         id: cat.id,
-        name: cat.name_id,
-        name_en: cat.name_en,
+        name: lang === "en" && cat.name_en ? cat.name_en : cat.name_id,
+        name_en: cat.name_en, // Tetap disertakan jika dibutuhkan komponen lain
         code: cat.code,
         itemCategories: cat.itemCategories,
       }));

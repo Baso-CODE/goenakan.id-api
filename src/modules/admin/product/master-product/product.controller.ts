@@ -88,10 +88,10 @@ export class ProductController {
         lang,
       } = req.query;
 
-      //  2. TAMBAHKAN CONSOLE.LOG UNTUK MENGECEK DATA MASUK
-      console.log("--- DEBUG QUERY DARI FRONTEND ---");
-      console.log("Country diterima:", country);
-      console.log("Lang diterima:", lang);
+      // //  2. TAMBAHKAN CONSOLE.LOG UNTUK MENGECEK DATA MASUK
+      // console.log("--- DEBUG QUERY DARI FRONTEND ---");
+      // console.log("Country diterima:", country);
+      // console.log("Lang diterima:", lang);
 
       let targetCurrency = "IDR";
 

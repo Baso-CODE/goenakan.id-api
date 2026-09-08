@@ -20,7 +20,12 @@ export class EventCategoryController {
     next: NextFunction,
   ) => {
     try {
-      const result = await this.eventCategoryService.getPublicEventCategories();
+      // ✨ Ambil parameter lang dari query (default ke 'id')
+      const { lang } = req.query;
+      const targetLang = (lang as string) || "id";
+
+      const result =
+        await this.eventCategoryService.getPublicEventCategories(targetLang);
       res.status(200).json({
         success: true,
         data: result,
@@ -40,9 +45,15 @@ export class EventCategoryController {
   ) => {
     try {
       const { slug } = req.params;
+      // ✨ Ambil parameter lang dari query (default ke 'id')
+      const { lang } = req.query;
+      const targetLang = (lang as string) || "id";
 
       const result =
-        await this.eventCategoryService.getPublicEventCategoryBySlug(slug);
+        await this.eventCategoryService.getPublicEventCategoryBySlug(
+          slug,
+          targetLang,
+        );
 
       res.status(200).json({
         success: true,
@@ -54,7 +65,7 @@ export class EventCategoryController {
   };
 
   // ====================================================================
-  // 2. ADMIN ENDPOINTS (Backoffice)
+  // 3. ADMIN ENDPOINTS (Backoffice)
   // ====================================================================
 
   // --- GET ALL (Table Admin) ---
@@ -165,7 +176,7 @@ export class EventCategoryController {
   };
 
   // ====================================================================
-  // GET EVENT CATEGORY LIST
+  // GET EVENT CATEGORY LIST (Untuk Dropdown Form)
   // ====================================================================
   getEventCategoryList = async (
     req: Request,
@@ -173,7 +184,12 @@ export class EventCategoryController {
     next: NextFunction,
   ) => {
     try {
-      const result = await this.eventCategoryService.getEventCategoryList();
+      // ✨ Ambil parameter lang dari query (default ke 'id')
+      const { lang } = req.query;
+      const targetLang = (lang as string) || "id";
+
+      const result =
+        await this.eventCategoryService.getEventCategoryList(targetLang);
       res.status(200).json({
         success: true,
         data: result,

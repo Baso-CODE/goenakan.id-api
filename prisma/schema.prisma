@@ -2282,7 +2282,8 @@ model BrandClient {
 
 model EventCategory {
   id           String      @id @default(cuid())
-  title        String
+  title_id     String
+  title_en     String?
   slug         String      @unique
   orderCount   Int         @default(0)
   image        String
@@ -2298,10 +2299,12 @@ model EventCategory {
 
 model Portfolio {
   id              String         @id @default(cuid())
-  title           String
+  title_id        String
+  title_en        String?
   slug            String         @unique
   clientName      String
   description     String?        @db.Text
+  description_en  String?        @db.Text
   image           String
   imageId         String
   orderQuantity   Int?           @default(0)

@@ -64,14 +64,19 @@ export class ProductCategoryController {
   // === GET CATEGORY LIST ===
   getCategoryList = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await this.productCategoryService.getAllCategoriesList();
+      // ✨ Ambil parameter lang dari query URL (default ke 'id')
+      const { lang } = req.query;
+      const targetLang = (lang as string) || "id";
+
+      // Teruskan parameter lang ke dalam service
+      const result =
+        await this.productCategoryService.getAllCategoriesList(targetLang);
       res.status(200).send(result);
     } catch (error) {
       next(error);
     }
   };
 
-  // === UPDATE CATEGORY ===
   // === UPDATE CATEGORY ===
   updateCategory = async (req: Request, res: Response, next: NextFunction) => {
     try {

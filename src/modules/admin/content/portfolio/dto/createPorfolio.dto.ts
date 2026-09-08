@@ -9,9 +9,13 @@ import {
 } from "class-validator";
 
 export class CreatePortfolioDTO {
-  @IsNotEmpty({ message: "Judul portofolio wajib diisi" })
+  @IsNotEmpty({ message: "Judul portofolio (ID) wajib diisi" })
   @IsString()
-  title!: string;
+  title_id!: string;
+
+  @IsOptional()
+  @IsString()
+  title_en?: string;
 
   @IsNotEmpty({ message: "Nama klien wajib diisi" })
   @IsString()
@@ -20,6 +24,10 @@ export class CreatePortfolioDTO {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  description_en?: string;
 
   @IsOptional()
   @Type(() => Number)

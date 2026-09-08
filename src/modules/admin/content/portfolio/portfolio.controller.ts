@@ -17,7 +17,12 @@ export class PortfolioController {
     next: NextFunction,
   ) => {
     try {
-      const result = await this.portfolioService.getPublicPortfolios();
+      // ✨ Ambil parameter lang dari query (default ke 'id')
+      const { lang } = req.query;
+      const targetLang = (lang as string) || "id";
+
+      const result =
+        await this.portfolioService.getPublicPortfolios(targetLang);
       res.status(200).json({
         success: true,
         data: result,
