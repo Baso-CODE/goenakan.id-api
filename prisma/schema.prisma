@@ -2282,8 +2282,8 @@ model BrandClient {
 
 model EventCategory {
   id           String      @id @default(cuid())
-  title_id     String
-  title_en     String?
+  title_id     String? // ✨ Diberi tanda ? (opsional sementara)
+  title_en     String? // ✨ Diberi tanda ? (opsional)
   slug         String      @unique
   orderCount   Int         @default(0)
   image        String
@@ -2299,8 +2299,8 @@ model EventCategory {
 
 model Portfolio {
   id              String         @id @default(cuid())
-  title_id        String
-  title_en        String?
+  title_id        String? // ✨ Diberi tanda ? (opsional sementara)
+  title_en        String? // ✨ Diberi tanda ? (opsional)
   slug            String         @unique
   clientName      String
   description     String?        @db.Text
