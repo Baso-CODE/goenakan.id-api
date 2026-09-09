@@ -3862,7 +3862,6 @@ export class ProductService {
   // === GET RELATED PRODUCTS (PUBLIC) ===
   async getRelatedProducts(slug: string) {
     try {
-      // 1. Cari produk target untuk mendapatkan categoryId-nya
       const targetProduct = await this.prisma.product.findUnique({
         where: { slug },
         select: { id: true, categoryId: true },
@@ -3901,14 +3900,14 @@ export class ProductService {
           bulkPrice = Number(cheapestTier.price);
         }
 
-        const imageUrl =
-          p.images.length > 0 ? p.images[0].url : "/images/placeholder.jpg";
+        // ✨ PERUBAHAN: Jika gambar ada ambil URL-nya, jika tidak ada kembalikan null
+        const imageUrl = p.images.length > 0 ? p.images[0].url : null;
 
         return {
           id: p.id,
           name: p.name,
           slug: p.slug,
-          image: imageUrl,
+          image: imageUrl, // Akan bernilai null jika kosong
           bulkPrice: bulkPrice,
           regularPrice: Number(p.basePrice),
         };

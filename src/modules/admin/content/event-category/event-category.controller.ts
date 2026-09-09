@@ -184,7 +184,6 @@ export class EventCategoryController {
     next: NextFunction,
   ) => {
     try {
-      // ✨ Ambil parameter lang dari query (default ke 'id')
       const { lang } = req.query;
       const targetLang = (lang as string) || "id";
 
