@@ -1,5 +1,5 @@
+import { translate } from "@vitalets/google-translate-api";
 import { injectable } from "tsyringe";
-
 import { ApiError } from "../../../../utils/api-error";
 import { SlugService } from "../../../../utils/genereateSlug";
 import { CloudinaryService } from "../../../cloudinary/cloudinary.service";
@@ -65,7 +65,7 @@ export class EventCategoryService {
   }
 
   // ====================================================================
-  // 3. CREATE EVENT CATEGORY
+  // CREATE EVENT CATEGORY (Dengan Auto-Translate jika EN kosong)
   // ====================================================================
   async createEventCategory(
     data: CreateEventCategoryDTO,
@@ -77,7 +77,22 @@ export class EventCategoryService {
     const slug = this.slug.create(data.title_id);
     let uploadResult;
 
-    // --- UPLOAD KE CLOUDINARY ---
+    // --- 1. PROSES AUTO-TRANSLATE JIKA TITLE_EN KOSONG ---
+    let finalTitleEn = data.title_en;
+
+    try {
+      if (!finalTitleEn && data.title_id) {
+        const resTitle = await translate(data.title_id, { to: "en" });
+        finalTitleEn = resTitle.text;
+      }
+    } catch (transError) {
+      console.warn(
+        "⚠️ Warning: Auto-translate event category gagal:",
+        transError,
+      );
+    }
+
+    // --- 2. UPLOAD KE CLOUDINARY ---
     try {
       uploadResult = await this.cloudinary.upload(file, {
         folder: "event_categories",
@@ -87,12 +102,12 @@ export class EventCategoryService {
       throw new ApiError(`Gagal upload gambar: ${error.message}`, 500);
     }
 
-    // --- INSERT KE DATABASE ---
+    // --- 3. INSERT KE DATABASE ---
     try {
       const newCategory = await this.prisma.eventCategory.create({
         data: {
           title_id: data.title_id,
-          title_en: data.title_en || null,
+          title_en: finalTitleEn || null, // Menggunakan hasil terjemahan otomatis atau input manual
           slug,
           orderCount:
             data.orderCount !== undefined ? Number(data.orderCount) : 0,
@@ -131,7 +146,7 @@ export class EventCategoryService {
   }
 
   // ====================================================================
-  // 4. UPDATE EVENT CATEGORY
+  // 4. UPDATE EVENT CATEGORY (Dengan Smart Auto-Translate)
   // ====================================================================
   async updateEventCategory(
     id: string,
@@ -161,7 +176,37 @@ export class EventCategoryService {
       }
     }
 
-    // --- UPDATE DATABASE ---
+    // --- 1. PROSES SMART AUTO-TRANSLATE UNTUK UPDATE ---
+    let finalTitleEn = data.title_en;
+
+    try {
+      const activeTitleId =
+        data.title_id !== undefined ? data.title_id : existing.title_id;
+
+      // Cek apakah title_id mengalami perubahan dari data lama di database
+      const titleIdChanged =
+        data.title_id !== undefined && data.title_id !== existing.title_id;
+
+      // Terjemahan ulang akan dipicu jika:
+      // - title_en kosong/tidak ada
+      // - ATAU title_id diubah DAN title_en masih bernilai sama dengan data lama (artinya user tidak mengubah terjemahan Inggris secara manual)
+      const shouldTranslate =
+        !finalTitleEn ||
+        (titleIdChanged &&
+          (finalTitleEn === existing.title_en || !finalTitleEn));
+
+      if (shouldTranslate && activeTitleId) {
+        const resTitle = await translate(activeTitleId, { to: "en" });
+        finalTitleEn = resTitle.text;
+      }
+    } catch (transError) {
+      console.warn(
+        "⚠️ Warning: Auto-translate update event category gagal:",
+        transError,
+      );
+    }
+
+    // --- 2. UPDATE DATABASE ---
     try {
       const slug =
         data.title_id && data.title_id !== existing.title_id
@@ -174,7 +219,7 @@ export class EventCategoryService {
           title_id:
             data.title_id !== undefined ? data.title_id : existing.title_id,
           title_en:
-            data.title_en !== undefined ? data.title_en : existing.title_en,
+            finalTitleEn !== undefined ? finalTitleEn : existing.title_en,
           slug,
           orderCount:
             data.orderCount !== undefined
@@ -207,7 +252,6 @@ export class EventCategoryService {
       );
     }
   }
-
   // ====================================================================
   // 5. DELETE EVENT CATEGORY
   // ====================================================================

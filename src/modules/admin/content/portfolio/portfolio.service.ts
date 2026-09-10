@@ -1,5 +1,5 @@
+import { translate } from "@vitalets/google-translate-api";
 import { injectable } from "tsyringe";
-
 import { ApiError } from "../../../../utils/api-error";
 import { SlugService } from "../../../../utils/genereateSlug";
 import { CloudinaryService } from "../../../cloudinary/cloudinary.service";
@@ -70,7 +70,7 @@ export class PortfolioService {
   }
 
   // ====================================================================
-  // 3. CREATE PORTFOLIO
+  // 3. CREATE PORTFOLIO (Dengan Auto-Translate jika EN kosong)
   // ====================================================================
   async createPortfolio(data: CreatePortfolioDTO, file: Express.Multer.File) {
     if (!file) throw new ApiError("Portfolio image is required", 400);
@@ -78,7 +78,30 @@ export class PortfolioService {
     const slug = this.slug.create(data.title_id);
     let uploadResult;
 
-    // --- UPLOAD KE CLOUDINARY ---
+    // --- 1. PROSES AUTO-TRANSLATE JIKA TITLE_EN / DESCRIPTION_EN KOSONG ---
+    let finalTitleEn = data.title_en;
+    let finalDescEn = data.description_en;
+
+    try {
+      // Jika title_en tidak diisi, terjemahkan title_id ke bahasa Inggris (en)
+      if (!finalTitleEn && data.title_id) {
+        const resTitle = await translate(data.title_id, { to: "en" });
+        finalTitleEn = resTitle.text;
+      }
+
+      // Jika description_en tidak diisi tapi deskripsi ID ada, terjemahkan ke bahasa Inggris (en)
+      if (!finalDescEn && data.description) {
+        const resDesc = await translate(data.description, { to: "en" });
+        finalDescEn = resDesc.text;
+      }
+    } catch (transError) {
+      console.warn(
+        "⚠️ Warning: Auto-translate gagal, menggunakan nilai kosong:",
+        transError,
+      );
+    }
+
+    // --- 2. UPLOAD KE CLOUDINARY ---
     try {
       uploadResult = await this.cloudinary.upload(file, {
         folder: "portfolios",
@@ -88,16 +111,16 @@ export class PortfolioService {
       throw new ApiError(`Gagal upload gambar: ${error.message}`, 500);
     }
 
-    // --- INSERT KE DATABASE ---
+    // --- 3. INSERT KE DATABASE ---
     try {
       const newPortfolio = await this.prisma.portfolio.create({
         data: {
           title_id: data.title_id,
-          title_en: data.title_en || null,
+          title_en: finalTitleEn || null, // Menggunakan hasil terjemahan otomatis atau input manual
           slug,
           clientName: data.clientName,
           description: data.description || null,
-          description_en: data.description_en || null,
+          description_en: finalDescEn || null, // Menggunakan hasil terjemahan otomatis atau input manual
           image: uploadResult.secure_url,
           imageId: uploadResult.public_id,
           displayOrder: Number(data.displayOrder || 0),
@@ -130,9 +153,8 @@ export class PortfolioService {
       );
     }
   }
-
   // ====================================================================
-  // 4. UPDATE PORTFOLIO
+  // 4. UPDATE PORTFOLIO (Dengan Smart Auto-Translate untuk Title & Description)
   // ====================================================================
   async updatePortfolio(
     id: string,
@@ -162,6 +184,55 @@ export class PortfolioService {
       }
     }
 
+    // --- PROSES SMART AUTO-TRANSLATE UNTUK UPDATE ---
+    let finalTitleEn = data.title_en;
+    let finalDescEn = data.description_en;
+
+    try {
+      // 1. Logika untuk Title (Judul)
+      const activeTitleId =
+        data.title_id !== undefined ? data.title_id : existing.title_id;
+
+      const titleIdChanged =
+        data.title_id !== undefined && data.title_id !== existing.title_id;
+
+      const shouldTranslateTitle =
+        !finalTitleEn ||
+        (titleIdChanged &&
+          (finalTitleEn === existing.title_en || !finalTitleEn));
+
+      if (shouldTranslateTitle && activeTitleId) {
+        const resTitle = await translate(activeTitleId, { to: "en" });
+        finalTitleEn = resTitle.text;
+      }
+
+      // 2. Logika untuk Description (Deskripsi)
+      const activeDesc =
+        data.description !== undefined
+          ? data.description
+          : existing.description;
+
+      const descChanged =
+        data.description !== undefined &&
+        data.description !== existing.description;
+
+      const shouldTranslateDesc =
+        (!finalDescEn && activeDesc) ||
+        (descChanged &&
+          activeDesc &&
+          (finalDescEn === existing.description_en || !finalDescEn));
+
+      if (shouldTranslateDesc && activeDesc) {
+        const resDesc = await translate(activeDesc, { to: "en" });
+        finalDescEn = resDesc.text;
+      }
+    } catch (transError) {
+      console.warn(
+        "⚠️ Warning: Auto-translate saat update portfolio gagal:",
+        transError,
+      );
+    }
+
     // --- UPDATE DATABASE ---
     try {
       const slug =
@@ -175,7 +246,7 @@ export class PortfolioService {
           title_id:
             data.title_id !== undefined ? data.title_id : existing.title_id,
           title_en:
-            data.title_en !== undefined ? data.title_en : existing.title_en,
+            finalTitleEn !== undefined ? finalTitleEn : existing.title_en,
           slug,
           clientName:
             data.clientName !== undefined
@@ -186,9 +257,7 @@ export class PortfolioService {
               ? data.description
               : existing.description,
           description_en:
-            data.description_en !== undefined
-              ? data.description_en
-              : existing.description_en,
+            finalDescEn !== undefined ? finalDescEn : existing.description_en,
           image: imageUrl,
           imageId: imageId,
           displayOrder:
