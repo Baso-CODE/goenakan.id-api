@@ -1,6 +1,6 @@
+import { translate } from "@vitalets/google-translate-api";
 import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
-
 import { ApiError } from "../../../../utils/api-error";
 import { SlugService } from "../../../../utils/genereateSlug";
 import { CloudinaryService } from "../../../cloudinary/cloudinary.service";
@@ -80,7 +80,7 @@ export class ProductCategoryService {
     }
   }
 
-  // === CREATE CATEGORY DENGAN UPLOAD IMAGE & AUTO-CODE ===
+  // === CREATE CATEGORY DENGAN UPLOAD IMAGE & AUTO-TRANSLATE ===
   async createCategory(
     data: CreateProductCategoryDTO,
     file?: Express.Multer.File,
@@ -134,6 +134,29 @@ export class ProductCategoryService {
       }
     }
 
+    // ✨ --- PROSES AUTO-TRANSLATE JIKA EN KOSONG ---
+    let finalNameEn = data.name_en;
+    let finalDescEn = data.description_en;
+
+    try {
+      // Terjemahkan nama kategori jika kosong
+      if (!finalNameEn && data.name_id) {
+        const resName = await translate(data.name_id, { to: "en" });
+        finalNameEn = resName.text;
+      }
+
+      // Terjemahkan deskripsi kategori jika ada versi ID tapi EN kosong
+      if (!finalDescEn && data.description_id) {
+        const resDesc = await translate(data.description_id, { to: "en" });
+        finalDescEn = resDesc.text;
+      }
+    } catch (transError) {
+      console.warn(
+        "⚠️ Warning: Auto-translate kategori produk gagal:",
+        transError,
+      );
+    }
+
     // 4. Simpan ke Database
     try {
       const category = await this.prisma.productCategory.create({
@@ -146,8 +169,10 @@ export class ProductCategoryService {
           name_id: data.name_id,
           description_id: data.description_id,
 
-          name_en: data.name_en,
-          description_en: data.description_en,
+          // ✨ Menggunakan hasil terjemahan atau input asli
+          name_en: finalNameEn || null,
+          description_en: finalDescEn || null,
+
           isActive:
             data.isActive !== undefined
               ? typeof data.isActive === "string"
@@ -180,7 +205,7 @@ export class ProductCategoryService {
     return category;
   }
 
-  // === UPDATE CATEGORY DENGAN IMAGE REPLACEMENT & CODE UPDATE ===
+  // === UPDATE CATEGORY DENGAN IMAGE REPLACEMENT, CODE UPDATE & SMART AUTO-TRANSLATE ===
   async updateCategory(
     id: string,
     data: Partial<UpdateProductCategoryDTO>,
@@ -196,6 +221,7 @@ export class ProductCategoryService {
     let finalSlug = existing.slug;
     let generatedCode = existing.code;
 
+    // --- UPDATE SLUG & CODE JIKA NAMA BERUBAH ---
     if (data.name_id && data.name_id !== existing.name_id) {
       const baseSlug = this.slug.create(data.name_id);
       finalSlug = baseSlug;
@@ -229,6 +255,7 @@ export class ProductCategoryService {
     let imageUrl = data.image;
     let imageId = data.imageId;
 
+    // --- JIKA ADA FILE BARU ---
     if (file) {
       try {
         if (existing.imageId) {
@@ -251,7 +278,56 @@ export class ProductCategoryService {
       }
     }
 
-    // Lock: Jangan izinkan menonaktifkan kategori jika masih ada produk aktif yang menggunakannya
+    // ✨ --- PROSES SMART AUTO-TRANSLATE UNTUK UPDATE ---
+    let finalNameEn = data.name_en;
+    let finalDescEn = data.description_en;
+
+    try {
+      // 1. Logika untuk Nama Kategori (name_id)
+      const activeNameId =
+        data.name_id !== undefined ? data.name_id : existing.name_id;
+
+      const nameIdChanged =
+        data.name_id !== undefined && data.name_id !== existing.name_id;
+
+      const shouldTranslateName =
+        !finalNameEn ||
+        (nameIdChanged && (finalNameEn === existing.name_en || !finalNameEn));
+
+      if (shouldTranslateName && activeNameId) {
+        const resName = await translate(activeNameId, { to: "en" });
+        finalNameEn = resName.text;
+      }
+
+      // 2. Logika untuk Deskripsi Kategori (description_id)
+      const activeDescId =
+        data.description_id !== undefined
+          ? data.description_id
+          : existing.description_id;
+
+      const descIdChanged =
+        data.description_id !== undefined &&
+        data.description_id !== existing.description_id;
+
+      const shouldTranslateDesc =
+        (!finalDescEn && activeDescId) ||
+        (descIdChanged &&
+          activeDescId &&
+          (finalDescEn === existing.description_en || !finalDescEn));
+
+      if (shouldTranslateDesc && activeDescId) {
+        const resDesc = await translate(activeDescId, { to: "en" });
+        finalDescEn = resDesc.text;
+      }
+    } catch (transError) {
+      console.warn(
+        "⚠️ Warning: Auto-translate saat update kategori produk gagal:",
+        transError,
+      );
+    }
+
+    // --- LOCK ACTIVE STATUS ---
+    // Jangan izinkan menonaktifkan kategori jika masih ada produk aktif yang menggunakannya
     if (data.isActive !== undefined) {
       const targetActive =
         typeof data.isActive === "string"
@@ -273,7 +349,7 @@ export class ProductCategoryService {
       }
     }
 
-    // 4. Update Database
+    // --- 4. UPDATE DATABASE ---
     try {
       const updated = await this.prisma.productCategory.update({
         where: { id },
@@ -283,10 +359,18 @@ export class ProductCategoryService {
           image: imageUrl,
           imageId: imageId,
 
-          name_id: data.name_id,
-          name_en: data.name_en,
-          description_id: data.description_id,
-          description_en: data.description_en,
+          name_id: data.name_id !== undefined ? data.name_id : existing.name_id,
+          // ✨ Gunakan hasil auto-translate untuk name_en
+          name_en: finalNameEn !== undefined ? finalNameEn : existing.name_en,
+
+          description_id:
+            data.description_id !== undefined
+              ? data.description_id
+              : existing.description_id,
+          // ✨ Gunakan hasil auto-translate untuk description_en
+          description_en:
+            finalDescEn !== undefined ? finalDescEn : existing.description_en,
+
           ...(data.isActive !== undefined
             ? {
                 isActive:
