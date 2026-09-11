@@ -1,3 +1,4 @@
+import { translate } from "@vitalets/google-translate-api";
 import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
 
@@ -3568,7 +3569,6 @@ export class ProductService {
           },
         },
       });
-
       if (
         !product ||
         !product.isActive ||
@@ -3576,14 +3576,11 @@ export class ProductService {
       ) {
         throw new Error("Product not found");
       }
-
       // If materialType is inactive, don't expose it to client
       if (product.materialType && !product.materialType.isActive) {
         (product as any).materialType = null;
       }
-
       this.injectLegacyMockupArea(product);
-
       let conversionRate = 1;
       if (targetCurrency && targetCurrency !== "IDR") {
         try {
@@ -3594,7 +3591,6 @@ export class ProductService {
               amount: 1,
             });
           conversionRate = conversionResult.rate;
-
           const appSetting = await this.prisma.appSetting.findFirst();
           const globalAdjuster = appSetting?.globalForeignPriceAdjuster
             ? Number(appSetting.globalForeignPriceAdjuster)
@@ -3604,14 +3600,11 @@ export class ProductService {
             product.foreignPriceAdjuster !== undefined
               ? Number(product.foreignPriceAdjuster)
               : 0;
-
           const effectiveAdjuster =
             productAdjuster > 0 ? productAdjuster : globalAdjuster;
-
           if (effectiveAdjuster > 0) {
             conversionRate = conversionRate * (1 + effectiveAdjuster / 100);
           }
-
           console.log(
             `[CURRENCY ADJUSTMENT] Slug: ${slug}, Target: ${targetCurrency}`,
           );
@@ -3627,28 +3620,20 @@ export class ProductService {
           );
         }
       }
-
-      // 🛠️ ==========================================================
-      //  PERBAIKAN DI SINI: Logika pemilihan bahasa yang lebih aman
-      // ==========================================================
       let productName = product.name;
       if (lang === "en") {
         productName = product.name_en || product.name || "Unnamed Product";
       } else {
         productName = product.name || product.name_en || "Produk Tanpa Nama";
       }
-
       const productDescription =
         lang === "en" && product.description_en
           ? product.description_en
           : product.description;
-      // 🛠️ ==========================================================
-
       const totalSold = product.orderProducts.reduce(
         (sum, order) => sum + (order.quantity || 1),
         0,
       );
-
       const combinedMedia: any[] = [];
       if (product.images && product.images.length > 0) {
         product.images.forEach((img) => {
@@ -3687,13 +3672,11 @@ export class ProductService {
           mockupAreas: [],
         });
       }
-
       const formattedVariants = product.productVariants.map((v) => {
         const vWeight = v.weight ?? product.weight;
         const vWidth = v.width ?? product.width;
         const vHeight = v.height ?? product.height;
         const vLength = v.length ?? product.length;
-
         const vDimensionParts = [vLength, vWidth, vHeight].filter(
           (val) => val !== null && val !== undefined,
         );
@@ -3701,7 +3684,6 @@ export class ProductService {
           vDimensionParts.length > 0
             ? `${vDimensionParts.join(" x ")} cm`
             : "-";
-
         const attributes = v.attributeValues
           .map((av) => ({
             name: av.attributeValue.attribute?.name || "",
@@ -3717,13 +3699,11 @@ export class ProductService {
               ? a.attributePosition - b.attributePosition
               : a.valuePosition - b.valuePosition,
           );
-
         const rawVariantPrice = v.price ? Number(v.price) : null;
         const convertedVariantPrice =
           rawVariantPrice !== null
             ? parseFloat((rawVariantPrice * conversionRate).toFixed(2))
             : null;
-
         return {
           id: v.id,
           name: v.variantName || v.sku,
@@ -3746,7 +3726,6 @@ export class ProductService {
           })),
         };
       });
-
       const dimensionParts = [
         product.length,
         product.width,
@@ -3754,7 +3733,6 @@ export class ProductService {
       ].filter((val) => val !== null && val !== undefined);
       const dimensionsString =
         dimensionParts.length > 0 ? `${dimensionParts.join(" x ")} cm` : "-";
-
       let formattedTiers = product.priceTiers.map((tier) => {
         let label = "";
         if (tier.maxQuantity) {
@@ -3762,11 +3740,9 @@ export class ProductService {
         } else {
           label = `≥ ${tier.minQuantity} pcs`;
         }
-
         const convertedTierPrice = parseFloat(
           (Number(tier.price) * conversionRate).toFixed(2),
         );
-
         return {
           minQty: tier.minQuantity,
           maxQty: tier.maxQuantity,
@@ -3774,11 +3750,9 @@ export class ProductService {
           label: label,
         };
       });
-
       const convertedBasePrice = parseFloat(
         (Number(product.basePrice) * conversionRate).toFixed(2),
       );
-
       if (formattedTiers.length === 0) {
         formattedTiers.push({
           minQty: 1,
@@ -3787,7 +3761,62 @@ export class ProductService {
           label: "1+ pcs",
         });
       }
-
+      const attributeValuesFormatted = await Promise.all(
+        product.attributeValues.map(async (av) => {
+          let attributeName = av.attribute?.name || "";
+          let attributeValue = av.attributeValue?.value || "";
+          if (lang === "en") {
+            try {
+              const [nameTranslated, valueTranslated] = await Promise.all([
+                attributeName
+                  ? translate(attributeName, { to: "en" }).then(
+                      (res) => res.text,
+                    )
+                  : Promise.resolve(attributeName),
+                attributeValue
+                  ? translate(attributeValue, { to: "en" }).then(
+                      (res) => res.text,
+                    )
+                  : Promise.resolve(attributeValue),
+              ]);
+              attributeName = nameTranslated;
+              attributeValue = valueTranslated;
+            } catch (error) {
+              console.error(
+                `Failed to translate attribute (${av.attributeId}):`,
+                error,
+              );
+            }
+          }
+          return {
+            id: av.id,
+            attributeId: av.attributeId,
+            attributeValueId: av.attributeValueId,
+            priceModifier: av.priceModifier
+              ? parseFloat(
+                  (Number(av.priceModifier) * conversionRate).toFixed(2),
+                )
+              : 0,
+            weight: av.weight ? Number(av.weight) : null,
+            width: av.width ? Number(av.width) : null,
+            height: av.height ? Number(av.height) : null,
+            length: av.length ? Number(av.length) : null,
+            value: attributeValue,
+            attributeName: attributeName,
+            attributeType: av.attribute?.type || "TEXT",
+            attributePosition: av.attribute?.position ?? 0,
+            valuePosition: av.attributeValue?.position ?? 0,
+            parentValueId: av.attribute?.parentValueId || null,
+          };
+        }),
+      );
+      const attributeValuesSorted = attributeValuesFormatted
+        .sort((a, b) =>
+          a.attributePosition !== b.attributePosition
+            ? a.attributePosition - b.attributePosition
+            : a.valuePosition - b.valuePosition,
+        )
+        .map(({ attributePosition, valuePosition, ...rest }) => rest);
       return {
         id: product.id,
         name: productName,
@@ -3796,13 +3825,15 @@ export class ProductService {
         basePrice: convertedBasePrice,
         currencyCode: targetCurrency,
         foreignPriceAdjuster: product.foreignPriceAdjuster || 0,
-        category: product.category?.name_id || "Uncategorized",
+        category:
+          lang === "en" && product.category?.name_en
+            ? product.category.name_en
+            : product.category?.name_id || "Uncategorized",
         sold: totalSold,
         media: combinedMedia,
         variants: formattedVariants,
         priceTiers: formattedTiers,
         description: productDescription || "",
-
         weight: product.weight ? `${product.weight} gram` : "-",
         dimensions: dimensionsString,
         rawWeight: product.weight,
@@ -3825,40 +3856,13 @@ export class ProductService {
         mockupFrontImageId: product.mockupFrontImageId,
         mockupBackImageId: product.mockupBackImageId,
         colorMockupTrigger: product.colorMockupTrigger,
-        attributeValues: product.attributeValues
-          .map((av) => ({
-            id: av.id,
-            attributeId: av.attributeId,
-            attributeValueId: av.attributeValueId,
-            priceModifier: av.priceModifier
-              ? parseFloat(
-                  (Number(av.priceModifier) * conversionRate).toFixed(2),
-                )
-              : 0,
-            weight: av.weight ? Number(av.weight) : null,
-            width: av.width ? Number(av.width) : null,
-            height: av.height ? Number(av.height) : null,
-            length: av.length ? Number(av.length) : null,
-            value: av.attributeValue?.value || "",
-            attributeName: av.attribute?.name || "",
-            attributeType: av.attribute?.type || "TEXT",
-            attributePosition: av.attribute?.position ?? 0,
-            valuePosition: av.attributeValue?.position ?? 0,
-            parentValueId: av.attribute?.parentValueId || null,
-          }))
-          .sort((a, b) =>
-            a.attributePosition !== b.attributePosition
-              ? a.attributePosition - b.attributePosition
-              : a.valuePosition - b.valuePosition,
-          )
-          .map(({ attributePosition, valuePosition, ...rest }) => rest),
+        attributeValues: attributeValuesSorted,
       };
     } catch (error) {
       console.error(`❌ Error fetching product by slug (${slug}):`, error);
       throw error;
     }
   }
-
   // === GET RELATED PRODUCTS (PUBLIC) ===
   async getRelatedProducts(slug: string) {
     try {
