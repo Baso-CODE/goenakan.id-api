@@ -2203,6 +2203,70 @@ export class OrderService {
     }
   }
 
+  async getWhoWeAreStats() {
+    const DUMMY_CUSTOMERS = 100;
+    const DUMMY_PRODUCTS = 500;
+    const DUMMY_ORDERS = 300;
+
+    try {
+      // 2. Hitung jumlah Order Selesai (Completed Orders)
+      const realOrdersCount = await this.prisma.order.count({
+        where: { status: "COMPLETED" },
+      });
+
+      // 3. Hitung Klien Unik (Happy Customers)
+      // Menggunakan groupBy untuk mencari klien yang tidak duplikat dari pesanan selesai
+      const uniqueClients = await this.prisma.order.groupBy({
+        by: ["clientId"],
+        where: { status: "COMPLETED" },
+      });
+      const realCustomersCount = uniqueClients.length;
+
+      // 4. Hitung Total Produk Dibuat (Products Created)
+      // Menggunakan table OrderProduct dan menjumlahkan 'quantity'
+      const productsAgg = await this.prisma.orderProduct.aggregate({
+        where: {
+          order: { status: "COMPLETED" },
+        },
+        _sum: {
+          quantity: true,
+        },
+      });
+      const realProductsCount = Number(productsAgg._sum.quantity || 0);
+
+      // 5. Logika Perbandingan (Gunakan data DB jika lebih besar dari Dummy)
+      const finalCustomers = Math.max(realCustomersCount, DUMMY_CUSTOMERS);
+      const finalProducts = Math.max(realProductsCount, DUMMY_PRODUCTS);
+      const finalOrders = Math.max(realOrdersCount, DUMMY_ORDERS);
+
+      // 6. Format data untuk dikirim ke frontend
+      const formattedData = {
+        stat1Value: `${finalCustomers.toLocaleString("id-ID")}+`,
+        stat1Label: "Happy customers",
+        stat2Value: `${finalProducts.toLocaleString("id-ID")}+`,
+        stat2Label: "Products created",
+        stat3Value: `${finalOrders.toLocaleString("id-ID")}+`,
+        stat3Label: "Completed orders",
+      };
+
+      return { data: formattedData };
+    } catch (error) {
+      console.error("Gagal menghitung statistik Who We Are:", error);
+
+      // Fallback: Jika terjadi error di database, kembalikan nilai dummy agar web tidak error
+      return {
+        data: {
+          stat1Value: `${DUMMY_CUSTOMERS.toLocaleString("id-ID")}+`,
+          stat1Label: "Happy customers",
+          stat2Value: `${DUMMY_PRODUCTS.toLocaleString("id-ID")}+`,
+          stat2Label: "Products created",
+          stat3Value: `${DUMMY_ORDERS.toLocaleString("id-ID")}+`,
+          stat3Label: "Completed orders",
+        },
+      };
+    }
+  }
+
   // Fungsi helper privat untuk mengeksekusi penghapusan database & file fisik
   private async executeDeletePo(
     orderId: string,
