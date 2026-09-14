@@ -179,6 +179,13 @@ enum CashflowStatus {
   APPROVED
 }
 
+enum SampleStatus {
+  ORDER_SAMPLE_CREATE // Saat pesanan sampel dibuat
+  SENDING // Saat barang dikirim ke klien (Shipment berjalan)
+  RECEIVE // Saat klien menerima barang (Shipment Arrived)
+  RETURNED // Saat barang sudah dikembalikan ke gudang
+}
+
 // ===============================================
 // USER TABLE
 // ===============================================
@@ -342,21 +349,22 @@ model PurchaseChannel {
 }
 
 model Client {
-  id                String             @id @default(uuid())
-  custCode          String             @unique
+  id                String                 @id @default(uuid())
+  custCode          String                 @unique
   type              ClientType
-  userId            String?            @unique
-  user              User?              @relation(fields: [userId], references: [id])
-  joinedDate        DateTime           @default(now())
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-  status            ClientStatus       @default(OFFICIAL)
+  userId            String?                @unique
+  user              User?                  @relation(fields: [userId], references: [id])
+  joinedDate        DateTime               @default(now())
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  status            ClientStatus           @default(OFFICIAL)
   b2b               ClientB2B?
   b2c               ClientB2C?
   orders            Order[]
   invoices          Invoice[]
   quotations        Quotation[]
   replacementOrders ReplacementOrder[]
+  sampleHistories   SampleProductHistory[]
 
   @@map("clients")
 }
@@ -502,6 +510,7 @@ model Product {
   exchangeRate         Decimal?                @default(1.0)
   additionalFee        Decimal?                @default(0.0)
   foreignPriceAdjuster Float?                  @default(0)
+  isSample             Boolean                 @default(false)
   isCustom             Boolean                 @default(false)
   isMadeByOrder        Boolean                 @default(false)
   materialTypeId       String?
@@ -535,6 +544,7 @@ model Product {
   cartItems            CartItem[]
   webOrderItems        WebOrderItem[]
   purchaseItems        PurchaseOrderItem[]
+  sampleHistories      SampleProductHistory[]
 
   mockupAreaX      Float?
   mockupAreaY      Float?
@@ -1156,57 +1166,82 @@ model SalesBank {
 // ===============================================
 
 model Order {
-  id                   String                @id @default(uuid())
-  orderNumber          String?               @unique
+  id                   String                 @id @default(uuid())
+  orderNumber          String?                @unique
   dateOrder            DateTime
   salesCategory        SalesCategory
   clientPoNumber       String?
-  remark               String?               @db.Text
-  currencyCode         String                @default("IDR")
-  currency             Currency              @relation(fields: [currencyCode], references: [code])
+  remark               String?                @db.Text
+  currencyCode         String                 @default("IDR")
+  currency             Currency               @relation(fields: [currencyCode], references: [code])
   referenceQuotationId String?
-  referenceQuotation   Quotation?            @relation("OrderSourcedFromQuotation", fields: [referenceQuotationId], references: [id])
+  referenceQuotation   Quotation?             @relation("OrderSourcedFromQuotation", fields: [referenceQuotationId], references: [id])
   referenceSampleId    String?
-  referenceSample      Order?                @relation("SampleToSalesOrder", fields: [referenceSampleId], references: [id])
-  resultingOrders      Order[]               @relation("SampleToSalesOrder")
+  referenceSample      Order?                 @relation("SampleToSalesOrder", fields: [referenceSampleId], references: [id])
+  resultingOrders      Order[]                @relation("SampleToSalesOrder")
   clientId             String
-  shippingAddress      String                @db.Text
+  shippingAddress      String                 @db.Text
   totalAmount          Decimal
-  status               OrderStatus           @default(PENDING)
-  webOrderId           String?               @unique
-  webOrder             WebOrder?             @relation(fields: [webOrderId], references: [id])
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
+  status               OrderStatus            @default(PENDING)
+  webOrderId           String?                @unique
+  webOrder             WebOrder?              @relation(fields: [webOrderId], references: [id])
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
   clientB2BPICId       String?
-  pic                  ClientB2BPIC?         @relation(fields: [clientB2BPICId], references: [id])
+  pic                  ClientB2BPIC?          @relation(fields: [clientB2BPICId], references: [id])
   purchaseChannelId    String?
-  purchaseChannel      PurchaseChannel?      @relation(fields: [purchaseChannelId], references: [id])
-  client               Client                @relation(fields: [clientId], references: [id])
+  purchaseChannel      PurchaseChannel?       @relation(fields: [purchaseChannelId], references: [id])
+  client               Client                 @relation(fields: [clientId], references: [id])
   createdById          String?
-  createdBy            User?                 @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  createdBy            User?                  @relation("OrderCreatedBy", fields: [createdById], references: [id])
   updatedById          String?
-  updatedBy            User?                 @relation("OrderUpdatedBy", fields: [updatedById], references: [id])
+  updatedBy            User?                  @relation("OrderUpdatedBy", fields: [updatedById], references: [id])
   products             OrderProduct[]
   cashflows            Cashflow[]
   productionTrackers   ProductionTracker[]
   shipments            Shipment[]
   invoices             Invoice[]
   deliveryNotes        DeliveryNote[]
-  quotations           Quotation[]           @relation("OrderQuotations")
+  quotations           Quotation[]            @relation("OrderQuotations")
   cashflowSummary      CashflowSummary[]
   sampleFollowUps      OrderSampleFollowUp[]
   purchaseOrderItems   PurchaseOrderItem[]
+  sampleHistories      SampleProductHistory[]
   warrantyDays         Int?
   warranties           OrderWarranty[]
-  user                 User?                 @relation(fields: [userId], references: [id])
+  user                 User?                  @relation(fields: [userId], references: [id])
   userId               String?
-  sales                Sales?                @relation(fields: [salesId], references: [id])
+  sales                Sales?                 @relation(fields: [salesId], references: [id])
   salesId              String?
   whatsappMessages     WhatsappMessage[]
-  replacementOrders    ReplacementOrder[]    @relation("OrderToReplacement")
+  replacementOrders    ReplacementOrder[]     @relation("OrderToReplacement")
   clientPurchaseOrder  ClientPurchaseOrder?
 
   @@map("orders")
+}
+
+// ===============================================
+// SAMPLE PRODUCT TRACKING
+// ===============================================
+
+model SampleProductHistory {
+  id        String       @id @default(uuid())
+  productId String // ID produk yang dijadikan sampel
+  orderId   String // ID Order (Tipe SAMPLE) yang meminjamkan produk
+  clientId  String // ID Client (untuk memudahkan query tanpa harus join jauh ke Order)
+  status    SampleStatus
+  date      DateTime     @default(now()) // Waktu kejadian
+  notes     String?      @db.Text
+
+  // Relasi
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  client  Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sample_product_histories")
 }
 
 model ClientPurchaseOrder {

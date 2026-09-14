@@ -66,6 +66,7 @@ import { HeroRouter } from "./modules/admin/content/hero/hero.router";
 import { PolicyRouter } from "./modules/admin/content/policy/policy.router";
 import { PortfolioRouter } from "./modules/admin/content/portfolio/portfolio.router";
 import { AppSettingRouter } from "./modules/admin/content/setting/setting.router";
+import { SampleHistoryRouter } from "./modules/admin/sampleHistory/sampleHistory.router";
 import { AuthWebClientRouter } from "./modules/web-clients/auth-client/auth-client.router";
 import { CartRouter } from "./modules/web-clients/cart/cart.router";
 import { CustomerProfileRouter } from "./modules/web-clients/customer-profile/customer-profile.router";
@@ -172,6 +173,7 @@ export default class App {
     const whatsappRouter = container.resolve(WhatsappRouter);
     const replacementOrderRouter = container.resolve(ReplacementOrderRouter);
     const trackingRouter = container.resolve(TrackingRouter);
+    const sampleHistoryRouter = container.resolve(SampleHistoryRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -250,6 +252,7 @@ export default class App {
     this.app.use("/whatsapp", whatsappRouter.getRouter());
     this.app.use("/replacement-orders", replacementOrderRouter.getRouter());
     this.app.use("/tracking", trackingRouter.getRouter());
+    this.app.use("/sample-history", sampleHistoryRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

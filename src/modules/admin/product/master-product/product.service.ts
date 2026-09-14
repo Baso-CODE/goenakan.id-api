@@ -266,6 +266,7 @@ export class ProductService {
                 ? data.additionalFee.toString()
                 : null,
             isCustom: data.isCustom,
+            isSample: data.isSample || false,
             isMadeByOrder: data.isMadeByOrder || false,
             isActive:
               data.isActive !== undefined
@@ -588,6 +589,14 @@ export class ProductService {
     if (data.isCustom !== undefined) {
       updateData.isCustom = data.isCustom;
       if (data.isCustom === true) updateData.stock = 0;
+    }
+
+    // ✨ TAMBAHAN BARU: Update nilai isSample jika dikirim dari frontend
+    if (data.isSample !== undefined) {
+      updateData.isSample =
+        typeof data.isSample === "string"
+          ? data.isSample === "true"
+          : Boolean(data.isSample);
     }
 
     if (data.isMadeByOrder !== undefined) {
