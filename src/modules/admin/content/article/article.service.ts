@@ -41,7 +41,6 @@ export class ArticleService {
   // =========================================================================
   // 2. CREATE ARTICLE (DENGAN UPLOAD COVER IMAGE, MOBILE IMAGE & TAGS)
   // =========================================================================
-
   async createArticle(
     data: CreateArticleDTO,
     authorId: string,
@@ -756,31 +755,46 @@ export class ArticleService {
     search?: string;
     categoryName?: string;
     sort?: "newest" | "older";
+    locale?: string;
   }) {
     const where: any = {
       published: true,
     };
 
+    // ✨ LOGIKA PENCARIAN (Mencari di judul ID maupun EN)
     if (query.search) {
-      where.title = { contains: query.search, mode: "insensitive" };
+      where.OR = [
+        { title_id: { contains: query.search } },
+        { title_en: { contains: query.search } },
+        // Opsional: Kamu bisa membuka komentar di bawah jika ingin pencarian juga mengecek isi konten
+        // { content_id: { contains: query.search, } },
+        // { content_en: { contains: query.search, } },
+      ];
     }
 
-    if (query.categoryName && query.categoryName !== "All posts") {
+    // Filter Kategori (Jika ada)
+    if (
+      query.categoryName &&
+      query.categoryName !== "All posts" &&
+      query.categoryName !== "Semua Postingan"
+    ) {
+      // Kita gunakan OR karena kategori yang dikirim dari frontend bisa berupa bahasa Inggris atau Indonesia
       where.category = {
-        name: query.categoryName,
+        OR: [{ name_id: query.categoryName }, { name_en: query.categoryName }],
       };
     }
 
+    // Hitung total data untuk keperluan pagination (meta.hasNext)
     const count = await this.prisma.article.count({ where });
 
-    // Logika Sorting
     const orderBy: any = {};
     if (query.sort === "older") {
       orderBy.publishedAt = "asc";
     } else {
-      orderBy.publishedAt = "desc"; // Default "newest"
+      orderBy.publishedAt = "desc";
     }
 
+    // Ambil data dari database dengan paginasi
     const data = await this.prisma.article.findMany({
       where,
       skip: (Number(query.page || 1) - 1) * Number(query.take || 6),

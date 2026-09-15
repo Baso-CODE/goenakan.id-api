@@ -30,6 +30,8 @@ export class PortfolioRouter {
     // GET /api/portfolios/public (Untuk Landing Page)
     this.router.get("/public", this.portfolioController.getPublicPortfolios);
 
+    // TAMBAHKAN INI: GET /api/portfolios/list (Untuk Global Search & Paginasi)
+    this.router.get("/list", this.portfolioController.getPortfolioListPublic);
     // ==========================================
     // 🛡️ GATEKEEPER LEVEL ROUTER
     // Pasang pelindung token dan permission dinamis di sini satu kali saja.

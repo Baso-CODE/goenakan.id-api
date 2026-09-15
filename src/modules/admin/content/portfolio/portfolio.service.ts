@@ -351,4 +351,71 @@ export class PortfolioService {
       throw new ApiError("Gagal mengambil data portfolio publik.", 500);
     }
   }
+
+  // ====================================================================
+  // 7. GET PORTFOLIO LIST PUBLIC (Untuk Halaman Search & Pagination)
+  // ====================================================================
+  async getPortfolioListPublic(query: {
+    page?: number;
+    take?: number;
+    search?: string;
+    locale?: string;
+  }) {
+    const where: any = {
+      isActive: true, // Hanya tampilkan portofolio yang aktif
+    };
+
+    // ✨ Logika Pencarian: Cari di judul Indonesia, judul Inggris, atau nama klien
+    if (query.search) {
+      where.OR = [
+        { title_id: { contains: query.search } },
+        { title_en: { contains: query.search } },
+        { clientName: { contains: query.search } },
+      ];
+    }
+
+    // Hitung total data untuk keperluan pagination (Tombol Load More)
+    const count = await this.prisma.portfolio.count({ where });
+
+    // Ambil data berdasarkan halaman (page) dan batasan (take)
+    const data = await this.prisma.portfolio.findMany({
+      where,
+      skip: (Number(query.page || 1) - 1) * Number(query.take || 6),
+      take: Number(query.take || 6),
+      orderBy: { displayOrder: "asc" }, // Urutkan sesuai aturan urutan display
+      select: {
+        id: true,
+        title_id: true,
+        title_en: true,
+        clientName: true,
+        image: true,
+        slug: true,
+        description: true,
+        description_en: true,
+      },
+    });
+
+    // Mapping hasil data agar properti 'title' menyesuaikan bahasa (locale)
+    const mappedData = data.map((item) => ({
+      id: item.id,
+      title:
+        query.locale === "en" && item.title_en ? item.title_en : item.title_id,
+      description:
+        query.locale === "en" && item.description_en
+          ? item.description_en
+          : item.description,
+      clientName: item.clientName,
+      image: item.image,
+      slug: item.slug,
+    }));
+
+    // Buat data meta (informasi halaman)
+    const meta = this.pagination.generateMeta({
+      count,
+      page: Number(query.page || 1),
+      take: Number(query.take || 6),
+    });
+
+    return { data: mappedData, meta };
+  }
 }

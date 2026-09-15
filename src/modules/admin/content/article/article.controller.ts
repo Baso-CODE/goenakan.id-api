@@ -193,27 +193,28 @@ export class ArticleController {
     }
   };
 
-  // === GET PUBLIC ARTICLE LIST ===
-  getArticleList = async (req: Request, res: Response, next: NextFunction) => {
+  // === GET ARTICLE LIST (PUBLIC/FRONTEND) ===
+  getArticleListPublic = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
     try {
-      const { page, take, search, categoryName, sort } = req.query;
+      // 1. Ambil semua parameter yang dikirim dari frontend melalui URL query (?search=...&page=...)
+      const { page, take, search, categoryName, sort, locale } = req.query;
 
-      const queryParams = {
-        page: page ? parseInt(page as string, 10) : undefined,
-        take: take ? parseInt(take as string, 10) : undefined,
+      // 2. Lempar data tersebut ke Service
+      const articles = await this.articleService.getArticleListPublic({
+        page: page ? Number(page) : 1,
+        take: take ? Number(take) : 6, // Default ambil 6 data (sesuai kebutuhan frontend)
         search: search as string,
         categoryName: categoryName as string,
         sort: sort as "newest" | "older",
-      };
-
-      const result =
-        await this.articleService.getArticleListPublic(queryParams);
-
-      res.status(200).json({
-        message: "Public articles fetched successfully",
-        data: result.data,
-        meta: result.meta,
+        locale: locale as string,
       });
+
+      // 3. Kirim hasilnya kembali ke frontend
+      res.status(200).json(articles);
     } catch (error) {
       next(error);
     }

@@ -109,7 +109,7 @@ export class ProductService {
       validateTiers(data.priceTiers, "Base Product");
     }
 
-    //  TAMBAHAN BARU: Validasi Price Tiers untuk setiap Varian
+    // --- Validasi Price Tiers untuk setiap Varian ---
     if (data.variantImagesMetadata && data.variantImagesMetadata.length > 0) {
       data.variantImagesMetadata.forEach((meta) => {
         if (meta.priceTiers && meta.priceTiers.length > 0) {
@@ -117,6 +117,21 @@ export class ProductService {
         }
       });
     }
+
+    // ============ TRANSLATE DESCRIPTION ============
+    // Kita lakukan terjemahan di luar transaksi database agar lebih aman dan cepat
+    let translatedDescriptionEn: string | null = null;
+    if (data.description) {
+      try {
+        const res = await translate(data.description, { to: "en" });
+        translatedDescriptionEn = res.text;
+      } catch (error) {
+        console.error("Gagal menerjemahkan deskripsi produk:", error);
+        // Jika gagal, biarkan menjadi null agar proses pembuatan produk tetap berjalan
+        translatedDescriptionEn = null;
+      }
+    }
+    // ===============================================
 
     const {
       attributes = [],
@@ -246,10 +261,10 @@ export class ProductService {
         const product = await tx.product.create({
           data: {
             name: data.name,
-            name_en: null, // ✨ DIUBAH: Dikosongkan karena tidak ada auto-translate
+            name_en: null,
             sku: data.sku,
             description: data.description,
-            description_en: null, // ✨ DIUBAH: Dikosongkan karena tidak ada auto-translate
+            description_en: translatedDescriptionEn, // <-- Dimasukkan di sini
             basePrice: data.basePrice,
             foreignPrice:
               data.foreignPrice !== undefined && data.foreignPrice !== null
@@ -436,7 +451,6 @@ export class ProductService {
                   })),
                 },
               },
-              //  TAMBAHAN BARU: Memasukkan Price Tiers Varian jika ada
               priceTiers:
                 meta?.priceTiers && meta.priceTiers.length > 0
                   ? {
@@ -570,17 +584,35 @@ export class ProductService {
           : existing.materialTypeId,
     };
 
-    // ✨ DIUBAH: Jika nama diubah, ubah namanya dan set versi Inggris ke null
+    // ✨ Jika nama diubah, ubah namanya dan set versi Inggris ke null
+    // (Bisa juga ditambahkan auto-translate jika kamu butuh ke depannya)
     if (data.name !== undefined) {
       updateData.name = data.name;
       updateData.name_en = null;
     }
 
-    // ✨ DIUBAH: Jika deskripsi diubah, ubah deskripsinya dan set versi Inggris ke null
+    // ====================================================================
+    // ✨ UPDATE & TRANSLATE DESCRIPTION
+    // ====================================================================
     if (data.description !== undefined) {
       updateData.description = data.description;
-      updateData.description_en = null;
+
+      // Jika deskripsi tidak kosong (ada isinya), kita translate
+      if (data.description && data.description.trim() !== "") {
+        try {
+          const res = await translate(data.description, { to: "en" });
+          updateData.description_en = res.text;
+        } catch (error) {
+          console.error("Gagal menerjemahkan ulang deskripsi produk:", error);
+          // Fallback jika API error agar update tetap berhasil
+          updateData.description_en = null;
+        }
+      } else {
+        // Jika admin mengosongkan deskripsi, versi Inggris ikut dikosongkan
+        updateData.description_en = null;
+      }
     }
+    // ====================================================================
 
     if (data.sku !== undefined) updateData.sku = data.sku;
     if (data.basePrice !== undefined) updateData.basePrice = data.basePrice;
@@ -590,7 +622,6 @@ export class ProductService {
       if (data.isCustom === true) updateData.stock = 0;
     }
 
-    // ✨ TAMBAHAN BARU: Update nilai isSample jika dikirim dari frontend
     if (data.isSample !== undefined) {
       updateData.isSample =
         typeof data.isSample === "string"

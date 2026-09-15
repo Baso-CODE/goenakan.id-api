@@ -17,7 +17,7 @@ export class PortfolioController {
     next: NextFunction,
   ) => {
     try {
-      // ✨ Ambil parameter lang dari query (default ke 'id')
+      // Ambil parameter lang dari query (default ke 'id')
       const { lang } = req.query;
       const targetLang = (lang as string) || "id";
 
@@ -123,6 +123,28 @@ export class PortfolioController {
         message: "Portfolio berhasil dihapus",
         data: result,
       });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // --- GET PORTFOLIO LIST (Untuk Halaman Global Search / List dengan Paginasi) ---
+  getPortfolioListPublic = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { page, take, search, locale } = req.query;
+
+      const result = await this.portfolioService.getPortfolioListPublic({
+        page: page ? Number(page) : 1,
+        take: take ? Number(take) : 6, // Ambil 6 data sekaligus (sesuai frontend)
+        search: search as string,
+        locale: (locale as string) || "id",
+      });
+
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

@@ -32,7 +32,7 @@ export class ArticleRouter {
     // ==========================================
 
     // List artikel untuk publik
-    this.router.get("/list", this.articleController.getArticleList);
+    this.router.get("/list", this.articleController.getArticleListPublic);
 
     // GET ARTICLE BY SLUG (Untuk Tampilan User/Frontend Publik)
     this.router.get("/slug/:slug", this.articleController.getArticleBySlug);
