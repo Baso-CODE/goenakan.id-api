@@ -580,19 +580,32 @@ model MaterialType {
 }
 
 model ProductSEO {
-  id              String  @id @default(uuid())
-  metaTitle       String?
-  metaDescription String?
-  keywords        String?
-  canonicalUrl    String?
+  id String @id @default(uuid())
 
-  ogTitle       String?
-  ogDescription String?
-  ogImage       String?
+  // Bahasa Indonesia
+  metaTitleId       String?
+  metaDescriptionId String?
+  keywordsId        String?
+  canonicalUrlId    String?
+  ogTitleId         String?
+  ogDescriptionId   String?
+  structuredDataId  String? @db.Text
 
-  structuredData String? @db.Text
-  productId      String  @unique
-  product        Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  // Bahasa Inggris
+  metaTitleEn       String?
+  metaDescriptionEn String?
+  keywordsEn        String?
+  canonicalUrlEn    String?
+  ogTitleEn         String?
+  ogDescriptionEn   String?
+  structuredDataEn  String? @db.Text
+
+  // Properti Universal
+  ogImage String?
+
+  // Relasi
+  productId String  @unique
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

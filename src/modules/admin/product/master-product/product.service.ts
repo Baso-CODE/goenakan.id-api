@@ -1,7 +1,6 @@
 import { translate } from "@vitalets/google-translate-api";
 import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
-
 import { ApiError } from "../../../../utils/api-error";
 import { SlugService } from "../../../../utils/genereateSlug";
 import { CloudinaryService } from "../../../cloudinary/cloudinary.service";
@@ -2920,7 +2919,7 @@ export class ProductService {
     return updatedVideo;
   }
 
-  // === UPSERT PRODUCT SEO (META TITLE, DESCRIPTION, KEYWORDS, DLL) ===
+  // === UPSERT PRODUCT SEO (AUTO TRANSLATE BILINGUAL) ===
   async upsertProductSEO(productId: string, data: ProductSeoDTO) {
     // 1. Validasi: Pastikan Produknya Ada
     const product = await this.prisma.product.findUnique({
@@ -2931,30 +2930,132 @@ export class ProductService {
       throw new ApiError(`Product with ID ${productId} not found`, 404);
     }
 
+    // 2. Ambil data SEO lama untuk membandingkan apakah ada perubahan
+    const existingSeo = await this.prisma.productSEO.findUnique({
+      where: { productId },
+    });
+
+    // 3. Fungsi pembantu untuk menerjemahkan otomatis secara cerdas
+    const getEnValue = async (
+      newIdText?: string,
+      newEnText?: string,
+      oldIdText?: string | null,
+      oldEnText?: string | null,
+    ) => {
+      // Jika admin sudah mengisi manual versi Inggris, utamakan inputan admin
+      if (newEnText && newEnText.trim() !== "") {
+        return newEnText;
+      }
+
+      // Jika teks Indonesia diisi DAN (teksnya berbeda dengan yang lama ATAU data baru)
+      if (newIdText && newIdText !== oldIdText) {
+        try {
+          const res = await translate(newIdText, { to: "en" });
+          return res.text;
+        } catch (error) {
+          console.error(
+            "Gagal menerjemahkan teks, memakai teks asli sebagai fallback:",
+            error,
+          );
+          return newIdText; // Fallback ke teks Indonesia jika API error
+        }
+      }
+
+      // Jika teks Indonesia tidak berubah dan admin tidak mengisi teks Inggris baru,
+      // kita pertahankan teks Inggris yang sudah ada di database sebelumnya.
+      return oldEnText || undefined;
+    };
+
+    // 4. Proses semua terjemahan secara paralel (bersamaan) agar lebih cepat
+    // Kita tidak menerjemahkan canonicalUrl dan structuredData karena itu berupa URL dan JSON
+    const [
+      metaTitleEn,
+      metaDescriptionEn,
+      keywordsEn,
+      ogTitleEn,
+      ogDescriptionEn,
+    ] = await Promise.all([
+      getEnValue(
+        data.metaTitleId,
+        data.metaTitleEn,
+        existingSeo?.metaTitleId,
+        existingSeo?.metaTitleEn,
+      ),
+      getEnValue(
+        data.metaDescriptionId,
+        data.metaDescriptionEn,
+        existingSeo?.metaDescriptionId,
+        existingSeo?.metaDescriptionEn,
+      ),
+      getEnValue(
+        data.keywordsId,
+        data.keywordsEn,
+        existingSeo?.keywordsId,
+        existingSeo?.keywordsEn,
+      ),
+      getEnValue(
+        data.ogTitleId,
+        data.ogTitleEn,
+        existingSeo?.ogTitleId,
+        existingSeo?.ogTitleEn,
+      ),
+      getEnValue(
+        data.ogDescriptionId,
+        data.ogDescriptionEn,
+        existingSeo?.ogDescriptionId,
+        existingSeo?.ogDescriptionEn,
+      ),
+    ]);
+
+    // 5. Simpan ke database menggunakan Upsert
     const seoData = await this.prisma.productSEO.upsert({
       where: {
         productId: productId,
       },
       create: {
         productId: productId,
-        metaTitle: data.metaTitle,
-        metaDescription: data.metaDescription,
-        keywords: data.keywords,
-        canonicalUrl: data.canonicalUrl,
-        ogTitle: data.ogTitle,
-        ogDescription: data.ogDescription,
+        // Data Bahasa Indonesia
+        metaTitleId: data.metaTitleId,
+        metaDescriptionId: data.metaDescriptionId,
+        keywordsId: data.keywordsId,
+        canonicalUrlId: data.canonicalUrlId,
+        ogTitleId: data.ogTitleId,
+        ogDescriptionId: data.ogDescriptionId,
+        structuredDataId: data.structuredDataId,
+
+        // Data Bahasa Inggris (Hasil Translate atau Input Manual)
+        metaTitleEn: metaTitleEn,
+        metaDescriptionEn: metaDescriptionEn,
+        keywordsEn: keywordsEn,
+        canonicalUrlEn: data.canonicalUrlEn,
+        ogTitleEn: ogTitleEn,
+        ogDescriptionEn: ogDescriptionEn,
+        structuredDataEn: data.structuredDataEn,
+
+        // Data Universal
         ogImage: data.ogImage,
-        structuredData: data.structuredData,
       },
       update: {
-        metaTitle: data.metaTitle,
-        metaDescription: data.metaDescription,
-        keywords: data.keywords,
-        canonicalUrl: data.canonicalUrl,
-        ogTitle: data.ogTitle,
-        ogDescription: data.ogDescription,
+        // Data Bahasa Indonesia
+        metaTitleId: data.metaTitleId,
+        metaDescriptionId: data.metaDescriptionId,
+        keywordsId: data.keywordsId,
+        canonicalUrlId: data.canonicalUrlId,
+        ogTitleId: data.ogTitleId,
+        ogDescriptionId: data.ogDescriptionId,
+        structuredDataId: data.structuredDataId,
+
+        // Data Bahasa Inggris (Hasil Translate atau Input Manual)
+        metaTitleEn: metaTitleEn,
+        metaDescriptionEn: metaDescriptionEn,
+        keywordsEn: keywordsEn,
+        canonicalUrlEn: data.canonicalUrlEn,
+        ogTitleEn: ogTitleEn,
+        ogDescriptionEn: ogDescriptionEn,
+        structuredDataEn: data.structuredDataEn,
+
+        // Data Universal
         ogImage: data.ogImage,
-        structuredData: data.structuredData,
       },
     });
 
