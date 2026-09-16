@@ -66,7 +66,9 @@ import { HeroRouter } from "./modules/admin/content/hero/hero.router";
 import { PolicyRouter } from "./modules/admin/content/policy/policy.router";
 import { PortfolioRouter } from "./modules/admin/content/portfolio/portfolio.router";
 import { AppSettingRouter } from "./modules/admin/content/setting/setting.router";
+import { SuccessStoryRouter } from "./modules/admin/content/success-story/successStory.router";
 import { SampleHistoryRouter } from "./modules/admin/sampleHistory/sampleHistory.router";
+import { UploadRouter } from "./modules/upload/upload.router";
 import { AuthWebClientRouter } from "./modules/web-clients/auth-client/auth-client.router";
 import { CartRouter } from "./modules/web-clients/cart/cart.router";
 import { CustomerProfileRouter } from "./modules/web-clients/customer-profile/customer-profile.router";
@@ -174,6 +176,8 @@ export default class App {
     const replacementOrderRouter = container.resolve(ReplacementOrderRouter);
     const trackingRouter = container.resolve(TrackingRouter);
     const sampleHistoryRouter = container.resolve(SampleHistoryRouter);
+    const sucessStoryRouter = container.resolve(SuccessStoryRouter);
+    const uploadRouter = container.resolve(UploadRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -253,6 +257,8 @@ export default class App {
     this.app.use("/replacement-orders", replacementOrderRouter.getRouter());
     this.app.use("/tracking", trackingRouter.getRouter());
     this.app.use("/sample-history", sampleHistoryRouter.getRouter());
+    this.app.use("/success-story", sucessStoryRouter.getRouter());
+    this.app.use("/uploads", uploadRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

@@ -365,6 +365,7 @@ model Client {
   quotations        Quotation[]
   replacementOrders ReplacementOrder[]
   sampleHistories   SampleProductHistory[]
+  successStories    SuccessStory[]
 
   @@map("clients")
 }
@@ -2394,6 +2395,40 @@ model HeroBannerProduct {
   updatedAt     DateTime @updatedAt
 
   @@map("hero_banners")
+}
+
+model SuccessStory {
+  id   String @id @default(uuid())
+  slug String @unique
+
+  // === Relasi ke Client ===
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  // === Teks Dwibahasa ===
+  titleId String
+  titleEn String?
+
+  sideContentHtmlId String  @db.Text
+  sideContentHtmlEn String? @db.Text
+
+  mainContentHtmlId String? @db.Text
+  mainContentHtmlEn String? @db.Text
+
+  // === Media ===
+  heroImageUrl      String
+  heroImagePublicId String?
+
+  media1Url      String?
+  media1PublicId String?
+
+  media2Url      String?
+  media2PublicId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("success_stories")
 }
 
 model WhatsappMessage {
