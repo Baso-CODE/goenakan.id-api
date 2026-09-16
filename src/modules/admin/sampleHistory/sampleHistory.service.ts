@@ -282,4 +282,146 @@ export class SampleHistoryService {
       },
     };
   }
+
+  // ====================================================================
+  // 5. GET ALL PRODUCT SAMPLES (Halaman Awal - List Produk Sampel)
+  // ====================================================================
+  async getAllSampleProducts(query: {
+    page?: number;
+    take?: number;
+    search?: string;
+  }) {
+    // Hanya ambil produk yang disetting sebagai sampel
+    const where: any = {
+      isSample: true,
+    };
+
+    // Filter Pencarian (Berdasarkan nama produk atau SKU)
+    if (query.search) {
+      const searchTerm = query.search.trim();
+      where.OR = [
+        { name: { contains: searchTerm } },
+        { sku: { contains: searchTerm } },
+      ];
+    }
+
+    // Eksekusi Query Database
+    const count = await this.prisma.product.count({ where });
+    const products = await this.prisma.product.findMany({
+      where,
+      skip: (Number(query.page || 1) - 1) * Number(query.take || 10),
+      take: Number(query.take || 10),
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        stock: true,
+        basePrice: true,
+        // Kita juga bisa menghitung total riwayat peminjaman sebagai info tambahan
+        _count: {
+          select: { sampleHistories: true },
+        },
+      },
+    });
+
+    // Generate Metadata Pagination
+    const meta = this.pagination.generateMeta({
+      count,
+      page: Number(query.page || 1),
+      take: Number(query.take || 10),
+    });
+
+    return { success: true, data: products, meta };
+  }
+
+  // ====================================================================
+  // 6. GET PRODUCT SAMPLE DETAIL (Detail SKU, History & Summary)
+  // ====================================================================
+  async getProductSampleDetail(productId: string) {
+    // 1. Cek apakah produk ada dan merupakan barang sampel
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        stock: true,
+        isSample: true,
+      },
+    });
+
+    if (!product) {
+      throw new ApiError("Produk tidak ditemukan", 404);
+    }
+    if (!product.isSample) {
+      throw new ApiError("Produk ini bukan merupakan barang sampel", 400);
+    }
+
+    // 2. Hitung Summary khusus untuk Produk/SKU ini
+    // Logika perhitungan disamakan dengan getSampleSummary yang sudah ada
+    const totalReturned = await this.prisma.sampleProductHistory.count({
+      where: { productId, status: "RETURNED" },
+    });
+
+    const totalSending = await this.prisma.sampleProductHistory.count({
+      where: { productId, status: "SENDING" },
+    });
+
+    const totalAtClient = await this.prisma.sampleProductHistory.count({
+      where: { productId, status: "RECEIVE" },
+    });
+
+    // 3. Ambil riwayat (history) peminjaman khusus untuk Produk ini
+    const histories = await this.prisma.sampleProductHistory.findMany({
+      where: { productId },
+      orderBy: { date: "desc" }, // Urutkan dari riwayat terbaru
+      include: {
+        order: { select: { id: true, orderNumber: true } },
+        client: {
+          include: {
+            b2b: { select: { companyName: true } },
+            b2c: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    // 4. Format data riwayat agar nama klien rapi seperti di getAllSampleHistory
+    const formattedHistory = histories.map((history) => {
+      let clientName = "-";
+      if (history.client?.b2b) {
+        clientName = history.client.b2b.companyName;
+      } else if (history.client?.b2c) {
+        clientName = history.client.b2c.name;
+      }
+
+      return {
+        id: history.id,
+        date: history.date,
+        status: history.status,
+        notes: history.notes || "-",
+        orderNumber: history.order?.orderNumber || "-",
+        clientName: clientName,
+      };
+    });
+
+    // 5. Kembalikan data sesuai permintaan PM
+    return {
+      success: true,
+      data: {
+        product: {
+          id: product.id,
+          name: product.name,
+          sku: product.sku,
+        },
+        summary: {
+          atWarehouse: totalReturned,
+          sending: totalSending,
+          atClient: totalAtClient,
+        },
+        history: formattedHistory,
+      },
+    };
+  }
 }
