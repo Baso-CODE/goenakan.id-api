@@ -1,3 +1,4 @@
+import { translate } from "@vitalets/google-translate-api";
 import { injectable } from "tsyringe";
 import { ApiError } from "../../../../utils/api-error";
 import { SlugService } from "../../../../utils/genereateSlug"; // ✨ Pastikan path ini sesuai
@@ -23,6 +24,33 @@ export class SuccessStoryService {
     private readonly pagination: PaginationService,
     private readonly slugService: SlugService,
   ) {}
+
+  // ====================================================================
+  // HELPER: FUNGSI TERJEMAHAN OTOMATIS
+  // ====================================================================
+  private async autoTranslate(
+    text: string | null | undefined,
+  ): Promise<string | null> {
+    // Jika teks kosong, langsung kembalikan null agar tidak membuang waktu
+    if (!text) return null;
+
+    try {
+      console.log("Menerjemahkan teks secara otomatis ke bahasa Inggris...");
+
+      // Memanggil fungsi translate dari library, dengan target bahasa Inggris ('en')
+      const response = await translate(text, { to: "en" });
+
+      // Mengembalikan teks hasil terjemahan
+      return response.text;
+    } catch (error) {
+      console.error("Gagal menerjemahkan teks:", error);
+
+      // JARING PENGAMAN:
+      // Jika Google Translate sedang bermasalah atau koneksi terputus,
+      // kita kembalikan teks aslinya (Bahasa Indonesia) agar data di database tidak kosong.
+      return text;
+    }
+  }
 
   // === GET ALL PUBLIC (Pagination 9 Item & Locale & Client Name) ===
   async getAllPublic(locale: string = "id", page: number = 1) {
@@ -212,9 +240,10 @@ export class SuccessStoryService {
     return story;
   }
 
+  // ====================================================================
   // === CREATE ===
+  // ====================================================================
   async create(data: CreateSuccessStoryDTO) {
-    // ⏱️ Stopwatch 1: Mulai hitung total waktu dari awal fungsi dipanggil
     console.time("⏱️ TOTAL_CREATE_DURATION");
 
     // 1. Validasi URL Hero Image
@@ -235,19 +264,23 @@ export class SuccessStoryService {
       ? this.cloudinary.extractPublicIdFromUrl(data.media2Url)
       : null;
 
-    // ⏱️ Stopwatch 2: Mulai hitung waktu khusus saat menyentuh Database
+    // ✨ 3. PROSES AUTO TRANSLATE DARI INDONESIA KE INGGRIS
+    const titleEn = await this.autoTranslate(data.titleId);
+    const sideContentHtmlEn = await this.autoTranslate(data.sideContentHtmlId);
+    const mainContentHtmlEn = await this.autoTranslate(data.mainContentHtmlId);
+
     console.time("💾 DB_EXECUTION_TIME");
 
-    // 3. Simpan langsung ke Prisma
+    // 4. Simpan langsung ke Prisma
     const result = await this.prisma.successStory.create({
       data: {
         slug: generatedSlug,
         titleId: data.titleId,
-        titleEn: data.titleEn,
+        titleEn: titleEn, // Hasil terjemahan
         sideContentHtmlId: data.sideContentHtmlId,
-        sideContentHtmlEn: data.sideContentHtmlEn,
+        sideContentHtmlEn: sideContentHtmlEn, // Hasil terjemahan
         mainContentHtmlId: data.mainContentHtmlId,
-        mainContentHtmlEn: data.mainContentHtmlEn,
+        mainContentHtmlEn: mainContentHtmlEn, // Hasil terjemahan
         client: {
           connect: {
             id: data.clientId,
@@ -262,20 +295,17 @@ export class SuccessStoryService {
       },
     });
 
-    // 🏁 Selesai hitung waktu database
     console.timeEnd("💾 DB_EXECUTION_TIME");
-
-    // 🏁 Selesai hitung total waktu fungsi
     console.timeEnd("⏱️ TOTAL_CREATE_DURATION");
 
     return result;
   }
+
+  // ====================================================================
   // === UPDATE ===
-  async update(
-    id: string,
-    data: UpdateSuccessStoryDTO,
-    files: SuccessStoryFiles,
-  ) {
+  // ====================================================================
+  // ✨ Parameter files dihapus, karena frontend hanya mengirim data URL
+  async update(id: string, data: UpdateSuccessStoryDTO) {
     const existing = await this.prisma.successStory.findUnique({
       where: { id },
     });
@@ -290,54 +320,88 @@ export class SuccessStoryService {
       media2PublicId,
     } = existing;
 
-    // ✨ Jika Admin mengirimkan titleId baru, buat slug baru. Jika tidak, gunakan slug lama.
+    // 1. Perbarui Slug jika judul berubah
     let updatedSlug = existing.slug;
     if (data.titleId && data.titleId !== existing.titleId) {
       updatedSlug = this.slugService.create(data.titleId);
     }
 
-    const safeRemove = async (url: string | null) => {
-      if (url)
+    // Helper untuk menghapus file lama di Cloudinary berdasarkan Public ID
+    const safeRemove = async (publicId: string | null) => {
+      if (publicId) {
         try {
-          await this.cloudinary.remove(url);
+          await this.cloudinary.remove(publicId);
         } catch (e) {
-          console.error("Error delete:", e);
+          console.error(
+            `Gagal menghapus file lama (${publicId}) di Cloudinary:`,
+            e,
+          );
         }
+      }
     };
 
-    if (files.heroImage) {
-      await safeRemove(existing.heroImageUrl);
-      const res = await this.cloudinary.upload(files.heroImage, {
-        folder: "success-stories",
-        resource_type: "image",
-      });
-      heroImageUrl = res.secure_url;
-      heroImagePublicId = res.public_id;
-    }
-    if (files.media1) {
-      await safeRemove(existing.media1Url);
-      const res = await this.cloudinary.upload(files.media1, {
-        folder: "success-stories",
-        resource_type: "auto",
-      });
-      media1Url = res.secure_url;
-      media1PublicId = res.public_id;
-    }
-    if (files.media2) {
-      await safeRemove(existing.media2Url);
-      const res = await this.cloudinary.upload(files.media2, {
-        folder: "success-stories",
-        resource_type: "auto",
-      });
-      media2Url = res.secure_url;
-      media2PublicId = res.public_id;
+    // Jika frontend mengirim URL Hero baru yang berbeda dengan yang ada di database
+    if (data.heroImageUrl && data.heroImageUrl !== existing.heroImageUrl) {
+      await safeRemove(existing.heroImagePublicId); // Hapus file lama di cloud
+      heroImageUrl = data.heroImageUrl; // Simpan URL baru
+      heroImagePublicId = this.cloudinary.extractPublicIdFromUrl(
+        data.heroImageUrl,
+      );
     }
 
+    // Lakukan hal yang sama untuk Media 1
+    if (data.media1Url !== undefined && data.media1Url !== existing.media1Url) {
+      await safeRemove(existing.media1PublicId);
+      media1Url = data.media1Url;
+      media1PublicId = data.media1Url
+        ? this.cloudinary.extractPublicIdFromUrl(data.media1Url)
+        : null;
+    }
+
+    // Lakukan hal yang sama untuk Media 2
+    if (data.media2Url !== undefined && data.media2Url !== existing.media2Url) {
+      await safeRemove(existing.media2PublicId);
+      media2Url = data.media2Url;
+      media2PublicId = data.media2Url
+        ? this.cloudinary.extractPublicIdFromUrl(data.media2Url)
+        : null;
+    }
+
+    // ✨ 3. PROSES AUTO TRANSLATE UNTUK UPDATE
+    // Terjemahkan ulang jika ada perubahan teks bahasa Indonesia
+    let titleEn = existing.titleEn;
+    if (data.titleId && data.titleId !== existing.titleId) {
+      titleEn = await this.autoTranslate(data.titleId);
+    }
+
+    let sideContentHtmlEn = existing.sideContentHtmlEn;
+    if (
+      data.sideContentHtmlId !== undefined &&
+      data.sideContentHtmlId !== existing.sideContentHtmlId
+    ) {
+      sideContentHtmlEn = await this.autoTranslate(data.sideContentHtmlId);
+    }
+
+    let mainContentHtmlEn = existing.mainContentHtmlEn;
+    if (
+      data.mainContentHtmlId !== undefined &&
+      data.mainContentHtmlId !== existing.mainContentHtmlId
+    ) {
+      mainContentHtmlEn = await this.autoTranslate(data.mainContentHtmlId);
+    }
+
+    // 4. Update data ke database
     return await this.prisma.successStory.update({
       where: { id },
       data: {
-        ...data,
-        slug: updatedSlug, // ✨ Perbarui slug (jika titleId berubah)
+        titleId: data.titleId,
+        titleEn: titleEn,
+        clientId: data.clientId,
+        sideContentHtmlId: data.sideContentHtmlId,
+        sideContentHtmlEn: sideContentHtmlEn,
+        mainContentHtmlId: data.mainContentHtmlId,
+        mainContentHtmlEn: mainContentHtmlEn,
+        slug: updatedSlug,
         heroImageUrl,
         heroImagePublicId,
         media1Url,
@@ -347,7 +411,6 @@ export class SuccessStoryService {
       },
     });
   }
-
   // === DELETE ===
   async delete(id: string) {
     const existing = await this.prisma.successStory.findUnique({

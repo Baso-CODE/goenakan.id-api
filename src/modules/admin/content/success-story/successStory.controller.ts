@@ -4,7 +4,7 @@ import {
   CreateSuccessStoryDTO,
   UpdateSuccessStoryDTO,
 } from "./dto/successStory.dto";
-import { SuccessStoryFiles, SuccessStoryService } from "./successStory.service";
+import { SuccessStoryService } from "./successStory.service";
 
 @injectable()
 export class SuccessStoryController {
@@ -100,17 +100,8 @@ export class SuccessStoryController {
     try {
       const { id } = req.params;
       const body = req.body as UpdateSuccessStoryDTO;
+      const result = await this.service.update(id, body);
 
-      const reqFiles = req.files as {
-        [fieldname: string]: Express.Multer.File[];
-      };
-      const files: SuccessStoryFiles = {
-        heroImage: reqFiles?.heroImage?.[0],
-        media1: reqFiles?.media1?.[0],
-        media2: reqFiles?.media2?.[0],
-      };
-
-      const result = await this.service.update(id, body, files);
       res.status(200).json(result);
     } catch (error) {
       next(error);

@@ -3,31 +3,23 @@ import { IsNotEmpty, IsOptional, IsString } from "class-validator";
 export class CreateSuccessStoryDTO {
   @IsNotEmpty()
   @IsString()
-  clientName!: string;
+  clientId!: string;
 
   @IsNotEmpty()
   @IsString()
   titleId!: string;
 
-  @IsOptional()
-  @IsString()
-  clientId?: string;
-
-  @IsString()
   @IsNotEmpty()
+  @IsString()
   heroImageUrl!: string;
 
-  @IsString()
   @IsOptional()
+  @IsString()
   media1Url?: string;
 
-  @IsString()
   @IsOptional()
+  @IsString()
   media2Url?: string;
-
-  @IsOptional()
-  @IsString()
-  titleEn?: string;
 
   @IsNotEmpty()
   @IsString()
@@ -35,25 +27,13 @@ export class CreateSuccessStoryDTO {
 
   @IsOptional()
   @IsString()
-  sideContentHtmlEn?: string;
-
-  @IsOptional()
-  @IsString()
   mainContentHtmlId?: string;
-
-  @IsOptional()
-  @IsString()
-  mainContentHtmlEn?: string;
 }
 
 export class UpdateSuccessStoryDTO {
   @IsOptional()
   @IsString()
-  clientName?: string;
-
-  @IsNotEmpty()
-  @IsString()
-  clientId!: string;
+  clientId?: string;
 
   @IsOptional()
   @IsString()
@@ -61,7 +41,15 @@ export class UpdateSuccessStoryDTO {
 
   @IsOptional()
   @IsString()
-  titleEn?: string;
+  heroImageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  media1Url?: string;
+
+  @IsOptional()
+  @IsString()
+  media2Url?: string;
 
   @IsOptional()
   @IsString()
@@ -69,13 +57,5 @@ export class UpdateSuccessStoryDTO {
 
   @IsOptional()
   @IsString()
-  sideContentHtmlEn?: string;
-
-  @IsOptional()
-  @IsString()
   mainContentHtmlId?: string;
-
-  @IsOptional()
-  @IsString()
-  mainContentHtmlEn?: string;
 }

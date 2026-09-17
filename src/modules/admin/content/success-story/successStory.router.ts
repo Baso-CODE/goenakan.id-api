@@ -65,11 +65,9 @@ export class SuccessStoryRouter {
 
     this.router.patch(
       "/:id",
-      uploadFields,
       validateBody(UpdateSuccessStoryDTO),
       this.controller.update,
     );
-
     this.router.delete("/:id", this.controller.delete);
   };
 
