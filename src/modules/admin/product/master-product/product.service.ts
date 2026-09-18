@@ -4016,11 +4016,12 @@ export class ProductService {
         throw new Error("Product not found");
       }
 
-      // 2. Ambil produk lain di kategori yang sama
+      // 2. Ambil produk lain di kategori yang sama dan berstatus AKTIF
       const relatedRaw = await this.prisma.product.findMany({
         where: {
           categoryId: targetProduct.categoryId,
           id: { not: targetProduct.id },
+          isActive: true, // ✨ PERUBAHAN: Hanya ambil produk yang statusnya aktif
         },
         take: 10,
         orderBy: { createdAt: "desc" },
@@ -4045,7 +4046,7 @@ export class ProductService {
           bulkPrice = Number(cheapestTier.price);
         }
 
-        // ✨ PERUBAHAN: Jika gambar ada ambil URL-nya, jika tidak ada kembalikan null
+        // Jika gambar ada ambil URL-nya, jika tidak ada kembalikan null
         const imageUrl = p.images.length > 0 ? p.images[0].url : null;
 
         return {
