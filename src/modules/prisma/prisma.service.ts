@@ -16,7 +16,10 @@ export class PrismaService extends PrismaClient {
 
     super({
       adapter: adapter,
-      log: ["query", "info", "warn", "error"],
+      log:
+        process.env.NODE_ENV === "production"
+          ? ["error"]
+          : ["warn", "error"],
     });
 
     this.setupShutdownHandler();

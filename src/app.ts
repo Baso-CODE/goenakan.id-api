@@ -1,3 +1,4 @@
+import compression from "compression";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import "dotenv/config";
@@ -89,6 +90,8 @@ export default class App {
   }
 
   private configure(): void {
+    this.app.set("trust proxy", 1);
+    this.app.use(compression());
     this.app.use(helmet());
 
     this.app.use(globalLimiter);
