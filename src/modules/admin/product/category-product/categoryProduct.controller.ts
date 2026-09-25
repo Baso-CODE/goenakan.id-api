@@ -138,16 +138,10 @@ export class ProductCategoryController {
     next: NextFunction,
   ) => {
     try {
-      const lang =
-        (req.headers["x-language"] as string) ||
-        (req.headers["accept-language"] as string) ||
-        "id";
+      const lang = (req.query.lang as string) || "id";
 
       const result =
         await this.productCategoryService.getPublicCategories(lang);
-
-      res.setHeader("Vary", "x-language");
-      res.setHeader("Cache-Control", "public, s-maxage=3600");
 
       res.status(200).json({
         success: true,

@@ -107,7 +107,7 @@ export class ProductController {
         }
       }
 
-      console.log("Target Currency hasil kalkulasi:", targetCurrency);
+      // console.log("Target Currency hasil kalkulasi:", targetCurrency);
 
       // Teruskan parameter beserta targetCurrency dan lang ke Service
       const products = await this.productService.getAllProductsPublic({

@@ -3460,7 +3460,11 @@ export class ProductService {
           category: true,
           itemCategory: true,
           itemName: true,
-          images: { take: 1, orderBy: { sortOrder: "asc" } },
+          // ✨ UBAH 1: Memprioritaskan gambar dengan isFeatured = true
+          images: {
+            take: 1,
+            orderBy: [{ isFeatured: "desc" }, { sortOrder: "asc" }],
+          },
           orderProducts: { select: { quantity: true } },
           priceTiers: { orderBy: { minQuantity: "asc" } },
         },
@@ -3533,10 +3537,8 @@ export class ProductService {
           calculatedBulkPrice + calculatedBulkPrice * (activeAdjuster / 100);
       }
 
-      const imageUrl =
-        product.images.length > 0
-          ? product.images[0].url
-          : "/images/placeholder.jpg";
+      // ✨ UBAH 2: Menghapus fallback /images/placeholder.jpg dan mengembalikan null
+      const imageUrl = product.images.length > 0 ? product.images[0].url : null;
 
       return {
         id: product.id,
@@ -3719,6 +3721,7 @@ export class ProductService {
       throw new Error("Failed to fetch best seller products");
     }
   }
+
   // === GET PRODUCT BY SLUG (PUBLIC / CLIENT PAGE) ===
   async getProductBySlugPublic(
     slug: string,
@@ -4048,6 +4051,7 @@ export class ProductService {
       throw error;
     }
   }
+
   // === GET RELATED PRODUCTS (PUBLIC) ===
   async getRelatedProducts(slug: string) {
     try {
