@@ -107,29 +107,33 @@ export class ProductTagService {
     return tag;
   }
 
-  // === CREATE BULK TAGS ===
   async createBulkTags(names: string[]) {
     const uniqueNames = Array.from(
-      new Set(names.map((n) => n.trim()).filter((n) => n.length > 0)),
+      new Map(
+        names
+          .map((name) => name.trim())
+          .filter(Boolean)
+          .map((name) => [name.toLowerCase(), name]),
+      ).values(),
     );
 
-    if (uniqueNames.length === 0) return [];
+    if (uniqueNames.length === 0) {
+      return [];
+    }
 
-    const existingTags = await this.prisma.tag.findMany({
-      where: {
-        name: { in: uniqueNames },
-      },
-    });
+    const existingTags = await this.prisma.tag.findMany();
 
-    const existingNames = existingTags.map((t) => t.name.toLowerCase());
+    const existingNameMap = new Map(
+      existingTags.map((tag) => [tag.name.toLowerCase(), tag]),
+    );
 
     const newTagsToCreate = uniqueNames.filter(
-      (name) => !existingNames.includes(name.toLowerCase()),
+      (name) => !existingNameMap.has(name.toLowerCase()),
     );
 
     if (newTagsToCreate.length > 0) {
       const newTagsData = newTagsToCreate.map((name) => ({
-        name: name,
+        name,
         slug: this.slug.create(name),
       }));
 
@@ -139,13 +143,13 @@ export class ProductTagService {
       });
     }
 
-    const allRequestedTags = await this.prisma.tag.findMany({
-      where: {
-        name: { in: uniqueNames },
-      },
-    });
+    const allTags = await this.prisma.tag.findMany();
 
-    return allRequestedTags;
+    const requestedNames = new Set(
+      uniqueNames.map((name) => name.toLowerCase()),
+    );
+
+    return allTags.filter((tag) => requestedNames.has(tag.name.toLowerCase()));
   }
 
   // === GET TAG BY ID ===

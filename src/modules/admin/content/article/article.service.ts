@@ -37,10 +37,6 @@ export class ArticleService {
       throw new ApiError("Failed to upload image to Cloudinary", 500);
     }
   }
-
-  // =========================================================================
-  // 2. CREATE ARTICLE (DENGAN UPLOAD COVER IMAGE, MOBILE IMAGE & TAGS)
-  // =========================================================================
   async createArticle(
     data: CreateArticleDTO,
     authorId: string,
@@ -79,16 +75,13 @@ export class ArticleService {
           });
           focusKeywords_en = resFocusKeywords.text;
         }
-      } catch (err) {
-        console.error("Auto-translate failed:", err);
+      } catch (error) {
+        console.error("Auto-translate failed:", error);
       }
     }
 
     const hasTranslation = !!(title_en && content_en);
 
-    // =========================================================================
-    // 5. HANDLE DESKTOP COVER IMAGE
-    // =========================================================================
     let coverImageUrl = data.coverImage;
     let coverImagePublicId = data.coverImageId;
 
@@ -97,9 +90,7 @@ export class ArticleService {
     }
 
     if (coverFile) {
-      // Karena ini fungsi Create (Buat Baru), kita tidak perlu menghapus gambar lama
       try {
-        // Pastikan Multer menyertakan buffer
         if (!coverFile.buffer) {
           throw new Error(
             "File buffer kosong. Pastikan config Multer menggunakan memoryStorage().",
@@ -126,9 +117,6 @@ export class ArticleService {
       throw new ApiError("Cover image desktop is required", 400);
     }
 
-    // =========================================================================
-    // 6. HANDLE MOBILE COVER IMAGE
-    // =========================================================================
     let coverImageMobileUrl = data.coverImageMobile;
     let coverImageMobilePublicId = data.coverImageMobileId;
 
@@ -163,21 +151,42 @@ export class ArticleService {
         );
       }
     }
-    // --- SIMPAN KE DATABASE ---
+
+    const productIds = [...new Set((data.productIds ?? []).filter(Boolean))];
+    const tagIds = [...new Set((data.tagIds ?? []).filter(Boolean))];
+
     try {
       const newArticle = await this.prisma.$transaction(async (tx) => {
+        if (tagIds.length > 0) {
+          const existingTags = await tx.tag.findMany({
+            where: {
+              id: { in: tagIds },
+            },
+            select: { id: true },
+          });
+
+          if (existingTags.length !== tagIds.length) {
+            const existingTagIds = new Set(existingTags.map((tag) => tag.id));
+            const invalidTagIds = tagIds.filter(
+              (tagId) => !existingTagIds.has(tagId),
+            );
+
+            throw new ApiError(
+              `Invalid tag ID(s): ${invalidTagIds.join(", ")}`,
+              400,
+            );
+          }
+        }
+
         const article = await tx.article.create({
           data: {
             title_id: data.title,
             content_id: data.content,
             focusKeywords_id: data.focusKeywords_id,
-
-            title_en: title_en,
-            content_en: content_en,
-            focusKeywords_en: focusKeywords_en,
-
+            title_en,
+            content_en,
+            focusKeywords_en,
             isTranslated: hasTranslation,
-
             slug,
             source: data.source,
             coverImage: coverImageUrl,
@@ -185,7 +194,6 @@ export class ArticleService {
             coverImageAlt: data.coverImageAlt,
             coverImageMobile: coverImageMobileUrl,
             coverImageMobileId: coverImageMobilePublicId,
-
             authorName: data.authorName,
             published: data.published ?? false,
             publishedAt: data.published
@@ -194,8 +202,12 @@ export class ArticleService {
                 : new Date()
               : null,
             categoryId: data.categoryId,
-            authorId: authorId,
-
+            authorId,
+            ...(tagIds.length > 0 && {
+              tags: {
+                connect: tagIds.map((id) => ({ id })),
+              },
+            }),
             ...(data.seo && {
               seo: {
                 create: {
@@ -214,23 +226,11 @@ export class ArticleService {
           },
         });
 
-        // 2. Insert Related Products
-        if (data.productIds && data.productIds.length > 0) {
+        if (productIds.length > 0) {
           await tx.articleProduct.createMany({
-            data: data.productIds.map((productId) => ({
+            data: productIds.map((productId) => ({
               articleId: article.id,
-              productId: productId,
-            })),
-            skipDuplicates: true,
-          });
-        }
-
-        // 3. Insert Article Tags
-        if (data.tagIds && data.tagIds.length > 0) {
-          await tx.articleTagMap.createMany({
-            data: data.tagIds.map((tagId) => ({
-              articleId: article.id,
-              tagId: tagId,
+              productId,
             })),
             skipDuplicates: true,
           });
@@ -242,6 +242,11 @@ export class ArticleService {
       return this.getArticleById(newArticle.id);
     } catch (error) {
       console.error("🔥 ERROR CREATING ARTICLE:", error);
+
+      if (error instanceof ApiError) {
+        throw error;
+      }
+
       throw new ApiError(
         "Database error occurred while creating article.",
         500,
@@ -255,7 +260,6 @@ export class ArticleService {
     coverFile?: Express.Multer.File,
     coverMobileFile?: Express.Multer.File,
   ) {
-    // 1. VALIDASI: Cek artikel exists
     const existing = await this.prisma.article.findUnique({
       where: { id },
     });
@@ -264,10 +268,8 @@ export class ArticleService {
       throw new ApiError("Article not found", 404);
     }
 
-    // 2. DESTRUCTURE: Pisahkan relations dari field biasa
-    const { productIds, tagIds, ...articleData } = data;
+    const { productIds, tagIds } = data;
 
-    // 3. HANDLE SLUG: Generate slug baru jika title berubah
     let newSlug = existing.slug;
 
     if (data.title) {
@@ -275,7 +277,10 @@ export class ArticleService {
 
       if (data.title !== existing.title_id) {
         const duplicate = await this.prisma.article.findFirst({
-          where: { slug: newSlug, id: { not: id } },
+          where: {
+            slug: newSlug,
+            id: { not: id },
+          },
         });
 
         if (duplicate) {
@@ -287,7 +292,6 @@ export class ArticleService {
       }
     }
 
-    // 4. TRANSLATION LOGIC
     let title_en = existing.title_en;
     let content_en = existing.content_en;
     let focusKeywords_en = existing.focusKeywords_en;
@@ -305,6 +309,7 @@ export class ArticleService {
             title_en = resTitle.text;
           }
         }
+
         if (data.content) {
           if (data.content_en) {
             content_en = data.content_en;
@@ -313,6 +318,7 @@ export class ArticleService {
             content_en = resContent.text;
           }
         }
+
         if (data.focusKeywords_id) {
           if (data.focusKeywords_en) {
             focusKeywords_en = data.focusKeywords_en;
@@ -323,41 +329,50 @@ export class ArticleService {
             focusKeywords_en = resFocusKeywords.text;
           }
         }
-      } catch (err) {
-        console.error("Auto-translate failed during update:", err);
+      } catch (error) {
+        console.error("Auto-translate failed during update:", error);
+
         if (data.title_en) title_en = data.title_en;
         if (data.content_en) content_en = data.content_en;
-        if (data.focusKeywords_en) focusKeywords_en = data.focusKeywords_en;
+        if (data.focusKeywords_en) {
+          focusKeywords_en = data.focusKeywords_en;
+        }
       }
     } else {
-      if (data.title_en) title_en = data.title_en;
-      if (data.content_en) content_en = data.content_en;
-      if (data.focusKeywords_en) focusKeywords_en = data.focusKeywords_en;
+      if (data.title_en !== undefined) {
+        title_en = data.title_en;
+      }
+
+      if (data.content_en !== undefined) {
+        content_en = data.content_en;
+      }
+
+      if (data.focusKeywords_en !== undefined) {
+        focusKeywords_en = data.focusKeywords_en;
+      }
     }
 
     const hasTranslation = !!(title_en && content_en);
 
-    // =========================================================================
-    // 5. HANDLE DESKTOP COVER IMAGE
-    // =========================================================================
     let coverImageUrl = existing.coverImage;
     let coverImagePublicId = existing.coverImageId;
 
     if (coverFile) {
-      // Langkah A: Coba hapus gambar lama, tapi JANGAN biarkan error di sini memblokir proses
       if (existing.coverImageId) {
         try {
           await this.cloudinary.delete(existing.coverImageId);
-        } catch (deleteErr) {
-          console.warn(
-            "⚠️ Peringatan: Gagal menghapus gambar desktop lama (Mungkin sudah terhapus sebelumnya). Mengabaikan...",
-            deleteErr,
-          );
+        } catch (error) {
+          console.warn("Failed to delete old desktop cover image:", error);
         }
       }
 
-      // Langkah B: Upload gambar baru
       try {
+        if (!coverFile.buffer) {
+          throw new Error(
+            "File buffer kosong. Pastikan config Multer menggunakan memoryStorage().",
+          );
+        }
+
         const uploadResult = await this.cloudinary.upload(coverFile, {
           folder: "articles/covers",
           resource_type: "image",
@@ -367,6 +382,7 @@ export class ArticleService {
         coverImagePublicId = uploadResult.public_id;
       } catch (error) {
         console.error("🔥 ERROR UPLOAD CLOUDINARY (DESKTOP):", error);
+
         throw new ApiError(
           "Failed to upload new cover image to Cloudinary",
           500,
@@ -374,27 +390,23 @@ export class ArticleService {
       }
     }
 
-    // =========================================================================
-    // 6. HANDLE MOBILE COVER IMAGE
-    // =========================================================================
     let coverImageMobileUrl = existing.coverImageMobile;
     let coverImageMobilePublicId = existing.coverImageMobileId;
 
     if (coverMobileFile) {
-      // Langkah A: Coba hapus gambar lama secara fail-safe
       if (existing.coverImageMobileId) {
         try {
           await this.cloudinary.delete(existing.coverImageMobileId);
-        } catch (deleteErr) {
-          console.warn(
-            "⚠️ Peringatan: Gagal menghapus gambar mobile lama (Mungkin sudah terhapus sebelumnya). Mengabaikan...",
-            deleteErr,
-          );
+        } catch (error) {
+          console.warn("Failed to delete old mobile cover image:", error);
         }
       }
 
-      // Langkah B: Upload gambar baru
       try {
+        if (!coverMobileFile.buffer) {
+          throw new Error("File buffer kosong.");
+        }
+
         const uploadResultMobile = await this.cloudinary.upload(
           coverMobileFile,
           {
@@ -407,6 +419,7 @@ export class ArticleService {
         coverImageMobilePublicId = uploadResultMobile.public_id;
       } catch (error) {
         console.error("🔥 ERROR UPLOAD CLOUDINARY (MOBILE):", error);
+
         throw new ApiError(
           "Failed to upload new mobile cover image to Cloudinary",
           500,
@@ -414,109 +427,138 @@ export class ArticleService {
       }
     }
 
-    // 7. BUILD UPDATE DATA
-    const updateData: any = {
-      ...(data.title && { title_id: data.title }),
-      ...(data.content && { content_id: data.content }),
-      ...(data.focusKeywords_id && { focusKeywords_id: data.focusKeywords_id }),
-      title_en,
-      content_en,
-      focusKeywords_en,
-      slug: newSlug,
+    const normalizedProductIds =
+      productIds !== undefined
+        ? [...new Set(productIds.filter(Boolean))]
+        : undefined;
 
-      //  SIMPAN STATUS TRANSLATE KE DATABASE
-      isTranslated: hasTranslation,
+    const normalizedTagIds =
+      tagIds !== undefined ? [...new Set(tagIds.filter(Boolean))] : undefined;
 
-      ...(data.source && { source: data.source }),
-      coverImage: coverImageUrl,
-      coverImageId: coverImagePublicId,
-      ...(data.coverImageAlt && { coverImageAlt: data.coverImageAlt }),
-      coverImageMobile: coverImageMobileUrl,
-      coverImageMobileId: coverImageMobilePublicId,
-      ...(data.authorName && { authorName: data.authorName }),
-      ...(data.categoryId && { categoryId: data.categoryId }),
-    };
-
-    // 8. HANDLE PUBLISH STATUS & DATE
-    if (data.published !== undefined) {
-      updateData.published = data.published;
-      if (
-        data.published === true &&
-        !existing.publishedAt &&
-        !data.publishedAt
-      ) {
-        updateData.publishedAt = new Date();
-      } else if (data.publishedAt) {
-        updateData.publishedAt = new Date(data.publishedAt);
-      }
-    }
-
-    // 9. HANDLE SEO
-    if (data.seo) {
-      updateData.seo = {
-        upsert: {
-          create: {
-            metaTitle: data.seo.metaTitle,
-            metaDescription: data.seo.metaDescription,
-            keywords: data.seo.keywords,
-            canonicalUrl: data.seo.canonicalUrl,
-            ogTitle: data.seo.ogTitle,
-            ogDescription: data.seo.ogDescription,
-            ogImage: data.seo.ogImage,
-            robots: data.seo.robots,
-            structuredData: data.seo.structuredData,
-          },
-          update: {
-            metaTitle: data.seo.metaTitle,
-            metaDescription: data.seo.metaDescription,
-            keywords: data.seo.keywords,
-            canonicalUrl: data.seo.canonicalUrl,
-            ogTitle: data.seo.ogTitle,
-            ogDescription: data.seo.ogDescription,
-            ogImage: data.seo.ogImage,
-            robots: data.seo.robots,
-            structuredData: data.seo.structuredData,
-          },
-        },
-      };
-    }
-
-    // 10. EXECUTE UPDATE
     try {
       const updated = await this.prisma.$transaction(async (tx) => {
+        if (normalizedTagIds !== undefined && normalizedTagIds.length > 0) {
+          const existingTags = await tx.tag.findMany({
+            where: {
+              id: { in: normalizedTagIds },
+            },
+            select: { id: true },
+          });
+
+          if (existingTags.length !== normalizedTagIds.length) {
+            const existingTagIds = new Set(existingTags.map((tag) => tag.id));
+
+            const invalidTagIds = normalizedTagIds.filter(
+              (tagId) => !existingTagIds.has(tagId),
+            );
+
+            throw new ApiError(
+              `Invalid tag ID(s): ${invalidTagIds.join(", ")}`,
+              400,
+            );
+          }
+        }
+
+        const updateData: any = {
+          ...(data.title !== undefined && {
+            title_id: data.title,
+          }),
+          ...(data.content !== undefined && {
+            content_id: data.content,
+          }),
+          ...(data.focusKeywords_id !== undefined && {
+            focusKeywords_id: data.focusKeywords_id,
+          }),
+          title_en,
+          content_en,
+          focusKeywords_en,
+          isTranslated: hasTranslation,
+          slug: newSlug,
+          ...(data.source !== undefined && {
+            source: data.source,
+          }),
+          coverImage: coverImageUrl,
+          coverImageId: coverImagePublicId,
+          ...(data.coverImageAlt !== undefined && {
+            coverImageAlt: data.coverImageAlt,
+          }),
+          coverImageMobile: coverImageMobileUrl,
+          coverImageMobileId: coverImageMobilePublicId,
+          ...(data.authorName !== undefined && {
+            authorName: data.authorName,
+          }),
+          ...(data.categoryId !== undefined && {
+            categoryId: data.categoryId,
+          }),
+          ...(normalizedTagIds !== undefined && {
+            tags: {
+              set: normalizedTagIds.map((tagId) => ({
+                id: tagId,
+              })),
+            },
+          }),
+        };
+
+        if (data.published !== undefined) {
+          updateData.published = data.published;
+
+          if (
+            data.published === true &&
+            !existing.publishedAt &&
+            !data.publishedAt
+          ) {
+            updateData.publishedAt = new Date();
+          } else if (data.publishedAt) {
+            updateData.publishedAt = new Date(data.publishedAt);
+          }
+        } else if (data.publishedAt) {
+          updateData.publishedAt = new Date(data.publishedAt);
+        }
+
+        if (data.seo) {
+          updateData.seo = {
+            upsert: {
+              create: {
+                metaTitle: data.seo.metaTitle,
+                metaDescription: data.seo.metaDescription,
+                keywords: data.seo.keywords,
+                canonicalUrl: data.seo.canonicalUrl,
+                ogTitle: data.seo.ogTitle,
+                ogDescription: data.seo.ogDescription,
+                ogImage: data.seo.ogImage,
+                robots: data.seo.robots,
+                structuredData: data.seo.structuredData,
+              },
+              update: {
+                metaTitle: data.seo.metaTitle,
+                metaDescription: data.seo.metaDescription,
+                keywords: data.seo.keywords,
+                canonicalUrl: data.seo.canonicalUrl,
+                ogTitle: data.seo.ogTitle,
+                ogDescription: data.seo.ogDescription,
+                ogImage: data.seo.ogImage,
+                robots: data.seo.robots,
+                structuredData: data.seo.structuredData,
+              },
+            },
+          };
+        }
+
         const article = await tx.article.update({
           where: { id },
           data: updateData,
         });
 
-        // 11. SYNC RELATED PRODUCTS
-        if (productIds !== undefined) {
+        if (normalizedProductIds !== undefined) {
           await tx.articleProduct.deleteMany({
             where: { articleId: id },
           });
 
-          if (productIds.length > 0) {
+          if (normalizedProductIds.length > 0) {
             await tx.articleProduct.createMany({
-              data: productIds.map((productId) => ({
+              data: normalizedProductIds.map((productId) => ({
                 articleId: id,
-                productId: productId,
-              })),
-              skipDuplicates: true,
-            });
-          }
-        }
-
-        // 12. SYNC ARTICLE TAGS
-        if (tagIds !== undefined) {
-          await tx.articleTagMap.deleteMany({
-            where: { articleId: id },
-          });
-
-          if (tagIds.length > 0) {
-            await tx.articleTagMap.createMany({
-              data: tagIds.map((tagId) => ({
-                articleId: id,
-                tagId: tagId,
+                productId,
               })),
               skipDuplicates: true,
             });
@@ -529,6 +571,11 @@ export class ArticleService {
       return this.getArticleById(updated.id);
     } catch (error) {
       console.error("🔥 ERROR UPDATING ARTICLE:", error);
+
+      if (error instanceof ApiError) {
+        throw error;
+      }
+
       throw new ApiError(
         "Database error occurred while updating article.",
         500,
@@ -606,7 +653,20 @@ export class ArticleService {
       include: {
         category: true,
         author: {
-          select: { name: true },
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        tags: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
+          orderBy: {
+            name: "asc",
+          },
         },
         relatedProducts: {
           include: {
@@ -624,7 +684,7 @@ export class ArticleService {
             },
           },
         },
-        seo: true, // Pastikan SEO ikut ditarik
+        seo: true,
       },
     });
 
@@ -637,14 +697,19 @@ export class ArticleService {
       article.id,
     );
 
-    // Perbaikan: Gunakan title_id karena model sudah berubah
     const prevArticle = await this.prisma.article.findFirst({
       where: {
         published: true,
         createdAt: { lt: article.createdAt },
       },
-      orderBy: { createdAt: "desc" },
-      select: { title_id: true, slug: true },
+      orderBy: {
+        createdAt: "desc",
+      },
+      select: {
+        title_id: true,
+        title_en: true,
+        slug: true,
+      },
     });
 
     const nextArticle = await this.prisma.article.findFirst({
@@ -652,18 +717,34 @@ export class ArticleService {
         published: true,
         createdAt: { gt: article.createdAt },
       },
-      orderBy: { createdAt: "asc" },
-      select: { title_id: true, slug: true },
+      orderBy: {
+        createdAt: "asc",
+      },
+      select: {
+        title_id: true,
+        title_en: true,
+        slug: true,
+      },
     });
 
     return {
       ...article,
       relevantArticles,
       prevArticle: prevArticle
-        ? { title: prevArticle.title_id, href: `/article/${prevArticle.slug}` }
+        ? {
+            title_id: prevArticle.title_id,
+            title_en: prevArticle.title_en,
+            slug: prevArticle.slug,
+            href: `/article/${prevArticle.slug}`,
+          }
         : null,
       nextArticle: nextArticle
-        ? { title: nextArticle.title_id, href: `/article/${nextArticle.slug}` }
+        ? {
+            title_id: nextArticle.title_id,
+            title_en: nextArticle.title_en,
+            slug: nextArticle.slug,
+            href: `/article/${nextArticle.slug}`,
+          }
         : null,
     };
   }

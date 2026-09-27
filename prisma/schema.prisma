@@ -892,6 +892,7 @@ model Tag {
 
   products   Product[]
   categories TagCategory[] @relation("TagCategoryToTag")
+  articles   Article[]     @relation("ArticleTags")
 
   @@map("tags")
 }
@@ -2229,9 +2230,9 @@ model Article {
 
   categoryId      String
   category        ArticleCategory  @relation(fields: [categoryId], references: [id])
-  articleTags     ArticleTagMap[]
   relatedProducts ArticleProduct[]
   articleBanners  ArticleBanner[]
+  tags            Tag[]            @relation("ArticleTags")
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   seo             ArticleSEO?
@@ -2266,25 +2267,25 @@ model ArticleBanner {
   @@map("article_banners")
 }
 
-model ArticleTag {
-  id        String          @id @default(uuid())
-  name      String          @unique
-  slug      String          @unique
-  createdAt DateTime        @default(now())
-  articles  ArticleTagMap[]
+// model ArticleTag {
+//   id        String          @id @default(uuid())
+//   name      String          @unique
+//   slug      String          @unique
+//   createdAt DateTime        @default(now())
+//   articles  ArticleTagMap[]
 
-  @@map("article_tags")
-}
+//   @@map("article_tags")
+// }
 
-model ArticleTagMap {
-  articleId  String
-  tagId      String
-  article    Article    @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  articleTag ArticleTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+// model ArticleTagMap {
+//   articleId  String
+//   tagId      String
+//   article    Article    @relation(fields: [articleId], references: [id], onDelete: Cascade)
+//   articleTag ArticleTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
-  @@id([articleId, tagId])
-  @@map("article_tag_pivot")
-}
+//   @@id([articleId, tagId])
+//   @@map("article_tag_pivot")
+// }
 
 model ArticleSEO {
   id              String  @id @default(cuid())

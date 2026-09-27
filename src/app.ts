@@ -55,7 +55,6 @@ import { ArticleRouter } from "./modules/admin/content/article/article.router";
 import { ArticleBannerRouter } from "./modules/admin/content/article/banner-article/articleBanner.router";
 import { ArticleCategoryRouter } from "./modules/admin/content/article/category-article/articleCategory.router";
 import { ArticleSeoRouter } from "./modules/admin/content/article/seo/articleSEO.router";
-import { ArticleTagRouter } from "./modules/admin/content/article/tag-article/tag-article.router";
 import { BannerProductRouter } from "./modules/admin/content/banner-product/banner-product.router";
 import { PopupBannerRouter } from "./modules/admin/content/banner/banner.router";
 import { BestPriceGuaranteeRouter } from "./modules/admin/content/best-pric-guarantee/bestPriceGuarantee.router";
@@ -168,7 +167,6 @@ export default class App {
     const customerProfileRouter = container.resolve(CustomerProfileRouter);
     const webOrderRouter = container.resolve(WebOrderRouter);
     const eventCategoryRouter = container.resolve(EventCategoryRouter);
-    const tagArticleRouter = container.resolve(ArticleTagRouter);
     const bannerProductRouter = container.resolve(BannerProductRouter);
     const analyticsRouter = container.resolve(AnalyticsRouter);
     const purchaseOrderRouter = container.resolve(PurchaseOrderRouter);
@@ -249,7 +247,6 @@ export default class App {
       publicLimiter,
       eventCategoryRouter.getRouter(),
     );
-    this.app.use("/article-tags", tagArticleRouter.getRouter());
     this.app.use("/banner-products", bannerProductRouter.getRouter());
     this.app.use("/analytics", analyticsRouter.getRouter());
     this.app.use("/purchase-orders", purchaseOrderRouter.getRouter());
