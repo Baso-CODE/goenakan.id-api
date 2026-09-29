@@ -630,7 +630,7 @@ model Attribute {
 
 model AttributeValue {
   id          String    @id @default(uuid())
-  value       String
+  value       String    @db.Text
   position    Int       @default(0)
   attributeId String
   attribute   Attribute @relation("AttributeToValues", fields: [attributeId], references: [id], onDelete: Cascade)
