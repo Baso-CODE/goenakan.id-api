@@ -1791,13 +1791,205 @@ export class ProductService {
     return updatedProduct;
   }
 
-  // == DELETE PRODUCT (SOFT DELETE) ===
+  // == DELETE PRODUCT (SMART SAFE DELETE) ===
   async deleteProduct(id: string) {
-    // ... (Logika delete/soft-delete)
-    throw new ApiError(
-      "Product deletion is not implemented/allowed for safety.",
-      403,
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      select: { id: true, name: true },
+    });
+
+    if (!product) {
+      throw new ApiError("Produk tidak ditemukan.", 404);
+    }
+
+    // 1. Check transaction references across orders, quotations, invoices, etc.
+    const [
+      orderCount,
+      quotationCount,
+      purchaseCount,
+      invoiceCount,
+      replacementCount,
+      webOrderCount,
+      cashflowCount,
+    ] = await Promise.all([
+      this.prisma.orderProduct.count({ where: { productId: id } }),
+      this.prisma.quotationItem.count({ where: { productId: id } }),
+      this.prisma.purchaseOrderItem.count({ where: { productId: id } }),
+      this.prisma.invoiceItem.count({ where: { productId: id } }),
+      this.prisma.replacementOrderProduct.count({ where: { productId: id } }),
+      this.prisma.webOrderItem.count({ where: { productId: id } }),
+      this.prisma.cashflowRevenue.count({ where: { productId: id } }),
+    ]);
+
+    const totalTransactions =
+      orderCount +
+      quotationCount +
+      purchaseCount +
+      invoiceCount +
+      replacementCount +
+      webOrderCount +
+      cashflowCount;
+
+    if (totalTransactions > 0) {
+      const details: string[] = [];
+      if (orderCount > 0) details.push(`${orderCount} pesanan`);
+      if (quotationCount > 0) details.push(`${quotationCount} quotation`);
+      if (purchaseCount > 0) details.push(`${purchaseCount} purchase order`);
+      if (invoiceCount > 0) details.push(`${invoiceCount} invoice`);
+      if (replacementCount > 0)
+        details.push(`${replacementCount} replacement order`);
+      if (webOrderCount > 0) details.push(`${webOrderCount} web order`);
+      if (cashflowCount > 0) details.push(`${cashflowCount} cashflow revenue`);
+
+      throw new ApiError(
+        `Produk "${product.name}" tidak dapat dihapus karena sudah memiliki riwayat transaksi (${details.join(", ")}). Silakan nonaktifkan status produk untuk menyembunyikannya dari katalog.`,
+        400,
+      );
+    }
+
+    // 2. Collect image/video public IDs for background Cloudinary cleanup
+    const [images, videos] = await Promise.all([
+      this.prisma.productImage.findMany({
+        where: { productId: id },
+        select: { publicId: true, colorMaskPublicId: true },
+      }),
+      this.prisma.productVideo.findMany({
+        where: { productId: id },
+        select: { publicId: true },
+      }),
+    ]);
+
+    // 3. Atomic database deletion
+    await this.prisma.$transaction(async (tx) => {
+      // Clear active price reference and disconnect tags on product first
+      await tx.product.update({
+        where: { id },
+        data: {
+          activeVendorPriceRecordId: null,
+          tags: { set: [] },
+        },
+      });
+
+      // Cart items
+      await tx.cartItem.deleteMany({ where: { productId: id } });
+
+      // Product-level price tiers
+      await tx.priceTier.deleteMany({ where: { productId: id } });
+
+      // Variants & variant children
+      const variants = await tx.productVariant.findMany({
+        where: { productId: id },
+        select: { id: true },
+      });
+      const variantIds = variants.map((v) => v.id);
+
+      if (variantIds.length > 0) {
+        await tx.priceTier.deleteMany({
+          where: { variantId: { in: variantIds } },
+        });
+        await tx.productVariantAttributeValue.deleteMany({
+          where: { variantId: { in: variantIds } },
+        });
+        await tx.productVariantImage.deleteMany({
+          where: { variantId: { in: variantIds } },
+        });
+        await tx.productVariant.deleteMany({
+          where: { id: { in: variantIds } },
+        });
+      }
+
+      // Mockup areas & images
+      const imgList = await tx.productImage.findMany({
+        where: { productId: id },
+        select: { id: true },
+      });
+      const imgIds = imgList.map((img) => img.id);
+      if (imgIds.length > 0) {
+        await tx.productImageMockupArea.deleteMany({
+          where: { productImageId: { in: imgIds } },
+        });
+        await tx.productImage.deleteMany({ where: { id: { in: imgIds } } });
+      }
+
+      // Videos
+      await tx.productVideo.deleteMany({ where: { productId: id } });
+
+      // Attribute values link
+      await tx.productAttributeValue.deleteMany({ where: { productId: id } });
+
+      // SEO
+      await tx.productSEO.deleteMany({ where: { productId: id } });
+
+      // Articles relation
+      await tx.articleProduct.deleteMany({ where: { productId: id } });
+
+      // Vendor price records
+      await tx.vendorPriceRecord.deleteMany({ where: { productId: id } });
+
+      // Product-specific attributes if any
+      const customAttributes = await tx.attribute.findMany({
+        where: { productId: id },
+        select: { id: true },
+      });
+      const customAttrIds = customAttributes.map((a) => a.id);
+      if (customAttrIds.length > 0) {
+        await tx.attributeValue.deleteMany({
+          where: { attributeId: { in: customAttrIds } },
+        });
+        await tx.attribute.deleteMany({
+          where: { id: { in: customAttrIds } },
+        });
+      }
+
+      // Core Product
+      await tx.product.delete({ where: { id } });
+    });
+
+    // 4. Background media cleanup (Fail-safe)
+    (async () => {
+      for (const img of images) {
+        if (img.publicId) {
+          try {
+            await this.cloudinary.delete(img.publicId);
+          } catch (err) {
+            console.warn(
+              `[DeleteProduct] Failed to delete image ${img.publicId}:`,
+              err,
+            );
+          }
+        }
+        if (img.colorMaskPublicId) {
+          try {
+            await this.cloudinary.delete(img.colorMaskPublicId);
+          } catch (err) {
+            console.warn(
+              `[DeleteProduct] Failed to delete mask ${img.colorMaskPublicId}:`,
+              err,
+            );
+          }
+        }
+      }
+      for (const vid of videos) {
+        if (vid.publicId) {
+          try {
+            await this.cloudinary.delete(vid.publicId);
+          } catch (err) {
+            console.warn(
+              `[DeleteProduct] Failed to delete video ${vid.publicId}:`,
+              err,
+            );
+          }
+        }
+      }
+    })().catch((err) =>
+      console.error("[DeleteProduct] Background cleanup error:", err),
     );
+
+    return {
+      success: true,
+      message: `Produk "${product.name}" berhasil dihapus permanen.`,
+      id,
+    };
   }
 
   // === UPDATE PRODUCT VARIANTS (CREATE/UPDATE/DELETE) ===
