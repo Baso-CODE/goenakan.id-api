@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import handlebars from "handlebars";
 import nodemailer, { Transporter } from "nodemailer";
 import path from "path";
-import { env } from "../../config";
+import { env } from "../../../config";
 
 export class MailService {
   private transporter: Transporter;

@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import jwt, { TokenExpiredError } from "jsonwebtoken";
 import { ApiError } from "../utils/api-error";
+import { AuthenticatedUser } from "./AuthenticatedUser";
 
 // 1. Tipe role diubah menjadi string
 export interface JwtPayload {
@@ -27,7 +28,7 @@ export class JwtMiddleware {
           }
         }
 
-        req.user = payload as JwtPayload;
+        req.user = payload as unknown as AuthenticatedUser;
         next();
       });
     };
