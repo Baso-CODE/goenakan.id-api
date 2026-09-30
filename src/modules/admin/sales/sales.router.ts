@@ -31,7 +31,7 @@ export class SalesRouter {
     // Melindungi semua route di bawahnya dengan token dan permission dinamis.
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("sales"));
 
     // ==========================================
     // SALES ROUTES

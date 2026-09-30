@@ -22,7 +22,7 @@ export class SampleHistoryRouter {
     // Seluruh route di bawahnya otomatis aman.
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("sample_history"));
 
     // ==========================================
     // === SAMPLE HISTORY ROUTES ===

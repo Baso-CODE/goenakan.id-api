@@ -29,7 +29,7 @@ export class UserRouter {
     // Seluruh route di bawahnya otomatis aman.
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("user"));
 
     // ==========================================
     // === GET ALL USERS ===

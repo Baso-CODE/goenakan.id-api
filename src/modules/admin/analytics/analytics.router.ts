@@ -24,7 +24,7 @@ export class AnalyticsRouter {
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
 
     //  Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("analytics"));
 
     // =========================================================================
     // ENDPOINT TAB 2: SALES OVERVIEW

@@ -28,7 +28,7 @@ export class CashflowRouter {
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
 
     //  Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("cashflow"));
 
     // ==========================================
     // === PROTECTED ADMIN ROUTES ===

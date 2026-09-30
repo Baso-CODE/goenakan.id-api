@@ -39,7 +39,7 @@ export class PortfolioRouter {
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
 
     //  Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("portfolio"));
 
     // ==========================================
     // 2. ADMIN ROUTES (Otomatis Terlindungi)

@@ -35,7 +35,7 @@ export class ArticleCategoryRouter {
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
 
     //  Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL (misal: category_article)
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("article_category"));
 
     // ==========================================
     // === ADMIN PROTECTED ROUTES ===

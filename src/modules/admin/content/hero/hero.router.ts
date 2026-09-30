@@ -34,7 +34,7 @@ export class HeroRouter {
 
     // === GATEKEEPER ===
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("hero"));
 
     // === ADMIN ROUTES ===
     this.router.get("/admin/list", this.heroController.getAllAdmin);

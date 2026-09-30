@@ -25,7 +25,7 @@ export class PurchaseOrderRouter {
     // Pasang ini SATU KALI saja di sini! Semua route di bawahnya akan otomatis aman.
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("purchase_order"));
 
     // ==========================================
     // GET ALL PURCHASE ORDERS (Otomatis dicek 'read_purchase_orders')

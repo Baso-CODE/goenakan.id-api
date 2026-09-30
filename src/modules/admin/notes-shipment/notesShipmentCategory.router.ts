@@ -28,7 +28,7 @@ export class ShipmentNoteCategoryRouter {
     // Seluruh route di bawahnya otomatis aman.
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("shipment_note_category"));
 
     // ==========================================
     // === SHIPMENT NOTE CATEGORY ROUTES ===

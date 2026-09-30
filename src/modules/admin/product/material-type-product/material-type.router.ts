@@ -28,7 +28,7 @@ export class MaterialTypeRouter {
     // Seluruh route di bawahnya otomatis aman.
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("material_type"));
 
     // ==========================================
     // === PROTECTED ROUTES: Management ===

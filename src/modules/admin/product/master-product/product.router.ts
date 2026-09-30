@@ -1,8 +1,7 @@
 import { Router } from "express";
+import multer from "multer";
 import { autoInjectable } from "tsyringe";
 import { ProductController } from "./product.controller";
-
-import multer from "multer";
 
 import { debugMiddleware } from "../../../../middleware/debugMiddleware";
 import { NextAuthMiddleware } from "../../../../middleware/nextAuth.middleware";
@@ -14,7 +13,6 @@ import { SyncMockupPayloadDto } from "./dto/syncMockups.dto";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Konfigurasi Multer untuk multiple fields (gambar dan video)
 const productUploadFields = upload.fields([
   { name: "images", maxCount: 10 },
   { name: "videos", maxCount: 3 },
@@ -34,52 +32,43 @@ export class ProductRouter {
   }
 
   private initializeRoutes = (): void => {
-    // ==========================================
-    // === PUBLIC ROUTES (Bebas diakses tanpa login)
-    // ==========================================
+    // PUBLIC
     this.router.get(
       "/public/filters",
       this.productController.getFIlterProducts,
     );
+
     this.router.get(
       "/best-sellers",
       this.productController.getBestSellerProducts,
     );
+
     this.router.get("/order", this.productController.getAllProductsForOrder);
+
     this.router.get("/public", this.productController.getAllProductsPublic);
 
     this.router.get(
       "/public/:slug/related",
       this.productController.getRelatedProducts,
     );
+
     this.router.get(
       "/public/:slug",
       this.productController.getProductBySlugPublic,
     );
-    // ==========================================
-    // 🛡️ GATEKEEPER LEVEL ROUTER
-    // Mulai baris ini ke bawah, semua route wajib login & punya permission dinamis.
-    // ==========================================
+
+    // ADMIN PROTECTED
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("product"));
 
-    // ==========================================
-    // === ADMIN PROTECTED ROUTES ===
-    // ==========================================
-
-    // GET ALL PRODUCTS
     this.router.get("/", this.productController.getAllProducts);
 
-    // TOP SELLING
     this.router.get("/top-selling", this.productController.getTopSelling);
 
-    // EXPORT EXCEL
     this.router.get("/export/excel", this.productController.exportProduct);
 
-    // GENERATE SKU
     this.router.post("/generate-sku", this.productController.generateSku);
 
-    // === BATCH PRICE MODIFIER ===
     this.router.post(
       "/master-price/batch-preview",
       this.productController.batchPreviewMasterPrice,
@@ -90,7 +79,6 @@ export class ProductRouter {
       this.productController.batchUpdateMasterPrice,
     );
 
-    // CREATE PRODUCT
     this.router.post(
       "/",
       debugMiddleware,
@@ -100,71 +88,68 @@ export class ProductRouter {
       this.productController.createProduct,
     );
 
-    // GET PRODUCT SEO (Statis diletakkan di atas parameter `/:id`)
     this.router.get("/:id/seo", this.productController.getProductSEO);
 
-    // UPDATE PRODUCT SEO
     this.router.put("/:id/seo", this.productController.updateProductSEO);
 
-    // GET PRODUCT BY ID
     this.router.get("/:id", this.productController.getProductById);
 
-    // UPDATE PRODUCT CORE
     this.router.patch("/:id", this.productController.updateProductCore);
 
-    // DELETE PRODUCT
     this.router.delete("/:id", this.productController.deleteProduct);
 
-    // PRICE TIERS & MASTER PRICE
     this.router.put(
       "/:id/price-tiers",
       this.productController.updatePriceTiers,
     );
+
     this.router.put(
       "/:id/master-price",
       this.productController.updateMasterPrice,
     );
 
-    // === MEDIA: IMAGES ===
     this.router.post(
       "/:id/image",
       upload.single("image"),
       this.productController.addImage,
     );
+
     this.router.post(
       "/:id/images",
       upload.array("images", 10),
       this.productController.addMultipleImages,
     );
-    this.router.patch(
-      "/:id/media-order",
-      this.productController.reorderMedia,
-    );
+
+    this.router.patch("/:id/media-order", this.productController.reorderMedia);
+
     this.router.delete("/image/:imageId", this.productController.deleteImage);
+
     this.router.patch(
       "/image/:imageId/seo",
       this.productController.updateImageSEO,
     );
+
     this.router.post(
       "/image/:imageId/color-mask",
       upload.single("colorMask"),
       this.productController.uploadColorMask,
     );
+
     this.router.put(
       "/image/:imageId/mockups",
       validateBody(SyncMockupPayloadDto),
       this.productController.syncMockupAreas,
     );
 
-    // === MEDIA: VIDEOS ===
     this.router.post("/:id/video", this.productController.addVideo);
+
     this.router.delete("/video/:videoId", this.productController.deleteVideo);
+
     this.router.patch(
       "/video/:videoId/seo",
       this.productController.updateVideoSEO,
     );
 
-    // === VARIANTS & ATTRIBUTES ===
     this.router.put(
       "/:id/variants",
       upload.fields([{ name: "variantImages", maxCount: 50 }]),

@@ -51,7 +51,7 @@ export class SuccessStoryRouter {
     // 🛡️ GATEKEEPER (Wajib Login & Punya Izin)
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("success_story"));
 
     // === ADMIN ROUTES ===
     this.router.get("/admin/list", this.controller.getAllAdmin);
