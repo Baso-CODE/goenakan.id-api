@@ -653,12 +653,11 @@ model Attribute {
 }
 
 model AttributeValue {
-  id          String    @id @default(uuid())
-  value       String
-  position    Int       @default(0)
-  attributeId String
-  attribute   Attribute @relation("AttributeToValues", fields: [attributeId], references: [id], onDelete: Cascade)
-
+  id                            String                         @id @default(uuid())
+  value                         String                         @db.LongText
+  position                      Int                            @default(0)
+  attributeId                   String
+  attribute                     Attribute                      @relation("AttributeToValues", fields: [attributeId], references: [id], onDelete: Cascade)
   subAttributes                 Attribute[]                    @relation("ValueToSubAttributes")
   products                      ProductAttributeValue[]
   productVariantAttributeValues ProductVariantAttributeValue[]
