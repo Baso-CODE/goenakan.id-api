@@ -2410,11 +2410,11 @@ model SuccessStory {
   titleId String
   titleEn String?
 
-  sideContentHtmlId String  @db.Text
-  sideContentHtmlEn String? @db.Text
+  sideContentHtmlId String  @db.LongText
+  sideContentHtmlEn String? @db.LongText
 
-  mainContentHtmlId String? @db.Text
-  mainContentHtmlEn String? @db.Text
+  mainContentHtmlId String? @db.LongText
+  mainContentHtmlEn String? @db.LongText
 
   // === Media ===
   heroImageUrl      String
