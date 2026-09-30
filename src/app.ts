@@ -51,6 +51,7 @@ import { VendorRouter } from "./modules/admin/vendor/vendo-master/vendor.router"
 import { PrismaService } from "./modules/prisma/prisma.service";
 import { CustomerAddressRouter } from "./modules/web-clients/address/customer-address.router";
 
+import { syncPermissionsToDatabase } from "./helpers/syncPermissions";
 import { ArticleRouter } from "./modules/admin/content/article/article.router";
 import { ArticleBannerRouter } from "./modules/admin/content/article/banner-article/articleBanner.router";
 import { ArticleCategoryRouter } from "./modules/admin/content/article/category-article/articleCategory.router";
@@ -267,7 +268,7 @@ export default class App {
     try {
       const prismaService = container.resolve(PrismaService);
       // matikan kalau sudah di deploy
-      // await syncPermissionsToDatabase(prismaService);
+      await syncPermissionsToDatabase(prismaService);
       console.log("✅ Sinkronisasi permissions berhasil dijalankan!");
     } catch (error) {
       console.error("❌ Gagal menjalankan sinkronisasi permissions:", error);
