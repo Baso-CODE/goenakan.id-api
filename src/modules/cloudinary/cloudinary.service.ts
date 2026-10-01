@@ -51,8 +51,10 @@ export class CloudinaryService {
       /\.(jpg|jpeg|png|webp|gif|svg|avif)$/i.test(originalName);
     const shouldOptimize = options.optimize !== false;
 
-    //  SOLUSI UTAMA: Periksa apakah file yang di-upload berformat PDF
+    //  SOLUSI UTAMA: Periksa apakah file yang di-upload berformat PDF atau SVG
     const isPdf = file.mimetype === "application/pdf";
+    const isSvg =
+      file.mimetype === "image/svg+xml" || /\.svg$/i.test(originalName);
 
     if (isPdf) {
       // Paksa resource_type menjadi "raw" agar Cloudinary menyimpannya
@@ -64,12 +66,23 @@ export class CloudinaryService {
       // Format HEIC/HEIF tidak didukung oleh sharp standar tanpa libde265.
       // Kirim buffer asli ke Cloudinary dan biarkan Cloudinary mengonversi ke webp.
       options.format = "webp";
-    } else if (isImage && shouldOptimize) {
+    } else if (isImage && !isSvg && shouldOptimize) {
       try {
+        const maxWidth = options.maxWidth || 1600;
+        const maxHeight = options.maxHeight || 1600;
+        const quality = options.quality || 80;
+
         bufferToUpload = await sharp(file.buffer)
           .rotate()
+          .resize({
+            width: maxWidth,
+            height: maxHeight,
+            fit: "inside",
+            withoutEnlargement: true,
+          })
           .webp({
-            quality: options.quality || 80,
+            quality,
+            effort: 4,
           })
           .toBuffer();
 
