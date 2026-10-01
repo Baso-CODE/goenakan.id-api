@@ -66,6 +66,7 @@ export class ProductService {
       );
     }
 
+    let itemNameString: string | null = null;
     if (data.itemNameId) {
       const itemNameData = await this.prisma.itemName.findUnique({
         where: { id: data.itemNameId },
@@ -75,6 +76,24 @@ export class ProductService {
       if (!itemNameData) {
         throw new ApiError("Item Name yang dipilih tidak ditemukan", 404);
       }
+      itemNameString = itemNameData.name;
+    }
+
+    let translatedNameEn: string | null = null;
+    let translatedDescEn: string | null = null;
+
+    if (data.name) {
+      translatedNameEn = await this.translateProductNameWithItemName(
+        data.name,
+        data.itemNameId,
+        itemNameString,
+      );
+    }
+
+    if (data.description) {
+      translatedDescEn = await this.translateProductDescription(
+        data.description,
+      );
     }
 
     // --- Helper untuk Validasi Price Tiers (Bisa dipakai ulang) ---
@@ -550,6 +569,7 @@ export class ProductService {
   async updateProductCore(id: string, data: UpdateProductCoreDTO) {
     const existing = await this.prisma.product.findUnique({
       where: { id },
+      include: { itemName: true },
     });
     if (!existing) throw new ApiError("Product not found", 404);
 
@@ -576,6 +596,46 @@ export class ProductService {
       }
     }
 
+    // Auto-translate ke bahasa Inggris jika nama/deskripsi diubah atau belum ada terjemahan (null)
+    let translatedNameEn: string | undefined = undefined;
+    let translatedDescEn: string | undefined = undefined;
+
+    const effectiveName = data.name !== undefined ? data.name : existing.name;
+    const isNameChanged =
+      data.name !== undefined && data.name !== existing.name;
+    const shouldTranslateName = isNameChanged || !existing.name_en;
+
+    if (shouldTranslateName && effectiveName) {
+      const effectiveItemNameId =
+        data.itemNameId !== undefined ? data.itemNameId : existing.itemNameId;
+      const cachedItemName =
+        data.itemNameId === undefined || data.itemNameId === existing.itemNameId
+          ? existing.itemName?.name
+          : undefined;
+
+      const resName = await this.translateProductNameWithItemName(
+        effectiveName,
+        effectiveItemNameId,
+        cachedItemName,
+      );
+      if (resName) {
+        translatedNameEn = resName;
+      }
+    }
+
+    const effectiveDesc =
+      data.description !== undefined ? data.description : existing.description;
+    const isDescChanged =
+      data.description !== undefined && data.description !== existing.description;
+    const shouldTranslateDesc = isDescChanged || !existing.description_en;
+
+    if (shouldTranslateDesc && effectiveDesc) {
+      const resDesc = await this.translateProductDescription(effectiveDesc);
+      if (resDesc) {
+        translatedDescEn = resDesc;
+      }
+    }
+
     const updateData: any = {
       slug,
       materialTypeId:
@@ -588,7 +648,9 @@ export class ProductService {
     // (Bisa juga ditambahkan auto-translate jika kamu butuh ke depannya)
     if (data.name !== undefined) {
       updateData.name = data.name;
-      updateData.name_en = null;
+    }
+    if (translatedNameEn !== undefined) {
+      updateData.name_en = translatedNameEn;
     }
 
     // ====================================================================
@@ -596,21 +658,9 @@ export class ProductService {
     // ====================================================================
     if (data.description !== undefined) {
       updateData.description = data.description;
-
-      // Jika deskripsi tidak kosong (ada isinya), kita translate
-      if (data.description && data.description.trim() !== "") {
-        try {
-          const res = await translate(data.description, { to: "en" });
-          updateData.description_en = res.text;
-        } catch (error) {
-          console.error("Gagal menerjemahkan ulang deskripsi produk:", error);
-          // Fallback jika API error agar update tetap berhasil
-          updateData.description_en = null;
-        }
-      } else {
-        // Jika admin mengosongkan deskripsi, versi Inggris ikut dikosongkan
-        updateData.description_en = null;
-      }
+    }
+    if (translatedDescEn !== undefined) {
+      updateData.description_en = translatedDescEn;
     }
     // ====================================================================
 
@@ -901,7 +951,13 @@ export class ProductService {
         where: { id },
         include: {
           priceTiers: true,
-          productVariants: { include: { priceTiers: true } },
+          productVariants: {
+            include: {
+              priceTiers: true,
+              attributeValues: true,
+            },
+          },
+          attributeValues: true,
         },
       });
 
@@ -956,66 +1012,52 @@ export class ProductService {
         for (const variant of oldProduct.productVariants) {
           const vPrice = variant.price ? Number(variant.price) : 0;
 
-          // Check if variant price should be updated:
-          // If the price is 0, or is equal to the old base price of the product
-          const shouldUpdatePrice = vPrice === 0 || vPrice === oldBasePrice;
-
-          // Check if variant tiers should be updated:
-          // We check if variant has no tiers, or if all variant tiers match old product tiers (or are 0)
-          const vTiers = variant.priceTiers || [];
-          let shouldUpdateTiers = vTiers.length === 0;
-
-          if (!shouldUpdateTiers && oldTiers.length === vTiers.length) {
-            // Check if they match exactly
-            const allMatch = vTiers.every((vt: any) => {
-              const matchingOldTier = oldTiers.find(
-                (ot: any) =>
-                  ot.minQuantity === vt.minQuantity &&
-                  ot.maxQuantity === vt.maxQuantity,
-              );
-              return (
-                matchingOldTier &&
-                Number(matchingOldTier.price) === Number(vt.price)
-              );
-            });
-            if (allMatch) {
-              shouldUpdateTiers = true;
+          // Calculate price modifier for this variant:
+          // 1. Try to find attribute-based modifier sum from ProductAttributeValue
+          let modifier = 0;
+          let hasAttrModifier = false;
+          if (variant.attributeValues && oldProduct.attributeValues) {
+            const variantAttrValIds = new Set(
+              variant.attributeValues.map((av: any) => av.attributeValueId),
+            );
+            for (const pav of oldProduct.attributeValues) {
+              if (
+                variantAttrValIds.has(pav.attributeValueId) &&
+                pav.priceModifier !== null &&
+                pav.priceModifier !== undefined
+              ) {
+                modifier += Number(pav.priceModifier) || 0;
+                hasAttrModifier = true;
+              }
             }
           }
 
-          // If the variant tiers are all 0 or empty, we also want to update/recreate them
-          const isAllTiersZero =
-            vTiers.length > 0 &&
-            vTiers.every((vt: any) => Number(vt.price) === 0);
-          if (isAllTiersZero) {
-            shouldUpdateTiers = true;
+          // 2. If no attribute modifier found, use historical diff from oldBasePrice (if oldBasePrice > 0 and vPrice > 0)
+          if (!hasAttrModifier && oldBasePrice > 0 && vPrice > 0) {
+            modifier = vPrice - oldBasePrice;
           }
+
+          const newVariantPrice = Math.max(0, Number(basePrice) + modifier);
 
           // Apply variant price update
-          if (shouldUpdatePrice) {
-            await tx.productVariant.update({
-              where: { id: variant.id },
-              data: { price: Number(basePrice) },
+          await tx.productVariant.update({
+            where: { id: variant.id },
+            data: { price: newVariantPrice },
+          });
+
+          // Apply variant tiers update mirroring product tiers + variant modifier
+          await tx.priceTier.deleteMany({ where: { variantId: variant.id } });
+
+          if (priceTiers.length > 0) {
+            await tx.priceTier.createMany({
+              data: priceTiers.map((t) => ({
+                variantId: variant.id,
+                minQuantity: t.minQuantity,
+                maxQuantity: t.maxQuantity ?? null,
+                price: Math.max(0, Number(t.price) + modifier).toString(),
+                productId: null,
+              })),
             });
-          }
-
-          // Apply variant tiers update
-          if (shouldUpdateTiers) {
-            // Clear variant's old tiers
-            await tx.priceTier.deleteMany({ where: { variantId: variant.id } });
-
-            // Re-create them mirroring the new product's price tiers
-            if (priceTiers.length > 0) {
-              await tx.priceTier.createMany({
-                data: priceTiers.map((t) => ({
-                  variantId: variant.id,
-                  minQuantity: t.minQuantity,
-                  maxQuantity: t.maxQuantity ?? null,
-                  price: t.price.toString(),
-                  productId: null,
-                })),
-              });
-            }
           }
         }
       }
@@ -1477,6 +1519,58 @@ export class ProductService {
               price: t.price.toString(),
             })),
           });
+        }
+
+        // Synchronize product variants
+        const prod = await tx.product.findUnique({
+          where: { id: item.productId },
+          include: {
+            productVariants: {
+              include: { attributeValues: true },
+            },
+            attributeValues: true,
+          },
+        });
+
+        if (prod && prod.productVariants.length > 0) {
+          for (const variant of prod.productVariants) {
+            let modifier = 0;
+            if (variant.attributeValues && prod.attributeValues) {
+              const variantAttrValIds = new Set(
+                variant.attributeValues.map((av: any) => av.attributeValueId),
+              );
+              for (const pav of prod.attributeValues) {
+                if (
+                  variantAttrValIds.has(pav.attributeValueId) &&
+                  pav.priceModifier !== null &&
+                  pav.priceModifier !== undefined
+                ) {
+                  modifier += Number(pav.priceModifier) || 0;
+                }
+              }
+            }
+
+            const newVariantPrice = Math.max(0, item.newPrice + modifier);
+            await tx.productVariant.update({
+              where: { id: variant.id },
+              data: { price: newVariantPrice },
+            });
+
+            if (item.priceTiers && item.priceTiers.length > 0) {
+              await tx.priceTier.deleteMany({
+                where: { variantId: variant.id },
+              });
+              await tx.priceTier.createMany({
+                data: item.priceTiers.map((t) => ({
+                  variantId: variant.id,
+                  minQuantity: t.minQuantity,
+                  maxQuantity: t.maxQuantity,
+                  price: Math.max(0, Number(t.price) + modifier).toString(),
+                  productId: null,
+                })),
+              });
+            }
+          }
         }
       }
     });
@@ -4084,6 +4178,27 @@ export class ProductService {
           rawVariantPrice !== null
             ? parseFloat((rawVariantPrice * conversionRate).toFixed(2))
             : null;
+
+        const formattedVariantTiers = (v.priceTiers || []).map((tier) => {
+          let label = "";
+          if (tier.maxQuantity) {
+            label = `${tier.minQuantity} - ${tier.maxQuantity} pcs`;
+          } else {
+            label = `≥ ${tier.minQuantity} pcs`;
+          }
+
+          const convertedTierPrice = parseFloat(
+            (Number(tier.price) * conversionRate).toFixed(2),
+          );
+
+          return {
+            minQty: tier.minQuantity,
+            maxQty: tier.maxQuantity,
+            pricePerPcs: convertedTierPrice,
+            label: label,
+          };
+        });
+
         return {
           id: v.id,
           name: v.variantName || v.sku,
@@ -4097,6 +4212,7 @@ export class ProductService {
           weightString: vWeight ? `${vWeight} gram` : "-",
           dimensionsString: vDimensionsString,
           attributes,
+          priceTiers: formattedVariantTiers,
           images: v.images.map((img) => ({
             id: img.id,
             type: "image" as const,
@@ -4442,6 +4558,81 @@ export class ProductService {
         orderBy: { createdAt: "asc" },
       });
     });
+  }
+
+  /**
+   * Helper untuk menerjemahkan nama produk ke bahasa Inggris:
+   * Menjaga Item Name (brand/series prefix) tetap utuh apa adanya,
+   * dan hanya menerjemahkan deskripsi produknya (suffix).
+   */
+  public async translateProductNameWithItemName(
+    productName: string,
+    itemNameId?: string | null,
+    cachedItemName?: string | null,
+  ): Promise<string | null> {
+    if (!productName || !productName.trim()) return null;
+
+    let prefix = "";
+    let textToTranslate = productName.trim();
+
+    try {
+      let itemNameString = cachedItemName?.trim() || "";
+      if (!itemNameString && itemNameId) {
+        const itemData = await this.prisma.itemName.findUnique({
+          where: { id: itemNameId },
+          select: { name: true },
+        });
+        if (itemData?.name) {
+          itemNameString = itemData.name.trim();
+        }
+      }
+
+      if (itemNameString) {
+        const escapedItem = itemNameString.replace(
+          /[.*+?^${}()|[\]\\\/]/g,
+          "\\$&",
+        );
+        const regex = new RegExp(
+          `^${escapedItem}(?:\\s*[-–:]?\\s+|\\s*$)`,
+          "i",
+        );
+
+        if (regex.test(textToTranslate)) {
+          prefix = itemNameString;
+          textToTranslate = textToTranslate.replace(regex, "").trim();
+        }
+      }
+
+      if (textToTranslate) {
+        const res = await translate(textToTranslate, { to: "en" });
+        const translatedSuffix = res.text?.trim() || textToTranslate;
+        return prefix ? `${prefix} ${translatedSuffix}` : translatedSuffix;
+      }
+
+      return prefix || productName;
+    } catch (error) {
+      console.warn("⚠️ Gagal melakukan auto-translate nama produk:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Helper untuk menerjemahkan deskripsi produk ke bahasa Inggris
+   */
+  public async translateProductDescription(
+    description?: string | null,
+  ): Promise<string | null> {
+    if (!description || !description.trim()) return null;
+    try {
+      const res = await translate(description, { to: "en" });
+      return res.text?.trim() || null;
+    } catch (error) {
+      console.warn(
+        "⚠️ Gagal melakukan auto-translate deskripsi produk:",
+        error,
+      );
+      return null;
+    }
   }
 
   private injectLegacyMockupArea(product: any) {
