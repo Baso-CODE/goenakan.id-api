@@ -1,7 +1,6 @@
 import { translate } from "@vitalets/google-translate-api";
 import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
-
 import { ApiError } from "../../../../utils/api-error";
 import { SlugService } from "../../../../utils/genereateSlug";
 import { CloudinaryService } from "../../../cloudinary/cloudinary.service";
@@ -129,7 +128,7 @@ export class ProductService {
       validateTiers(data.priceTiers, "Base Product");
     }
 
-    //  TAMBAHAN BARU: Validasi Price Tiers untuk setiap Varian
+    // --- Validasi Price Tiers untuk setiap Varian ---
     if (data.variantImagesMetadata && data.variantImagesMetadata.length > 0) {
       data.variantImagesMetadata.forEach((meta) => {
         if (meta.priceTiers && meta.priceTiers.length > 0) {
@@ -137,6 +136,21 @@ export class ProductService {
         }
       });
     }
+
+    // ============ TRANSLATE DESCRIPTION ============
+    // Kita lakukan terjemahan di luar transaksi database agar lebih aman dan cepat
+    let translatedDescriptionEn: string | null = null;
+    if (data.description) {
+      try {
+        const res = await translate(data.description, { to: "en" });
+        translatedDescriptionEn = res.text;
+      } catch (error) {
+        console.error("Gagal menerjemahkan deskripsi produk:", error);
+        // Jika gagal, biarkan menjadi null agar proses pembuatan produk tetap berjalan
+        translatedDescriptionEn = null;
+      }
+    }
+    // ===============================================
 
     const {
       attributes = [],
@@ -266,10 +280,10 @@ export class ProductService {
         const product = await tx.product.create({
           data: {
             name: data.name,
-            name_en: translatedNameEn,
+            name_en: null,
             sku: data.sku,
             description: data.description,
-            description_en: translatedDescEn,
+            description_en: translatedDescriptionEn, // <-- Dimasukkan di sini
             basePrice: data.basePrice,
             foreignPrice:
               data.foreignPrice !== undefined && data.foreignPrice !== null
@@ -285,6 +299,7 @@ export class ProductService {
                 ? data.additionalFee.toString()
                 : null,
             isCustom: data.isCustom,
+            isSample: data.isSample || false,
             isMadeByOrder: data.isMadeByOrder || false,
             isActive:
               data.isActive !== undefined
@@ -455,7 +470,6 @@ export class ProductService {
                   })),
                 },
               },
-              //  TAMBAHAN BARU: Memasukkan Price Tiers Varian jika ada
               priceTiers:
                 meta?.priceTiers && meta.priceTiers.length > 0
                   ? {
@@ -630,6 +644,8 @@ export class ProductService {
           : existing.materialTypeId,
     };
 
+    // ✨ Jika nama diubah, ubah namanya dan set versi Inggris ke null
+    // (Bisa juga ditambahkan auto-translate jika kamu butuh ke depannya)
     if (data.name !== undefined) {
       updateData.name = data.name;
     }
@@ -637,12 +653,16 @@ export class ProductService {
       updateData.name_en = translatedNameEn;
     }
 
+    // ====================================================================
+    // ✨ UPDATE & TRANSLATE DESCRIPTION
+    // ====================================================================
     if (data.description !== undefined) {
       updateData.description = data.description;
     }
     if (translatedDescEn !== undefined) {
       updateData.description_en = translatedDescEn;
     }
+    // ====================================================================
 
     if (data.sku !== undefined) updateData.sku = data.sku;
     if (data.basePrice !== undefined) updateData.basePrice = data.basePrice;
@@ -650,6 +670,13 @@ export class ProductService {
     if (data.isCustom !== undefined) {
       updateData.isCustom = data.isCustom;
       if (data.isCustom === true) updateData.stock = 0;
+    }
+
+    if (data.isSample !== undefined) {
+      updateData.isSample =
+        typeof data.isSample === "string"
+          ? data.isSample === "true"
+          : Boolean(data.isSample);
     }
 
     if (data.isMadeByOrder !== undefined) {
@@ -707,7 +734,9 @@ export class ProductService {
     }
 
     const resultingIsActive =
-      updateData.isActive !== undefined ? updateData.isActive : existing.isActive;
+      updateData.isActive !== undefined
+        ? updateData.isActive
+        : existing.isActive;
 
     if (resultingIsActive) {
       const catId = updateData.categoryId || existing.categoryId;
@@ -1822,7 +1851,10 @@ export class ProductService {
           });
         }
       } else {
-        throw new ApiError("Invalid media type. Must be 'image' or 'video'", 400);
+        throw new ApiError(
+          "Invalid media type. Must be 'image' or 'video'",
+          400,
+        );
       }
     });
 
@@ -3204,7 +3236,7 @@ export class ProductService {
     return updatedVideo;
   }
 
-  // === UPSERT PRODUCT SEO (META TITLE, DESCRIPTION, KEYWORDS, DLL) ===
+  // === UPSERT PRODUCT SEO (AUTO TRANSLATE BILINGUAL) ===
   async upsertProductSEO(productId: string, data: ProductSeoDTO) {
     // 1. Validasi: Pastikan Produknya Ada
     const product = await this.prisma.product.findUnique({
@@ -3215,30 +3247,132 @@ export class ProductService {
       throw new ApiError(`Product with ID ${productId} not found`, 404);
     }
 
+    // 2. Ambil data SEO lama untuk membandingkan apakah ada perubahan
+    const existingSeo = await this.prisma.productSEO.findUnique({
+      where: { productId },
+    });
+
+    // 3. Fungsi pembantu untuk menerjemahkan otomatis secara cerdas
+    const getEnValue = async (
+      newIdText?: string,
+      newEnText?: string,
+      oldIdText?: string | null,
+      oldEnText?: string | null,
+    ) => {
+      // Jika admin sudah mengisi manual versi Inggris, utamakan inputan admin
+      if (newEnText && newEnText.trim() !== "") {
+        return newEnText;
+      }
+
+      // Jika teks Indonesia diisi DAN (teksnya berbeda dengan yang lama ATAU data baru)
+      if (newIdText && newIdText !== oldIdText) {
+        try {
+          const res = await translate(newIdText, { to: "en" });
+          return res.text;
+        } catch (error) {
+          console.error(
+            "Gagal menerjemahkan teks, memakai teks asli sebagai fallback:",
+            error,
+          );
+          return newIdText; // Fallback ke teks Indonesia jika API error
+        }
+      }
+
+      // Jika teks Indonesia tidak berubah dan admin tidak mengisi teks Inggris baru,
+      // kita pertahankan teks Inggris yang sudah ada di database sebelumnya.
+      return oldEnText || undefined;
+    };
+
+    // 4. Proses semua terjemahan secara paralel (bersamaan) agar lebih cepat
+    // Kita tidak menerjemahkan canonicalUrl dan structuredData karena itu berupa URL dan JSON
+    const [
+      metaTitleEn,
+      metaDescriptionEn,
+      keywordsEn,
+      ogTitleEn,
+      ogDescriptionEn,
+    ] = await Promise.all([
+      getEnValue(
+        data.metaTitleId,
+        data.metaTitleEn,
+        existingSeo?.metaTitleId,
+        existingSeo?.metaTitleEn,
+      ),
+      getEnValue(
+        data.metaDescriptionId,
+        data.metaDescriptionEn,
+        existingSeo?.metaDescriptionId,
+        existingSeo?.metaDescriptionEn,
+      ),
+      getEnValue(
+        data.keywordsId,
+        data.keywordsEn,
+        existingSeo?.keywordsId,
+        existingSeo?.keywordsEn,
+      ),
+      getEnValue(
+        data.ogTitleId,
+        data.ogTitleEn,
+        existingSeo?.ogTitleId,
+        existingSeo?.ogTitleEn,
+      ),
+      getEnValue(
+        data.ogDescriptionId,
+        data.ogDescriptionEn,
+        existingSeo?.ogDescriptionId,
+        existingSeo?.ogDescriptionEn,
+      ),
+    ]);
+
+    // 5. Simpan ke database menggunakan Upsert
     const seoData = await this.prisma.productSEO.upsert({
       where: {
         productId: productId,
       },
       create: {
         productId: productId,
-        metaTitle: data.metaTitle,
-        metaDescription: data.metaDescription,
-        keywords: data.keywords,
-        canonicalUrl: data.canonicalUrl,
-        ogTitle: data.ogTitle,
-        ogDescription: data.ogDescription,
+        // Data Bahasa Indonesia
+        metaTitleId: data.metaTitleId,
+        metaDescriptionId: data.metaDescriptionId,
+        keywordsId: data.keywordsId,
+        canonicalUrlId: data.canonicalUrlId,
+        ogTitleId: data.ogTitleId,
+        ogDescriptionId: data.ogDescriptionId,
+        structuredDataId: data.structuredDataId,
+
+        // Data Bahasa Inggris (Hasil Translate atau Input Manual)
+        metaTitleEn: metaTitleEn,
+        metaDescriptionEn: metaDescriptionEn,
+        keywordsEn: keywordsEn,
+        canonicalUrlEn: data.canonicalUrlEn,
+        ogTitleEn: ogTitleEn,
+        ogDescriptionEn: ogDescriptionEn,
+        structuredDataEn: data.structuredDataEn,
+
+        // Data Universal
         ogImage: data.ogImage,
-        structuredData: data.structuredData,
       },
       update: {
-        metaTitle: data.metaTitle,
-        metaDescription: data.metaDescription,
-        keywords: data.keywords,
-        canonicalUrl: data.canonicalUrl,
-        ogTitle: data.ogTitle,
-        ogDescription: data.ogDescription,
+        // Data Bahasa Indonesia
+        metaTitleId: data.metaTitleId,
+        metaDescriptionId: data.metaDescriptionId,
+        keywordsId: data.keywordsId,
+        canonicalUrlId: data.canonicalUrlId,
+        ogTitleId: data.ogTitleId,
+        ogDescriptionId: data.ogDescriptionId,
+        structuredDataId: data.structuredDataId,
+
+        // Data Bahasa Inggris (Hasil Translate atau Input Manual)
+        metaTitleEn: metaTitleEn,
+        metaDescriptionEn: metaDescriptionEn,
+        keywordsEn: keywordsEn,
+        canonicalUrlEn: data.canonicalUrlEn,
+        ogTitleEn: ogTitleEn,
+        ogDescriptionEn: ogDescriptionEn,
+        structuredDataEn: data.structuredDataEn,
+
+        // Data Universal
         ogImage: data.ogImage,
-        structuredData: data.structuredData,
       },
     });
 
@@ -3456,7 +3590,7 @@ export class ProductService {
     return result;
   }
 
-  // === GET ALL PRODUCTS PUBLIC (DENGAN PENYESUAIAN HARGA LUAR NEGERI) ===
+  // === GET ALL PRODUCTS PUBLIC (DENGAN PENYESUAIAN HARGA LUAR NEGERI & PRICE TIERS) ===
   async getAllProductsPublic(query: {
     page?: number;
     take?: number;
@@ -3480,7 +3614,6 @@ export class ProductService {
     };
     const lang = query.lang || "id";
 
-    // ... (Logika filter search, category, attributes, dll. tetap sama seperti sebelumnya) ...
     if (query.search) {
       where.OR = [
         { name: { contains: query.search } },
@@ -3602,7 +3735,6 @@ export class ProductService {
     const page = Number(query.page || 1);
     const take = Number(query.take || 6);
 
-    //  AMBIL DATA PRODUK DAN APP SETTING SECARA BERSAMAAN (PARALLEL)
     const [count, rawData, appSetting] = await Promise.all([
       this.prisma.product.count({ where }),
       this.prisma.product.findMany({
@@ -3614,12 +3746,16 @@ export class ProductService {
           category: true,
           itemCategory: true,
           itemName: true,
-          images: { take: 1, orderBy: { sortOrder: "asc" } },
-          // priceTiers dihapus dari sini karena dipakai nanti di halaman detail produk
+          // ✨ UBAH 1: Memprioritaskan gambar dengan isFeatured = true
+          images: {
+            take: 1,
+            orderBy: [{ isFeatured: "desc" }, { sortOrder: "asc" }],
+          },
           orderProducts: { select: { quantity: true } },
+          priceTiers: { orderBy: { minQuantity: "asc" } },
         },
       }),
-      this.prisma.appSetting.findFirst(), // Mengambil pengaturan global aplikasi
+      this.prisma.appSetting.findFirst(),
     ]);
 
     let conversionRate = 1;
@@ -3643,7 +3779,6 @@ export class ProductService {
       }
     }
 
-    // Ambil nilai global adjuster dari AppSetting (jika ada, jika tidak default ke 0)
     const globalAdjuster = appSetting?.globalForeignPriceAdjuster || 0;
     const isForeignTransaction = finalCurrency !== "IDR";
 
@@ -3662,37 +3797,49 @@ export class ProductService {
         categoryName = product.category.name_en;
       }
 
+      //  LOGIKA HARGA DAN MINIMUM PEMBELIAN
       const basePriceValue = Number(product.basePrice);
-      let calculatedPrice = basePriceValue;
+      let calculatedRegularPrice = basePriceValue;
+      let calculatedBulkPrice = basePriceValue;
+      let minOrderQty = 1;
 
-      //  HITUNG KENAIKAN HARGA JIKA TRANSAKSI DILUAR INDONESIA
+      // Cek tier harga terendah (index 0 karena sudah di-order by minQuantity asc)
+      if (product.priceTiers && product.priceTiers.length > 0) {
+        const lowestTier = product.priceTiers[0];
+        calculatedBulkPrice = Number(lowestTier.price);
+        minOrderQty = lowestTier.minQuantity;
+      }
+
+      // Hitung kenaikan harga jika transaksi luar negeri
       if (isForeignTransaction) {
-        // Tentukan persentase: Prioritaskan produk, jika 0/null gunakan global app setting
         const productAdjuster = product.foreignPriceAdjuster ?? 0;
         const activeAdjuster =
           productAdjuster !== 0 ? productAdjuster : globalAdjuster;
 
-        // Rumus: Harga Dasar + (Harga Dasar * Persentase / 100)
-        calculatedPrice =
-          basePriceValue + basePriceValue * (activeAdjuster / 100);
+        calculatedRegularPrice =
+          calculatedRegularPrice +
+          calculatedRegularPrice * (activeAdjuster / 100);
+        calculatedBulkPrice =
+          calculatedBulkPrice + calculatedBulkPrice * (activeAdjuster / 100);
       }
 
-      const imageUrl =
-        product.images.length > 0
-          ? product.images[0].url
-          : "/images/placeholder.jpg";
+      // ✨ UBAH 2: Menghapus fallback /images/placeholder.jpg dan mengembalikan null
+      const imageUrl = product.images.length > 0 ? product.images[0].url : null;
 
       return {
         id: product.id,
         name: productName,
         image: imageUrl,
 
-        // Terapkan harga yang sudah disesuaikan dengan konversi mata uang
-        regularPrice: parseFloat((calculatedPrice * conversionRate).toFixed(2)),
-        bulkPrice: parseFloat((calculatedPrice * conversionRate).toFixed(2)),
+        regularPrice: parseFloat(
+          (calculatedRegularPrice * conversionRate).toFixed(2),
+        ),
+        bulkPrice: parseFloat(
+          (calculatedBulkPrice * conversionRate).toFixed(2),
+        ),
+        minOrder: minOrderQty,
 
         currencyCode: finalCurrency,
-        minOrder: 1,
         sold: totalSold,
         isCustom: product.isCustom,
         categoryId: product.categoryId,
@@ -3707,28 +3854,23 @@ export class ProductService {
 
     return { data: formattedData, meta };
   }
+
   // === GET BEST SELLER PRODUCTS (CLIENT HOME PAGE) ===
-  async getBestSellerProducts() {
+  async getBestSellerProducts(
+    targetCurrency: string = "IDR",
+    lang: string = "id",
+  ) {
     try {
       const topSelling = await this.prisma.orderProduct.groupBy({
         by: ["productId"],
-        _sum: {
-          quantity: true,
-        },
-        orderBy: {
-          _sum: {
-            quantity: "desc",
-          },
-        },
-        take: 6, // Ambil batas maksimal 6 produk
+        _sum: { quantity: true },
+        orderBy: { _sum: { quantity: "desc" } },
+        take: 6,
       });
 
       const productIds = topSelling.map((item) => item.productId);
-
-      //  PERBAIKAN: Berikan tipe 'any[]' secara eksplisit
       let rawProducts: any[] = [];
 
-      // 2. Ambil detail produk berdasarkan ID yang laris tersebut
       if (productIds.length > 0) {
         rawProducts = await this.prisma.product.findMany({
           where: {
@@ -3738,81 +3880,119 @@ export class ProductService {
           },
           include: {
             category: true,
-            images: {
-              take: 1,
-              orderBy: { isFeatured: "desc" },
-            },
-            priceTiers: {
-              orderBy: { minQuantity: "asc" },
-            },
-            orderProducts: {
-              select: { quantity: true },
-            },
+            images: { take: 1, orderBy: { isFeatured: "desc" } },
+            priceTiers: { orderBy: { minQuantity: "asc" } },
+            orderProducts: { select: { quantity: true } },
           },
         });
       }
 
-      // 3. FALLBACK: Jika belum ada penjualan sama sekali, ambil 6 produk terbaru
+      // FALLBACK: Jika belum ada penjualan
       if (rawProducts.length === 0) {
         rawProducts = await this.prisma.product.findMany({
-          where: {
-            isActive: true,
-            category: { isActive: true },
-          },
+          where: { isActive: true, category: { isActive: true } },
           take: 6,
           orderBy: { createdAt: "desc" },
           include: {
             category: true,
-            images: {
-              take: 1,
-              orderBy: { isFeatured: "desc" },
-            },
-            priceTiers: {
-              orderBy: { minQuantity: "asc" },
-            },
-            orderProducts: {
-              select: { quantity: true },
-            },
+            images: { take: 1, orderBy: { isFeatured: "desc" } },
+            priceTiers: { orderBy: { minQuantity: "asc" } },
+            orderProducts: { select: { quantity: true } },
           },
         });
       }
 
-      // 4. Transformasi/Mapping Data agar cocok dengan ProductCard di Front-End
+      // ✨ AMBIL APP SETTING UNTUK GLOBAL ADJUSTER
+      const appSetting = await this.prisma.appSetting.findFirst();
+      const globalAdjuster = appSetting?.globalForeignPriceAdjuster || 0;
+
+      // ✨ LOGIKA KONVERSI MATA UANG
+      let conversionRate = 1;
+      let finalCurrency = "IDR";
+
+      if (targetCurrency && targetCurrency !== "IDR") {
+        try {
+          const conversionResult =
+            await this.currencyConversion.convertCurrency({
+              fromCurrency: "IDR",
+              toCurrency: targetCurrency,
+              amount: 1,
+            });
+          conversionRate = conversionResult.rate;
+          finalCurrency = targetCurrency;
+        } catch (error) {
+          console.error(
+            "Gagal mengambil nilai tukar, harga fallback ke IDR",
+            error,
+          );
+        }
+      }
+
+      const isForeignTransaction = finalCurrency !== "IDR";
+
       const formattedData = rawProducts.map((product) => {
-        // Hitung total terjual
         const totalSold = product.orderProducts.reduce(
           (sum: number, order: any) => sum + (order.quantity || 1),
           0,
         );
 
-        const regularPrice = Number(product.basePrice);
-        let bulkPrice = regularPrice;
+        // ✨ PENYESUAIAN BAHASA (Nama & Kategori)
+        let productName = product.name;
+        if (lang === "en") {
+          productName = product.name_en || product.name || "Unnamed Product";
+        }
+
+        let categoryName = product.category?.name_id || "";
+        if (lang === "en" && product.category?.name_en) {
+          categoryName = product.category.name_en;
+        }
+
+        // ✨ PENYESUAIAN HARGA & TIER
+        const basePriceValue = Number(product.basePrice);
+        let calculatedRegularPrice = basePriceValue;
+        let calculatedBulkPrice = basePriceValue;
         let minOrder = 1;
 
         if (product.priceTiers && product.priceTiers.length > 0) {
           const cheapestTier = [...product.priceTiers].sort(
             (a, b) => Number(a.price) - Number(b.price),
           )[0];
-          bulkPrice = Number(cheapestTier.price);
+          calculatedBulkPrice = Number(cheapestTier.price);
           minOrder = cheapestTier.minQuantity;
         }
 
+        // ✨ TERAPKAN ADJUSTER JIKA TRANSAKSI LUAR NEGERI
+        if (isForeignTransaction) {
+          const productAdjuster = product.foreignPriceAdjuster ?? 0;
+          const activeAdjuster =
+            productAdjuster !== 0 ? productAdjuster : globalAdjuster;
+
+          calculatedRegularPrice =
+            calculatedRegularPrice +
+            calculatedRegularPrice * (activeAdjuster / 100);
+          calculatedBulkPrice =
+            calculatedBulkPrice + calculatedBulkPrice * (activeAdjuster / 100);
+        }
+
         const imageUrl =
-          product.images.length > 0
-            ? product.images[0].url
-            : "/images/placeholder.jpg";
+          product.images.length > 0 ? product.images[0].url : null;
 
         return {
           id: product.id,
-          name: product.name,
+          name: productName,
           slug: product.slug,
           image: imageUrl,
-          regularPrice: regularPrice,
-          bulkPrice: bulkPrice,
+          // Kalikan dengan conversion rate dan bulatkan ke 2 desimal
+          regularPrice: parseFloat(
+            (calculatedRegularPrice * conversionRate).toFixed(2),
+          ),
+          bulkPrice: parseFloat(
+            (calculatedBulkPrice * conversionRate).toFixed(2),
+          ),
           minOrder: minOrder,
           sold: totalSold,
           isCustom: product.isCustom,
-          categoryName: product.category?.name_id || "",
+          categoryName: categoryName,
         };
       });
 
@@ -3863,7 +4043,6 @@ export class ProductService {
           },
         },
       });
-
       if (
         !product ||
         !product.isActive ||
@@ -3871,14 +4050,11 @@ export class ProductService {
       ) {
         throw new Error("Product not found");
       }
-
       // If materialType is inactive, don't expose it to client
       if (product.materialType && !product.materialType.isActive) {
         (product as any).materialType = null;
       }
-
       this.injectLegacyMockupArea(product);
-
       let conversionRate = 1;
       if (targetCurrency && targetCurrency !== "IDR") {
         try {
@@ -3889,7 +4065,6 @@ export class ProductService {
               amount: 1,
             });
           conversionRate = conversionResult.rate;
-
           const appSetting = await this.prisma.appSetting.findFirst();
           const globalAdjuster = appSetting?.globalForeignPriceAdjuster
             ? Number(appSetting.globalForeignPriceAdjuster)
@@ -3899,14 +4074,11 @@ export class ProductService {
             product.foreignPriceAdjuster !== undefined
               ? Number(product.foreignPriceAdjuster)
               : 0;
-
           const effectiveAdjuster =
             productAdjuster > 0 ? productAdjuster : globalAdjuster;
-
           if (effectiveAdjuster > 0) {
             conversionRate = conversionRate * (1 + effectiveAdjuster / 100);
           }
-
           console.log(
             `[CURRENCY ADJUSTMENT] Slug: ${slug}, Target: ${targetCurrency}`,
           );
@@ -3922,28 +4094,20 @@ export class ProductService {
           );
         }
       }
-
-      // 🛠️ ==========================================================
-      //  PERBAIKAN DI SINI: Logika pemilihan bahasa yang lebih aman
-      // ==========================================================
       let productName = product.name;
       if (lang === "en") {
         productName = product.name_en || product.name || "Unnamed Product";
       } else {
         productName = product.name || product.name_en || "Produk Tanpa Nama";
       }
-
       const productDescription =
         lang === "en" && product.description_en
           ? product.description_en
           : product.description;
-      // 🛠️ ==========================================================
-
       const totalSold = product.orderProducts.reduce(
         (sum, order) => sum + (order.quantity || 1),
         0,
       );
-
       const combinedMedia: any[] = [];
       if (product.images && product.images.length > 0) {
         product.images.forEach((img) => {
@@ -3982,13 +4146,11 @@ export class ProductService {
           mockupAreas: [],
         });
       }
-
       const formattedVariants = product.productVariants.map((v) => {
         const vWeight = v.weight ?? product.weight;
         const vWidth = v.width ?? product.width;
         const vHeight = v.height ?? product.height;
         const vLength = v.length ?? product.length;
-
         const vDimensionParts = [vLength, vWidth, vHeight].filter(
           (val) => val !== null && val !== undefined,
         );
@@ -3996,7 +4158,6 @@ export class ProductService {
           vDimensionParts.length > 0
             ? `${vDimensionParts.join(" x ")} cm`
             : "-";
-
         const attributes = v.attributeValues
           .map((av) => ({
             name: av.attributeValue.attribute?.name || "",
@@ -4012,7 +4173,6 @@ export class ProductService {
               ? a.attributePosition - b.attributePosition
               : a.valuePosition - b.valuePosition,
           );
-
         const rawVariantPrice = v.price ? Number(v.price) : null;
         const convertedVariantPrice =
           rawVariantPrice !== null
@@ -4062,7 +4222,6 @@ export class ProductService {
           })),
         };
       });
-
       const dimensionParts = [
         product.length,
         product.width,
@@ -4070,7 +4229,6 @@ export class ProductService {
       ].filter((val) => val !== null && val !== undefined);
       const dimensionsString =
         dimensionParts.length > 0 ? `${dimensionParts.join(" x ")} cm` : "-";
-
       let formattedTiers = product.priceTiers.map((tier) => {
         let label = "";
         if (tier.maxQuantity) {
@@ -4078,11 +4236,9 @@ export class ProductService {
         } else {
           label = `≥ ${tier.minQuantity} pcs`;
         }
-
         const convertedTierPrice = parseFloat(
           (Number(tier.price) * conversionRate).toFixed(2),
         );
-
         return {
           minQty: tier.minQuantity,
           maxQty: tier.maxQuantity,
@@ -4090,11 +4246,9 @@ export class ProductService {
           label: label,
         };
       });
-
       const convertedBasePrice = parseFloat(
         (Number(product.basePrice) * conversionRate).toFixed(2),
       );
-
       if (formattedTiers.length === 0) {
         formattedTiers.push({
           minQty: 1,
@@ -4103,7 +4257,62 @@ export class ProductService {
           label: "1+ pcs",
         });
       }
-
+      const attributeValuesFormatted = await Promise.all(
+        product.attributeValues.map(async (av) => {
+          let attributeName = av.attribute?.name || "";
+          let attributeValue = av.attributeValue?.value || "";
+          if (lang === "en") {
+            try {
+              const [nameTranslated, valueTranslated] = await Promise.all([
+                attributeName
+                  ? translate(attributeName, { to: "en" }).then(
+                      (res) => res.text,
+                    )
+                  : Promise.resolve(attributeName),
+                attributeValue
+                  ? translate(attributeValue, { to: "en" }).then(
+                      (res) => res.text,
+                    )
+                  : Promise.resolve(attributeValue),
+              ]);
+              attributeName = nameTranslated;
+              attributeValue = valueTranslated;
+            } catch (error) {
+              console.error(
+                `Failed to translate attribute (${av.attributeId}):`,
+                error,
+              );
+            }
+          }
+          return {
+            id: av.id,
+            attributeId: av.attributeId,
+            attributeValueId: av.attributeValueId,
+            priceModifier: av.priceModifier
+              ? parseFloat(
+                  (Number(av.priceModifier) * conversionRate).toFixed(2),
+                )
+              : 0,
+            weight: av.weight ? Number(av.weight) : null,
+            width: av.width ? Number(av.width) : null,
+            height: av.height ? Number(av.height) : null,
+            length: av.length ? Number(av.length) : null,
+            value: attributeValue,
+            attributeName: attributeName,
+            attributeType: av.attribute?.type || "TEXT",
+            attributePosition: av.attribute?.position ?? 0,
+            valuePosition: av.attributeValue?.position ?? 0,
+            parentValueId: av.attribute?.parentValueId || null,
+          };
+        }),
+      );
+      const attributeValuesSorted = attributeValuesFormatted
+        .sort((a, b) =>
+          a.attributePosition !== b.attributePosition
+            ? a.attributePosition - b.attributePosition
+            : a.valuePosition - b.valuePosition,
+        )
+        .map(({ attributePosition, valuePosition, ...rest }) => rest);
       return {
         id: product.id,
         name: productName,
@@ -4112,13 +4321,15 @@ export class ProductService {
         basePrice: convertedBasePrice,
         currencyCode: targetCurrency,
         foreignPriceAdjuster: product.foreignPriceAdjuster || 0,
-        category: product.category?.name_id || "Uncategorized",
+        category:
+          lang === "en" && product.category?.name_en
+            ? product.category.name_en
+            : product.category?.name_id || "Uncategorized",
         sold: totalSold,
         media: combinedMedia,
         variants: formattedVariants,
         priceTiers: formattedTiers,
         description: productDescription || "",
-
         weight: product.weight ? `${product.weight} gram` : "-",
         dimensions: dimensionsString,
         rawWeight: product.weight,
@@ -4141,33 +4352,7 @@ export class ProductService {
         mockupFrontImageId: product.mockupFrontImageId,
         mockupBackImageId: product.mockupBackImageId,
         colorMockupTrigger: product.colorMockupTrigger,
-        attributeValues: product.attributeValues
-          .map((av) => ({
-            id: av.id,
-            attributeId: av.attributeId,
-            attributeValueId: av.attributeValueId,
-            priceModifier: av.priceModifier
-              ? parseFloat(
-                  (Number(av.priceModifier) * conversionRate).toFixed(2),
-                )
-              : 0,
-            weight: av.weight ? Number(av.weight) : null,
-            width: av.width ? Number(av.width) : null,
-            height: av.height ? Number(av.height) : null,
-            length: av.length ? Number(av.length) : null,
-            value: av.attributeValue?.value || "",
-            attributeName: av.attribute?.name || "",
-            attributeType: av.attribute?.type || "TEXT",
-            attributePosition: av.attribute?.position ?? 0,
-            valuePosition: av.attributeValue?.position ?? 0,
-            parentValueId: av.attribute?.parentValueId || null,
-          }))
-          .sort((a, b) =>
-            a.attributePosition !== b.attributePosition
-              ? a.attributePosition - b.attributePosition
-              : a.valuePosition - b.valuePosition,
-          )
-          .map(({ attributePosition, valuePosition, ...rest }) => rest),
+        attributeValues: attributeValuesSorted,
       };
     } catch (error) {
       console.error(`❌ Error fetching product by slug (${slug}):`, error);
@@ -4178,7 +4363,6 @@ export class ProductService {
   // === GET RELATED PRODUCTS (PUBLIC) ===
   async getRelatedProducts(slug: string) {
     try {
-      // 1. Cari produk target untuk mendapatkan categoryId-nya
       const targetProduct = await this.prisma.product.findUnique({
         where: { slug },
         select: { id: true, categoryId: true },
@@ -4188,11 +4372,12 @@ export class ProductService {
         throw new Error("Product not found");
       }
 
-      // 2. Ambil produk lain di kategori yang sama
+      // 2. Ambil produk lain di kategori yang sama dan berstatus AKTIF
       const relatedRaw = await this.prisma.product.findMany({
         where: {
           categoryId: targetProduct.categoryId,
           id: { not: targetProduct.id },
+          isActive: true, // ✨ PERUBAHAN: Hanya ambil produk yang statusnya aktif
         },
         take: 10,
         orderBy: { createdAt: "desc" },
@@ -4217,14 +4402,14 @@ export class ProductService {
           bulkPrice = Number(cheapestTier.price);
         }
 
-        const imageUrl =
-          p.images.length > 0 ? p.images[0].url : "/images/placeholder.jpg";
+        // Jika gambar ada ambil URL-nya, jika tidak ada kembalikan null
+        const imageUrl = p.images.length > 0 ? p.images[0].url : null;
 
         return {
           id: p.id,
           name: p.name,
           slug: p.slug,
-          image: imageUrl,
+          image: imageUrl, // Akan bernilai null jika kosong
           bulkPrice: bulkPrice,
           regularPrice: Number(p.basePrice),
         };

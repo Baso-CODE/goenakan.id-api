@@ -88,10 +88,10 @@ export class ProductController {
         lang,
       } = req.query;
 
-      //  2. TAMBAHKAN CONSOLE.LOG UNTUK MENGECEK DATA MASUK
-      console.log("--- DEBUG QUERY DARI FRONTEND ---");
-      console.log("Country diterima:", country);
-      console.log("Lang diterima:", lang);
+      // //  2. TAMBAHKAN CONSOLE.LOG UNTUK MENGECEK DATA MASUK
+      // console.log("--- DEBUG QUERY DARI FRONTEND ---");
+      // console.log("Country diterima:", country);
+      // console.log("Lang diterima:", lang);
 
       let targetCurrency = "IDR";
 
@@ -107,7 +107,7 @@ export class ProductController {
         }
       }
 
-      console.log("Target Currency hasil kalkulasi:", targetCurrency);
+      // console.log("Target Currency hasil kalkulasi:", targetCurrency);
 
       // Teruskan parameter beserta targetCurrency dan lang ke Service
       const products = await this.productService.getAllProductsPublic({
@@ -570,13 +570,36 @@ export class ProductController {
   };
 
   // === GET BEST SELLER PRODUCTS ===
+  // === GET BEST SELLER PRODUCTS ===
   getBestSellerProducts = async (
     req: Request,
     res: Response,
     next: NextFunction,
   ) => {
     try {
-      const result = await this.productService.getBestSellerProducts();
+      const { country, lang } = req.query;
+
+      // 1. Tentukan mata uang default
+      let targetCurrency = "IDR";
+
+      // 2. Konversi country menjadi mata uang yang sesuai
+      if (country && typeof country === "string") {
+        const countryCode = country.toUpperCase();
+        if (countryCode === "ID") {
+          targetCurrency = "IDR";
+        } else {
+          const autoCurrency =
+            countryToCurrency[countryCode as keyof typeof countryToCurrency];
+          targetCurrency = autoCurrency || "USD"; // Fallback ke USD jika tidak ditemukan
+        }
+      }
+
+      // 3. Panggil service dengan mengirimkan targetCurrency dan lang
+      const result = await this.productService.getBestSellerProducts(
+        targetCurrency,
+        typeof lang === "string" ? lang : "id",
+      );
+
       res.status(200).json(result);
     } catch (error) {
       next(error);

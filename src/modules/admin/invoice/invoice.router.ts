@@ -26,7 +26,7 @@ export class InvoiceRouter {
     // Seluruh route di bawahnya otomatis aman.
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("invoice"));
 
     // ==========================================
     // === INVOICE MANAGEMENT ROUTES ===

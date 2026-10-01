@@ -45,7 +45,7 @@ export class PolicyRouter {
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
 
     //  Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("policy"));
 
     // ==========================================
     // SECTION 2: POLICY CATEGORIES ROUTES

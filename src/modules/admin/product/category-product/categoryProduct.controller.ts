@@ -64,14 +64,19 @@ export class ProductCategoryController {
   // === GET CATEGORY LIST ===
   getCategoryList = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await this.productCategoryService.getAllCategoriesList();
+      // ✨ Ambil parameter lang dari query URL (default ke 'id')
+      const { lang } = req.query;
+      const targetLang = (lang as string) || "id";
+
+      // Teruskan parameter lang ke dalam service
+      const result =
+        await this.productCategoryService.getAllCategoriesList(targetLang);
       res.status(200).send(result);
     } catch (error) {
       next(error);
     }
   };
 
-  // === UPDATE CATEGORY ===
   // === UPDATE CATEGORY ===
   updateCategory = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -133,16 +138,10 @@ export class ProductCategoryController {
     next: NextFunction,
   ) => {
     try {
-      const lang =
-        (req.headers["x-language"] as string) ||
-        (req.headers["accept-language"] as string) ||
-        "id";
+      const lang = (req.query.lang as string) || "id";
 
       const result =
         await this.productCategoryService.getPublicCategories(lang);
-
-      res.setHeader("Vary", "x-language");
-      res.setHeader("Cache-Control", "public, s-maxage=3600");
 
       res.status(200).json({
         success: true,

@@ -31,7 +31,7 @@ export class FinanceRouter {
     // Seluruh route di bawahnya otomatis aman.
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("finance"));
 
     // ==========================================================
     // 1. ROUTES UNTUK FINANCE CATEGORY (KATEGORI PENGELUARAN)

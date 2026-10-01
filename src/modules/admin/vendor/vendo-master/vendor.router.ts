@@ -27,7 +27,7 @@ export class VendorRouter {
     // Seluruh route di bawahnya otomatis aman dan dinamis.
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("vendor"));
 
     // ==========================================
     // VENDOR ROUTES

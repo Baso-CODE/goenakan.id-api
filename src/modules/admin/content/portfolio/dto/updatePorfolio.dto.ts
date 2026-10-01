@@ -6,11 +6,14 @@ import {
   IsString,
   Min,
 } from "class-validator";
-
 export class UpdatePortfolioDTO {
   @IsOptional()
   @IsString()
-  title?: string;
+  title_id?: string;
+
+  @IsOptional()
+  @IsString()
+  title_en?: string;
 
   @IsOptional()
   @IsString()
@@ -19,6 +22,10 @@ export class UpdatePortfolioDTO {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  description_en?: string;
 
   @IsOptional()
   @Type(() => Number)
@@ -33,7 +40,6 @@ export class UpdatePortfolioDTO {
   @IsOptional()
   @IsString()
   eventCategoryId?: string;
-  //  AKHIR TAMBAHAN BARU
 
   @IsOptional()
   @Type(() => Number)

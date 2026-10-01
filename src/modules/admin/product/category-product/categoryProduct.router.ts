@@ -35,7 +35,7 @@ export class ProductCategoryRouter {
     // Mulai baris ini ke bawah, semua route wajib login & punya permission dinamis.
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("product_category"));
 
     // ==========================================
     // === PROTECTED ROUTES ===

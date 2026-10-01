@@ -21,12 +21,20 @@ export class OrderRouter {
 
   private initializeRoutes = (): void => {
     // ==========================================
+    // 🌐 PUBLIC ROUTES (Bisa diakses tanpa login)
+    // Taruh semua API untuk halaman depan / publik di sini
+    // ==========================================
+
+    // API Statistik untuk Landing Page "Who We Are"
+    this.router.get("/stats/who-we-are", this.orderController.getWhoWeAreStats);
+
+    // ==========================================
     // 🛡️ GATEKEEPER LEVEL ROUTER
     // Pasang pelindung token dan permission dinamis di sini satu kali saja.
     // Seluruh route di bawahnya otomatis aman.
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("order"));
 
     // ==========================================
     // === ORDER MANAGEMENT ROUTES ===

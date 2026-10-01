@@ -1,5 +1,5 @@
+import { translate } from "@vitalets/google-translate-api";
 import { injectable } from "tsyringe";
-
 import { ApiError } from "../../../../utils/api-error";
 import { SlugService } from "../../../../utils/genereateSlug";
 import { CloudinaryService } from "../../../cloudinary/cloudinary.service";
@@ -29,7 +29,11 @@ export class EventCategoryService {
   }) {
     const where: any = {};
     if (query.search) {
-      where.title = { contains: query.search, mode: "insensitive" };
+      // Pencarian mencakup title_id atau title_en
+      where.OR = [
+        { title_id: { contains: query.search, mode: "insensitive" } },
+        { title_en: { contains: query.search, mode: "insensitive" } },
+      ];
     }
 
     const count = await this.prisma.eventCategory.count({ where });
@@ -61,7 +65,7 @@ export class EventCategoryService {
   }
 
   // ====================================================================
-  // 3. CREATE EVENT CATEGORY
+  // CREATE EVENT CATEGORY (Dengan Auto-Translate jika EN kosong)
   // ====================================================================
   async createEventCategory(
     data: CreateEventCategoryDTO,
@@ -69,10 +73,26 @@ export class EventCategoryService {
   ) {
     if (!file) throw new ApiError("Event category image is required", 400);
 
-    const slug = this.slug.create(data.title);
+    // Slug dibuat berdasarkan title_id utama
+    const slug = this.slug.create(data.title_id);
     let uploadResult;
 
-    // --- UPLOAD KE CLOUDINARY ---
+    // --- 1. PROSES AUTO-TRANSLATE JIKA TITLE_EN KOSONG ---
+    let finalTitleEn = data.title_en;
+
+    try {
+      if (!finalTitleEn && data.title_id) {
+        const resTitle = await translate(data.title_id, { to: "en" });
+        finalTitleEn = resTitle.text;
+      }
+    } catch (transError) {
+      console.warn(
+        "⚠️ Warning: Auto-translate event category gagal:",
+        transError,
+      );
+    }
+
+    // --- 2. UPLOAD KE CLOUDINARY ---
     try {
       uploadResult = await this.cloudinary.upload(file, {
         folder: "event_categories",
@@ -82,13 +102,13 @@ export class EventCategoryService {
       throw new ApiError(`Gagal upload gambar: ${error.message}`, 500);
     }
 
-    // --- INSERT KE DATABASE ---
+    // --- 3. INSERT KE DATABASE ---
     try {
       const newCategory = await this.prisma.eventCategory.create({
         data: {
-          title: data.title,
+          title_id: data.title_id,
+          title_en: finalTitleEn || null, // Menggunakan hasil terjemahan otomatis atau input manual
           slug,
-          //  PERBAIKAN: Gunakan pengecekan !== undefined agar angka 0 tetap terbaca dengan benar
           orderCount:
             data.orderCount !== undefined ? Number(data.orderCount) : 0,
           displayOrder:
@@ -105,7 +125,6 @@ export class EventCategoryService {
 
       return newCategory;
     } catch (error: any) {
-      // ⚠️ ROLLBACK: Jika DB gagal, hapus gambar yang baru saja diupload ke Cloudinary
       if (uploadResult?.public_id) {
         await this.cloudinary.delete(uploadResult.public_id).catch(() => null);
       }
@@ -114,7 +133,7 @@ export class EventCategoryService {
 
       if (error.code === "P2002") {
         throw new ApiError(
-          `Kategori event "${data.title}" sudah ada (Slug duplikat).`,
+          `Kategori event "${data.title_id}" sudah ada (Slug duplikat).`,
           400,
         );
       }
@@ -127,7 +146,7 @@ export class EventCategoryService {
   }
 
   // ====================================================================
-  // 4. UPDATE EVENT CATEGORY
+  // 4. UPDATE EVENT CATEGORY (Dengan Smart Auto-Translate)
   // ====================================================================
   async updateEventCategory(
     id: string,
@@ -142,12 +161,10 @@ export class EventCategoryService {
     // --- JIKA ADA FILE BARU ---
     if (file) {
       try {
-        // 1. Hapus file lama
         if (existing.imageId) {
           await this.cloudinary.delete(existing.imageId).catch(() => null);
         }
 
-        // 2. Upload file baru
         const uploadResult = await this.cloudinary.upload(file, {
           folder: "event_categories",
         });
@@ -159,17 +176,50 @@ export class EventCategoryService {
       }
     }
 
-    // --- UPDATE DATABASE ---
+    // --- 1. PROSES SMART AUTO-TRANSLATE UNTUK UPDATE ---
+    let finalTitleEn = data.title_en;
+
+    try {
+      const activeTitleId =
+        data.title_id !== undefined ? data.title_id : existing.title_id;
+
+      // Cek apakah title_id mengalami perubahan dari data lama di database
+      const titleIdChanged =
+        data.title_id !== undefined && data.title_id !== existing.title_id;
+
+      // Terjemahan ulang akan dipicu jika:
+      // - title_en kosong/tidak ada
+      // - ATAU title_id diubah DAN title_en masih bernilai sama dengan data lama (artinya user tidak mengubah terjemahan Inggris secara manual)
+      const shouldTranslate =
+        !finalTitleEn ||
+        (titleIdChanged &&
+          (finalTitleEn === existing.title_en || !finalTitleEn));
+
+      if (shouldTranslate && activeTitleId) {
+        const resTitle = await translate(activeTitleId, { to: "en" });
+        finalTitleEn = resTitle.text;
+      }
+    } catch (transError) {
+      console.warn(
+        "⚠️ Warning: Auto-translate update event category gagal:",
+        transError,
+      );
+    }
+
+    // --- 2. UPDATE DATABASE ---
     try {
       const slug =
-        data.title && data.title !== existing.title
-          ? this.slug.create(data.title)
+        data.title_id && data.title_id !== existing.title_id
+          ? this.slug.create(data.title_id)
           : existing.slug;
 
       const updatedCategory = await this.prisma.eventCategory.update({
         where: { id },
         data: {
-          title: data.title,
+          title_id:
+            data.title_id !== undefined ? data.title_id : existing.title_id,
+          title_en:
+            finalTitleEn !== undefined ? finalTitleEn : existing.title_en,
           slug,
           orderCount:
             data.orderCount !== undefined
@@ -202,7 +252,6 @@ export class EventCategoryService {
       );
     }
   }
-
   // ====================================================================
   // 5. DELETE EVENT CATEGORY
   // ====================================================================
@@ -210,12 +259,10 @@ export class EventCategoryService {
     const existing = await this.getEventCategoryById(id);
 
     try {
-      // 1. Hapus gambar dari Cloudinary
       if (existing.imageId) {
         await this.cloudinary.delete(existing.imageId);
       }
 
-      // 2. Hapus data dari Database
       return await this.prisma.eventCategory.delete({ where: { id } });
     } catch (error: any) {
       console.error("🔥 DELETE ERROR:", error);
@@ -224,30 +271,40 @@ export class EventCategoryService {
   }
 
   // ====================================================================
-  // 6. GET PUBLIC EVENT CATEGORIES (Untuk Carousel di Landing Page)
+  // 6. GET PUBLIC EVENT CATEGORIES (Dengan dukungan parameter lang)
   // ====================================================================
-  async getPublicEventCategories() {
+  async getPublicEventCategories(lang: string = "id") {
     try {
-      return await this.prisma.eventCategory.findMany({
+      const categories = await this.prisma.eventCategory.findMany({
         where: { isActive: true },
         orderBy: { displayOrder: "asc" },
         select: {
           id: true,
-          title: true,
+          title_id: true,
+          title_en: true,
           slug: true,
           orderCount: true,
           image: true,
         },
       });
+
+      // Mapping data untuk menyesuaikan bahasa yang diminta (lang)
+      return categories.map((cat) => ({
+        id: cat.id,
+        title: lang === "en" && cat.title_en ? cat.title_en : cat.title_id,
+        slug: cat.slug,
+        orderCount: cat.orderCount,
+        image: cat.image,
+      }));
     } catch (error) {
       throw new ApiError("Gagal mengambil data kategori event publik.", 500);
     }
   }
 
   // ====================================================================
-  // 7. GET PUBLIC EVENT CATEGORY BY SLUG (Menampilkan Detail & Children)
+  // 7. GET PUBLIC EVENT CATEGORY BY SLUG (Dengan dukungan parameter lang)
   // ====================================================================
-  async getPublicEventCategoryBySlug(slug: string) {
+  async getPublicEventCategoryBySlug(slug: string, lang: string = "id") {
     try {
       const category = await this.prisma.eventCategory.findFirst({
         where: {
@@ -260,7 +317,8 @@ export class EventCategoryService {
             orderBy: { displayOrder: "asc" },
             select: {
               id: true,
-              title: true,
+              title_id: true,
+              title_en: true,
               slug: true,
               clientName: true,
               image: true,
@@ -275,7 +333,21 @@ export class EventCategoryService {
         throw new ApiError("Kategori event tidak ditemukan.", 404);
       }
 
-      return category;
+      // Mapping hasil kategori utama
+      const translatedCategory = {
+        ...category,
+        title:
+          lang === "en" && category.title_en
+            ? category.title_en
+            : category.title_id,
+        // Mapping juga portofolio di dalamnya agar sesuai dengan bahasa
+        portfolios: category.portfolios.map((p) => ({
+          ...p,
+          title: lang === "en" && p.title_en ? p.title_en : p.title_id,
+        })),
+      };
+
+      return translatedCategory;
     } catch (error: any) {
       if (error instanceof ApiError) throw error;
       throw new ApiError("Gagal mengambil detail kategori event.", 500);
@@ -283,18 +355,24 @@ export class EventCategoryService {
   }
 
   // ====================================================================
-  // GET EVENT CATEGORY LIST (Untuk Dropdown di Form Portfolio)
+  // GET EVENT CATEGORY LIST (Untuk Dropdown dengan dukungan lang)
   // ====================================================================
-  async getEventCategoryList() {
+  async getEventCategoryList(lang: string = "id") {
     try {
-      return await this.prisma.eventCategory.findMany({
-        where: { isActive: true }, // Hanya ambil kategori yang aktif
+      const categories = await this.prisma.eventCategory.findMany({
+        where: { isActive: true },
         select: {
           id: true,
-          title: true,
+          title_id: true,
+          title_en: true,
         },
-        orderBy: { title: "asc" }, // Urutkan sesuai abjad
+        orderBy: { title_id: "asc" },
       });
+
+      return categories.map((cat) => ({
+        id: cat.id,
+        title: lang === "en" && cat.title_en ? cat.title_en : cat.title_id,
+      }));
     } catch (error) {
       throw new ApiError("Gagal mengambil daftar kategori event.", 500);
     }

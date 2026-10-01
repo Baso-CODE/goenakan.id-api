@@ -28,7 +28,7 @@ export class PurchaseChannelRouter {
     // Semua route di bawahnya akan otomatis aman.
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("purchase_channel"));
 
     // ==========================================
     // GET ALL WITH PAGINATION (Otomatis butuh 'read_purchase_channels')

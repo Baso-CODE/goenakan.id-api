@@ -8,9 +8,13 @@ import {
 } from "class-validator";
 
 export class CreateEventCategoryDTO {
-  @IsNotEmpty({ message: "Judul kategori event wajib diisi" })
+  @IsNotEmpty({ message: "Judul kategori event (ID) wajib diisi" })
   @IsString()
-  title!: string;
+  title_id!: string;
+
+  @IsOptional()
+  @IsString()
+  title_en?: string;
 
   @IsOptional()
   @Type(() => Number)
@@ -32,7 +36,11 @@ export class CreateEventCategoryDTO {
 export class UpdateEventCategoryDTO {
   @IsOptional()
   @IsString()
-  title?: string;
+  title_id?: string;
+
+  @IsOptional()
+  @IsString()
+  title_en?: string;
 
   @IsOptional()
   @Type(() => Number)
@@ -50,7 +58,6 @@ export class UpdateEventCategoryDTO {
   @IsString()
   isActive?: string;
 
-  //  TAMBAHAN: Konsisten dengan DTO Portfolio untuk update gambar
   @IsOptional()
   @IsString()
   image?: string;

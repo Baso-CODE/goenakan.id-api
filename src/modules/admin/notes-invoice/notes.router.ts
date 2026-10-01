@@ -32,7 +32,7 @@ export class NoteRouter {
     // Seluruh route di bawahnya otomatis aman.
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("invoice_note"));
 
     // =========================================================
     // 1. NOTE CATEGORIES ROUTES (Prefix: /categories)

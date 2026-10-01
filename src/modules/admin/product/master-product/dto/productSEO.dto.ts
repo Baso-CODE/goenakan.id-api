@@ -1,45 +1,87 @@
 import {
-  IsString,
+  IsJSON,
   IsOptional,
+  IsString,
   IsUrl,
   MaxLength,
-  IsJSON,
 } from "class-validator";
 
 // Kita namakan 'ProductSeoDTO' karena dipakai untuk Create DAN Update
 export class ProductSeoDTO {
-  // Field ini Optional, karena saat Create pun user mungkin tidak mengisi ini
+  // ==========================================
+  // BAHASA INDONESIA (ID)
+  // ==========================================
   @IsOptional()
   @IsString()
-  @MaxLength(70)
-  metaTitle?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(160)
-  metaDescription?: string;
+  @MaxLength(70, { message: "Judul meta (ID) maksimal 70 karakter" })
+  metaTitleId?: string;
 
   @IsOptional()
   @IsString()
-  keywords?: string;
-
-  @IsOptional()
-  @IsUrl()
-  canonicalUrl?: string;
+  @MaxLength(160, { message: "Deskripsi meta (ID) maksimal 160 karakter" })
+  metaDescriptionId?: string;
 
   @IsOptional()
   @IsString()
-  ogTitle?: string;
+  keywordsId?: string;
+
+  @IsOptional()
+  @IsUrl({}, { message: "Format Canonical URL (ID) tidak valid" })
+  canonicalUrlId?: string;
 
   @IsOptional()
   @IsString()
-  ogDescription?: string;
+  ogTitleId?: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsString()
+  ogDescriptionId?: string;
+
+  @IsOptional()
+  @IsJSON({
+    message: "Structured Data (ID) harus berupa format JSON yang valid",
+  })
+  structuredDataId?: string;
+
+  // ==========================================
+  // BAHASA INGGRIS (EN)
+  // ==========================================
+  @IsOptional()
+  @IsString()
+  @MaxLength(70, { message: "Judul meta (EN) maksimal 70 karakter" })
+  metaTitleEn?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160, { message: "Deskripsi meta (EN) maksimal 160 karakter" })
+  metaDescriptionEn?: string;
+
+  @IsOptional()
+  @IsString()
+  keywordsEn?: string;
+
+  @IsOptional()
+  @IsUrl({}, { message: "Format Canonical URL (EN) tidak valid" })
+  canonicalUrlEn?: string;
+
+  @IsOptional()
+  @IsString()
+  ogTitleEn?: string;
+
+  @IsOptional()
+  @IsString()
+  ogDescriptionEn?: string;
+
+  @IsOptional()
+  @IsJSON({
+    message: "Structured Data (EN) harus berupa format JSON yang valid",
+  })
+  structuredDataEn?: string;
+
+  // ==========================================
+  // PROPERTI UNIVERSAL
+  // ==========================================
+  @IsOptional()
+  @IsUrl({}, { message: "Format URL Gambar OG tidak valid" })
   ogImage?: string;
-
-  @IsOptional()
-  @IsJSON()
-  structuredData?: string;
 }

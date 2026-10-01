@@ -1,5 +1,5 @@
+import { translate } from "@vitalets/google-translate-api";
 import { injectable } from "tsyringe";
-
 import { ApiError } from "../../../../utils/api-error";
 import { SlugService } from "../../../../utils/genereateSlug";
 import { CloudinaryService } from "../../../cloudinary/cloudinary.service";
@@ -28,7 +28,8 @@ export class PortfolioService {
     const where: any = {};
     if (query.search) {
       where.OR = [
-        { title: { contains: query.search, mode: "insensitive" } },
+        { title_id: { contains: query.search, mode: "insensitive" } },
+        { title_en: { contains: query.search, mode: "insensitive" } },
         { clientName: { contains: query.search, mode: "insensitive" } },
       ];
     }
@@ -39,13 +40,12 @@ export class PortfolioService {
       skip: (Number(query.page || 1) - 1) * Number(query.take || 10),
       take: Number(query.take || 10),
       orderBy: { displayOrder: "asc" },
-
-      //  TAMBAHAN BARU: Mengambil data kategori acara yang berelasi
       include: {
         eventCategory: {
           select: {
             id: true,
-            title: true,
+            title_id: true,
+            title_en: true,
           },
         },
       },
@@ -59,6 +59,7 @@ export class PortfolioService {
 
     return { data, meta };
   }
+
   // ====================================================================
   // 2. GET BY ID
   // ====================================================================
@@ -69,15 +70,38 @@ export class PortfolioService {
   }
 
   // ====================================================================
-  // 3. CREATE PORTFOLIO
+  // 3. CREATE PORTFOLIO (Dengan Auto-Translate jika EN kosong)
   // ====================================================================
   async createPortfolio(data: CreatePortfolioDTO, file: Express.Multer.File) {
     if (!file) throw new ApiError("Portfolio image is required", 400);
 
-    const slug = this.slug.create(data.title);
+    const slug = this.slug.create(data.title_id);
     let uploadResult;
 
-    // --- UPLOAD KE CLOUDINARY ---
+    // --- 1. PROSES AUTO-TRANSLATE JIKA TITLE_EN / DESCRIPTION_EN KOSONG ---
+    let finalTitleEn = data.title_en;
+    let finalDescEn = data.description_en;
+
+    try {
+      // Jika title_en tidak diisi, terjemahkan title_id ke bahasa Inggris (en)
+      if (!finalTitleEn && data.title_id) {
+        const resTitle = await translate(data.title_id, { to: "en" });
+        finalTitleEn = resTitle.text;
+      }
+
+      // Jika description_en tidak diisi tapi deskripsi ID ada, terjemahkan ke bahasa Inggris (en)
+      if (!finalDescEn && data.description) {
+        const resDesc = await translate(data.description, { to: "en" });
+        finalDescEn = resDesc.text;
+      }
+    } catch (transError) {
+      console.warn(
+        "⚠️ Warning: Auto-translate gagal, menggunakan nilai kosong:",
+        transError,
+      );
+    }
+
+    // --- 2. UPLOAD KE CLOUDINARY ---
     try {
       uploadResult = await this.cloudinary.upload(file, {
         folder: "portfolios",
@@ -87,21 +111,20 @@ export class PortfolioService {
       throw new ApiError(`Gagal upload gambar: ${error.message}`, 500);
     }
 
-    // --- INSERT KE DATABASE ---
+    // --- 3. INSERT KE DATABASE ---
     try {
       const newPortfolio = await this.prisma.portfolio.create({
         data: {
-          title: data.title,
+          title_id: data.title_id,
+          title_en: finalTitleEn || null, // Menggunakan hasil terjemahan otomatis atau input manual
           slug,
           clientName: data.clientName,
-          description: data.description,
+          description: data.description || null,
+          description_en: finalDescEn || null, // Menggunakan hasil terjemahan otomatis atau input manual
           image: uploadResult.secure_url,
           imageId: uploadResult.public_id,
           displayOrder: Number(data.displayOrder || 0),
-          // Parsing string dari FormData ke boolean
           isActive: data.isActive ? String(data.isActive) === "true" : true,
-
-          //  TAMBAHAN BARU UNTUK KEBUTUHAN DETAIL CHILDREN
           orderQuantity:
             data.orderQuantity !== undefined ? Number(data.orderQuantity) : 0,
           projectDate: data.projectDate ? new Date(data.projectDate) : null,
@@ -111,7 +134,6 @@ export class PortfolioService {
 
       return newPortfolio;
     } catch (error: any) {
-      // ⚠️ ROLLBACK: Jika DB gagal, hapus gambar yang baru saja diupload ke Cloudinary
       if (uploadResult?.public_id) {
         await this.cloudinary.delete(uploadResult.public_id).catch(() => null);
       }
@@ -120,7 +142,7 @@ export class PortfolioService {
 
       if (error.code === "P2002") {
         throw new ApiError(
-          `Judul portfolio "${data.title}" sudah digunakan (Slug duplikat).`,
+          `Judul portfolio "${data.title_id}" sudah digunakan (Slug duplikat).`,
           400,
         );
       }
@@ -131,9 +153,8 @@ export class PortfolioService {
       );
     }
   }
-
   // ====================================================================
-  // 4. UPDATE PORTFOLIO
+  // 4. UPDATE PORTFOLIO (Dengan Smart Auto-Translate untuk Title & Description)
   // ====================================================================
   async updatePortfolio(
     id: string,
@@ -148,12 +169,10 @@ export class PortfolioService {
     // --- JIKA ADA FILE BARU ---
     if (file) {
       try {
-        // 1. Hapus file lama di Cloudinary agar tidak menumpuk
         if (existing.imageId) {
           await this.cloudinary.delete(existing.imageId).catch(() => null);
         }
 
-        // 2. Upload file baru
         const uploadResult = await this.cloudinary.upload(file, {
           folder: "portfolios",
         });
@@ -165,20 +184,80 @@ export class PortfolioService {
       }
     }
 
+    // --- PROSES SMART AUTO-TRANSLATE UNTUK UPDATE ---
+    let finalTitleEn = data.title_en;
+    let finalDescEn = data.description_en;
+
+    try {
+      // 1. Logika untuk Title (Judul)
+      const activeTitleId =
+        data.title_id !== undefined ? data.title_id : existing.title_id;
+
+      const titleIdChanged =
+        data.title_id !== undefined && data.title_id !== existing.title_id;
+
+      const shouldTranslateTitle =
+        !finalTitleEn ||
+        (titleIdChanged &&
+          (finalTitleEn === existing.title_en || !finalTitleEn));
+
+      if (shouldTranslateTitle && activeTitleId) {
+        const resTitle = await translate(activeTitleId, { to: "en" });
+        finalTitleEn = resTitle.text;
+      }
+
+      // 2. Logika untuk Description (Deskripsi)
+      const activeDesc =
+        data.description !== undefined
+          ? data.description
+          : existing.description;
+
+      const descChanged =
+        data.description !== undefined &&
+        data.description !== existing.description;
+
+      const shouldTranslateDesc =
+        (!finalDescEn && activeDesc) ||
+        (descChanged &&
+          activeDesc &&
+          (finalDescEn === existing.description_en || !finalDescEn));
+
+      if (shouldTranslateDesc && activeDesc) {
+        const resDesc = await translate(activeDesc, { to: "en" });
+        finalDescEn = resDesc.text;
+      }
+    } catch (transError) {
+      console.warn(
+        "⚠️ Warning: Auto-translate saat update portfolio gagal:",
+        transError,
+      );
+    }
+
     // --- UPDATE DATABASE ---
     try {
       const slug =
-        data.title && data.title !== existing.title
-          ? this.slug.create(data.title)
+        data.title_id && data.title_id !== existing.title_id
+          ? this.slug.create(data.title_id)
           : existing.slug;
 
       const updatedPortfolio = await this.prisma.portfolio.update({
         where: { id },
         data: {
-          title: data.title,
+          title_id:
+            data.title_id !== undefined ? data.title_id : existing.title_id,
+          title_en:
+            finalTitleEn !== undefined ? finalTitleEn : existing.title_en,
           slug,
-          clientName: data.clientName,
-          description: data.description,
+          clientName:
+            data.clientName !== undefined
+              ? data.clientName
+              : existing.clientName,
+          description:
+            data.description !== undefined
+              ? data.description
+              : existing.description,
+          description_en:
+            finalDescEn !== undefined ? finalDescEn : existing.description_en,
           image: imageUrl,
           imageId: imageId,
           displayOrder:
@@ -189,8 +268,6 @@ export class PortfolioService {
             data.isActive !== undefined
               ? String(data.isActive) === "true"
               : existing.isActive,
-
-          //  TAMBAHAN BARU UNTUK KEBUTUHAN DETAIL CHILDREN
           orderQuantity:
             data.orderQuantity !== undefined
               ? Number(data.orderQuantity)
@@ -227,12 +304,10 @@ export class PortfolioService {
     const existing = await this.getPortfolioById(id);
 
     try {
-      // 1. Hapus gambar dari Cloudinary terlebih dahulu
       if (existing.imageId) {
         await this.cloudinary.delete(existing.imageId);
       }
 
-      // 2. Hapus data dari Database
       return await this.prisma.portfolio.delete({ where: { id } });
     } catch (error: any) {
       console.error("🔥 DELETE ERROR:", error);
@@ -241,23 +316,106 @@ export class PortfolioService {
   }
 
   // ====================================================================
-  // 6. GET PUBLIC PORTFOLIOS (Untuk Landing Page)
+  // 6. GET PUBLIC PORTFOLIOS (Dengan dukungan parameter lang)
   // ====================================================================
-  async getPublicPortfolios() {
+  async getPublicPortfolios(lang: string = "id") {
     try {
-      return await this.prisma.portfolio.findMany({
+      const portfolios = await this.prisma.portfolio.findMany({
         where: { isActive: true },
         orderBy: { displayOrder: "asc" },
         select: {
           id: true,
-          title: true,
+          title_id: true,
+          title_en: true,
           clientName: true,
           image: true,
           slug: true,
+          description: true,
+          description_en: true,
         },
       });
+
+      // Mapping hasil data agar properti 'title' dan 'description' menyesuaikan bahasa
+      return portfolios.map((item) => ({
+        id: item.id,
+        title: lang === "en" && item.title_en ? item.title_en : item.title_id,
+        description:
+          lang === "en" && item.description_en
+            ? item.description_en
+            : item.description,
+        clientName: item.clientName,
+        image: item.image,
+        slug: item.slug,
+      }));
     } catch (error) {
       throw new ApiError("Gagal mengambil data portfolio publik.", 500);
     }
+  }
+
+  // ====================================================================
+  // 7. GET PORTFOLIO LIST PUBLIC (Untuk Halaman Search & Pagination)
+  // ====================================================================
+  async getPortfolioListPublic(query: {
+    page?: number;
+    take?: number;
+    search?: string;
+    locale?: string;
+  }) {
+    const where: any = {
+      isActive: true, // Hanya tampilkan portofolio yang aktif
+    };
+
+    // ✨ Logika Pencarian: Cari di judul Indonesia, judul Inggris, atau nama klien
+    if (query.search) {
+      where.OR = [
+        { title_id: { contains: query.search } },
+        { title_en: { contains: query.search } },
+        { clientName: { contains: query.search } },
+      ];
+    }
+
+    // Hitung total data untuk keperluan pagination (Tombol Load More)
+    const count = await this.prisma.portfolio.count({ where });
+
+    // Ambil data berdasarkan halaman (page) dan batasan (take)
+    const data = await this.prisma.portfolio.findMany({
+      where,
+      skip: (Number(query.page || 1) - 1) * Number(query.take || 6),
+      take: Number(query.take || 6),
+      orderBy: { displayOrder: "asc" }, // Urutkan sesuai aturan urutan display
+      select: {
+        id: true,
+        title_id: true,
+        title_en: true,
+        clientName: true,
+        image: true,
+        slug: true,
+        description: true,
+        description_en: true,
+      },
+    });
+
+    // Mapping hasil data agar properti 'title' menyesuaikan bahasa (locale)
+    const mappedData = data.map((item) => ({
+      id: item.id,
+      title:
+        query.locale === "en" && item.title_en ? item.title_en : item.title_id,
+      description:
+        query.locale === "en" && item.description_en
+          ? item.description_en
+          : item.description,
+      clientName: item.clientName,
+      image: item.image,
+      slug: item.slug,
+    }));
+
+    // Buat data meta (informasi halaman)
+    const meta = this.pagination.generateMeta({
+      count,
+      page: Number(query.page || 1),
+      take: Number(query.take || 6),
+    });
+
+    return { data: mappedData, meta };
   }
 }

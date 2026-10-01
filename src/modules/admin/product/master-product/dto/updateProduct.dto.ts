@@ -31,6 +31,10 @@ export class UpdateProductCoreDTO {
 
   @IsOptional()
   @IsBoolean()
+  isSample?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   isActive?: boolean;
 
   @IsOptional()

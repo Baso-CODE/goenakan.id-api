@@ -13,7 +13,7 @@ export class ShipmentService {
   constructor(private readonly prisma: PrismaService) {}
 
   // =================================================================
-  // 1. CREATE SHIPMENT (Auto Start History di Origin)
+  // 1. CREATE SHIPMENT (Auto Start History di Origin + Sample Tracking)
   // =================================================================
   async createShipment(data: CreateShipmentDTO & { step: number }) {
     const order = await this.prisma.order.findUnique({
@@ -21,6 +21,8 @@ export class ShipmentService {
       select: {
         id: true,
         orderNumber: true,
+        clientId: true,
+        salesCategory: true,
         client: { select: { custCode: true } },
       },
     });
@@ -64,6 +66,9 @@ export class ShipmentService {
     const generatedDN = `DN_${sequence}_${custCode}_${romanMonth}_${year}`;
 
     return await this.prisma.$transaction(async (tx) => {
+      // Wadah sementara untuk mencatat history sample
+      const sampleHistoryData: any[] = [];
+
       // =========================================================
       // 1. VALIDASI MULTI-STEP LOGIC SEBELUM MEMBUAT SHIPMENT
       // =========================================================
@@ -71,12 +76,25 @@ export class ShipmentService {
         const orderProduct = await tx.orderProduct.findUnique({
           where: { id: item.orderProductId },
           include: {
+            product: true, // Dibutuhkan untuk mengecek isSample
             productionTrackers: true,
             shipmentItems: { include: { shipment: true } },
           },
         });
 
         if (!orderProduct) throw new ApiError("Product not found", 404);
+
+        // LOGIKA SAMPLE: Catat jika ini Order SAMPLE dan Produknya isSample
+        if (order.salesCategory === "SAMPLE" && orderProduct.product.isSample) {
+          sampleHistoryData.push({
+            productId: orderProduct.product.id,
+            orderId: order.id,
+            clientId: order.clientId,
+            status: "SENDING",
+            date: new Date(data.departureDate),
+            notes: `Pengiriman dimulai via dokumen ${generatedDN}`,
+          });
+        }
 
         if (data.type === "INBOUND") {
           if (data.step === 1) {
@@ -202,14 +220,11 @@ export class ShipmentService {
           trackingNumber: data.trackingNumber || null,
           courierLink: vendorTrackingUrl || data.courierLink || null,
           method: data.method,
-
           status: "DISPATCHED",
           departureDate: new Date(data.departureDate),
-
           origin: data.origin,
           destination: data.destination,
           arrivalDate: data.arrivalDate ? new Date(data.arrivalDate) : null,
-
           items: {
             create: data.items.map((item) => ({
               orderProductId: item.orderProductId,
@@ -217,7 +232,6 @@ export class ShipmentService {
               totalCarton: item.totalCarton || 0,
             })),
           },
-
           notes:
             data.notes && data.notes.length > 0
               ? {
@@ -251,12 +265,18 @@ export class ShipmentService {
         });
       }
 
+      // EKSEKUSI PENYIMPANAN SAMPLE HISTORY JIKA ADA
+      if (sampleHistoryData.length > 0) {
+        await tx.sampleProductHistory.createMany({
+          data: sampleHistoryData,
+        });
+      }
+
       return shipment;
     });
   }
-
   // =================================================================
-  // 2. ADD HISTORY / UPDATE STATUS (Multi-Step Logic & Warranty)
+  // 2. ADD HISTORY / UPDATE STATUS (Multi-Step Logic & Sample Tracking)
   // =================================================================
   async addShipmentHistory(shipmentId: string, data: AddShipmentHistoryDTO) {
     const shipment = await this.prisma.shipment.findUnique({
@@ -266,9 +286,20 @@ export class ShipmentService {
         type: true,
         orderId: true,
         replacementOrderId: true,
-        order: { select: { warrantyDays: true } },
+        // Relasi order dan item product ditarik untuk keperluan Sample Tracking
+        order: {
+          select: {
+            id: true,
+            warrantyDays: true,
+            salesCategory: true,
+            clientId: true,
+          },
+        },
         replacementOrder: {
           select: { referenceOrder: { select: { warrantyDays: true } } },
+        },
+        items: {
+          include: { orderProduct: { include: { product: true } } },
         },
       },
     });
@@ -313,9 +344,44 @@ export class ShipmentService {
         },
       });
 
-      // 4. LOGIC JIKA BARANG OUTBOUND SAMPAI KE PELANGGAN
+      // ✨========================================================
+      // 4. TRANSLATE STATUS PENGIRIMAN KE STATUS SAMPLE TRACKING
+      // ==========================================================
+      if (shipment.order && shipment.order.salesCategory === "SAMPLE") {
+        let sampleStatus: "SENDING" | "RECEIVE" | null = null;
+
+        if (data.status === "DISPATCHED" || data.status === "IN_TRANSIT") {
+          sampleStatus = "SENDING";
+        } else if (data.status === "ARRIVED") {
+          sampleStatus = "RECEIVE";
+        }
+
+        if (sampleStatus) {
+          const sampleHistoryData: any[] = [];
+          for (const item of shipment.items) {
+            if (item.orderProduct.product.isSample) {
+              sampleHistoryData.push({
+                productId: item.orderProduct.product.id,
+                orderId: shipment.order.id,
+                clientId: shipment.order.clientId,
+                status: sampleStatus,
+                date: new Date(data.date),
+                notes: `Update dari status pengiriman: ${data.status}`,
+              });
+            }
+          }
+
+          if (sampleHistoryData.length > 0) {
+            await tx.sampleProductHistory.createMany({
+              data: sampleHistoryData,
+            });
+          }
+        }
+      }
+      // ✨========================================================
+
+      // 5. LOGIC JIKA BARANG OUTBOUND SAMPAI KE PELANGGAN
       if (shipment.type === "OUTBOUND" && data.status === "ARRIVED") {
-        // A. JIKA INI PENGIRIMAN ORDER BIASA
         if (shipment.orderId) {
           const orderData = await tx.order.findUnique({
             where: { id: shipment.orderId },
@@ -355,7 +421,7 @@ export class ShipmentService {
             }
           }
 
-          // AUTO-ACTIVATE WARRANTY UNTUK ORDER BIASA
+          // AUTO-ACTIVATE WARRANTY
           if (shipment.order?.warrantyDays && shipment.order.warrantyDays > 0) {
             const startDate = new Date(data.date);
             const expiryDate = new Date(startDate);
@@ -381,10 +447,7 @@ export class ShipmentService {
               });
             }
           }
-        }
-
-        // B. JIKA INI PENGIRIMAN REPLACEMENT ORDER
-        else if (shipment.replacementOrderId) {
+        } else if (shipment.replacementOrderId) {
           const warrantyDays =
             shipment.replacementOrder?.referenceOrder?.warrantyDays;
 

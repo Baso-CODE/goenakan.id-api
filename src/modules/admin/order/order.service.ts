@@ -72,10 +72,13 @@ export class OrderService {
     let totalAmount = 0;
     const orderProductsData: any[] = [];
 
+    // ✨ Variabel penampung untuk history produk sample
+    const sampleHistoryData: any[] = [];
+
     const isSampleOrder = orderCore.salesCategory === "SAMPLE";
 
     // ====================================================================
-    //  PERBAIKAN: UPLOAD FILE KE CLOUDINARY (Lakukan di luar transaksi DB)
+    // UPLOAD FILE KE CLOUDINARY (Di luar transaksi DB)
     // ====================================================================
     let uploadedPoData: {
       url: string;
@@ -91,7 +94,7 @@ export class OrderService {
 
       uploadedPoData = {
         url: uploadResult.secure_url,
-        fileName: file.originalname, // Nama asli file tetap kita simpan di database!
+        fileName: file.originalname,
         fileType: file.mimetype,
       };
     }
@@ -108,6 +111,18 @@ export class OrderService {
 
       if (!product) {
         throw new ApiError(`Product with ID ${item.productId} not found`, 404);
+      }
+
+      // Cek apakah barang yang dipinjamkan adalah produk tipe SAMPLE
+      // Jika ya, masukkan ke keranjang history. (orderId kita isi nanti setelah order di-create)
+      if (isSampleOrder && product.isSample) {
+        sampleHistoryData.push({
+          productId: product.id,
+          clientId: orderCore.clientId,
+          status: "ORDER_SAMPLE_CREATE",
+          date: new Date(),
+          notes: `Dipinjamkan sebanyak ${item.quantity} ${product.uom}`,
+        });
       }
 
       let finalPrice = 0;
@@ -274,17 +289,31 @@ export class OrderService {
       });
 
       // ====================================================================
-      //  PERBAIKAN: SIMPAN DATA CLIENT PURCHASE ORDER KE DATABASE
+      // SIMPAN DATA CLIENT PURCHASE ORDER
       // ====================================================================
       if (orderCore.clientPoNumber || uploadedPoData) {
         await tx.clientPurchaseOrder.create({
           data: {
-            orderId: order.id, // Sambungkan ke Order yang baru saja dibuat
+            orderId: order.id,
             poNumber: orderCore.clientPoNumber || null,
             fileUrl: uploadedPoData?.url || null,
             fileName: uploadedPoData?.fileName || null,
             fileType: uploadedPoData?.fileType || null,
           },
+        });
+      }
+
+      // SIMPAN SAMPLE HISTORY (Hanya untuk produk yang isSample === true)
+      if (sampleHistoryData.length > 0) {
+        // Karena array sebelumnya belum punya orderId (karena order belum jadi),
+        // kita map ulang untuk menambahkan order.id yang baru saja kita dapatkan
+        const finalizedHistoryData = sampleHistoryData.map((data) => ({
+          ...data,
+          orderId: order.id,
+        }));
+
+        await tx.sampleProductHistory.createMany({
+          data: finalizedHistoryData,
         });
       }
       // ====================================================================
@@ -299,17 +328,15 @@ export class OrderService {
         const counterType =
           clientRecord.type === "B2B" ? "CLIENT_B2B_OFF" : "CLIENT_B2C_OFF";
 
-        // Generate nomor urut secara aman tanpa race condition
         const sequence = await this.counterService.getNextFormattedNumber(
           tx,
           counterType,
           "",
-          5, // panjang digit 5 (Contoh: 00001)
+          5,
         );
 
         const newCustCode = `${prefix}${sequence}`;
 
-        // Update status dan custCode pelanggan di database
         await tx.client.update({
           where: { id: orderCore.clientId },
           data: {
@@ -335,83 +362,6 @@ export class OrderService {
 
       return order;
     });
-    // try {
-    //   // const getClientPhone = () => {
-    //   //   if (newOrder.client?.b2c?.phone) {
-    //   //     return newOrder.client.b2c.phone;
-    //   //   }
-    //   //   if (newOrder.client?.b2b?.phone) {
-    //   //     return newOrder.client.b2b.phone;
-    //   //   }
-    //   //   return null;
-    //   // };
-    //   // const getClientName = () => {
-    //   //   if (newOrder.client?.b2c?.name) {
-    //   //     return newOrder.client.b2c.name;
-    //   //   }
-    //   //   if (newOrder.client?.b2b?.companyName) {
-    //   //     return newOrder.client.b2b.companyName;
-    //   //   }
-    //   //   return newOrder.client?.custCode || "Client";
-    //   // };
-    //   // Notify Client
-    //   // const clientPhone = getClientPhone();
-    //   // if (clientPhone) {
-    //   //   await this.whatsappNotification.sendNotification(
-    //   //     {
-    //   //       phoneNumber: clientPhone,
-    //   //       clientName: getClientName(),
-    //   //       messageType: "order_created",
-    //   //       data: {
-    //   //         orderId: newOrder.orderNumber,
-    //   //         createdAt: newOrder.dateOrder,
-    //   //         totalPrice: newOrder.totalAmount,
-    //   //         productCount: newOrder.products.length,
-    //   //       },
-    //   //     },
-    //   //     newOrder.id,
-    //   //   );
-    //   // }
-    //   // Notify Sales Person (createdBy)
-    //   // if (newOrder.createdBy?.id) {
-    //   //   const sales = await this.prisma.user.findUnique({
-    //   //     where: { id: newOrder.createdBy.id },
-    //   //     select: { phone: true, name: true },
-    //   //   });
-    //   //   if (sales?.phone) {
-    //   //     await this.whatsappNotification.notifyPic(
-    //   //       sales.phone,
-    //   //       sales.name || "Sales",
-    //   //       "new_order_assigned",
-    //   //       {
-    //   //         orderId: newOrder.orderNumber,
-    //   //         clientName: getClientName(),
-    //   //         productCount: newOrder.products.length,
-    //   //       },
-    //   //       newOrder.id,
-    //   //     );
-    //   //   }
-    //   // }
-    //   // if (newOrder.pic?.phone) {
-    //   //   await this.whatsappNotification.sendNotification(
-    //   //     {
-    //   //       phoneNumber: newOrder.pic.phone,
-    //   //       clientName: newOrder.pic.name,
-    //   //       messageType: "order_created",
-    //   //       data: {
-    //   //         orderId: newOrder.orderNumber,
-    //   //         createdAt: newOrder.dateOrder,
-    //   //         totalPrice: newOrder.totalAmount,
-    //   //         productCount: newOrder.products.length,
-    //   //       },
-    //   //     },
-    //   //     newOrder.id,
-    //   //   );
-    //   // }
-    // } catch (error) {
-    //   console.error("❌ Error sending WhatsApp notifications:", error);
-    // }
-
     return newOrder;
   }
 
@@ -2200,6 +2150,70 @@ export class OrderService {
     // Aturan: Hapus jika "Sudah Lunas Sepenuhnya (Termasuk Cicilan)" ATAU "Garansi Habis"
     if (isFullyPaid || isWarrantyExpired) {
       await this.executeDeletePo(order.id, order.clientPurchaseOrder);
+    }
+  }
+
+  async getWhoWeAreStats() {
+    const DUMMY_CUSTOMERS = 100;
+    const DUMMY_PRODUCTS = 500;
+    const DUMMY_ORDERS = 300;
+
+    try {
+      // 2. Hitung jumlah Order Selesai (Completed Orders)
+      const realOrdersCount = await this.prisma.order.count({
+        where: { status: "COMPLETED" },
+      });
+
+      // 3. Hitung Klien Unik (Happy Customers)
+      // Menggunakan groupBy untuk mencari klien yang tidak duplikat dari pesanan selesai
+      const uniqueClients = await this.prisma.order.groupBy({
+        by: ["clientId"],
+        where: { status: "COMPLETED" },
+      });
+      const realCustomersCount = uniqueClients.length;
+
+      // 4. Hitung Total Produk Dibuat (Products Created)
+      // Menggunakan table OrderProduct dan menjumlahkan 'quantity'
+      const productsAgg = await this.prisma.orderProduct.aggregate({
+        where: {
+          order: { status: "COMPLETED" },
+        },
+        _sum: {
+          quantity: true,
+        },
+      });
+      const realProductsCount = Number(productsAgg._sum.quantity || 0);
+
+      // 5. Logika Perbandingan (Gunakan data DB jika lebih besar dari Dummy)
+      const finalCustomers = Math.max(realCustomersCount, DUMMY_CUSTOMERS);
+      const finalProducts = Math.max(realProductsCount, DUMMY_PRODUCTS);
+      const finalOrders = Math.max(realOrdersCount, DUMMY_ORDERS);
+
+      // 6. Format data untuk dikirim ke frontend
+      const formattedData = {
+        stat1Value: `${finalCustomers.toLocaleString("id-ID")}+`,
+        stat1Label: "Happy customers",
+        stat2Value: `${finalProducts.toLocaleString("id-ID")}+`,
+        stat2Label: "Products created",
+        stat3Value: `${finalOrders.toLocaleString("id-ID")}+`,
+        stat3Label: "Completed orders",
+      };
+
+      return { data: formattedData };
+    } catch (error) {
+      console.error("Gagal menghitung statistik Who We Are:", error);
+
+      // Fallback: Jika terjadi error di database, kembalikan nilai dummy agar web tidak error
+      return {
+        data: {
+          stat1Value: `${DUMMY_CUSTOMERS.toLocaleString("id-ID")}+`,
+          stat1Label: "Happy customers",
+          stat2Value: `${DUMMY_PRODUCTS.toLocaleString("id-ID")}+`,
+          stat2Label: "Products created",
+          stat3Value: `${DUMMY_ORDERS.toLocaleString("id-ID")}+`,
+          stat3Label: "Completed orders",
+        },
+      };
     }
   }
 

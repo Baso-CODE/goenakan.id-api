@@ -334,4 +334,18 @@ export class OrderController {
       next(error);
     }
   };
+
+  getWhoWeAreStats = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const result = await this.orderService.getWhoWeAreStats();
+
+      res.status(200).send(result);
+    } catch (error) {
+      next(error);
+    }
+  };
 }

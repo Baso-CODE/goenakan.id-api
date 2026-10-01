@@ -29,7 +29,7 @@ export class ContactMessageRouter {
     // Mulai baris ini ke bawah, semua route wajib login & punya permission dinamis.
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("contact_message"));
 
     // ==========================================
     // === 2. ADMIN PROTECTED ROUTES ===

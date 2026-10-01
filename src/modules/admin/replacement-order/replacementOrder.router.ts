@@ -28,7 +28,7 @@ export class ReplacementOrderRouter {
     // Seluruh route di bawahnya otomatis diatur hak aksesnya.
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("replacement_order"));
 
     // ==========================================
     // 1. GET ALL REPLACEMENT ORDERS (Otomatis butuh 'read')

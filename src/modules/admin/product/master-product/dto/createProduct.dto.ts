@@ -158,19 +158,19 @@ export class CreateProductDTO {
   @IsInt({ message: "Base price must be an integer" })
   @Min(0, { message: "Base price cannot be negative" })
   basePrice!: number;
- 
+
   @IsOptional()
   @IsNumber()
   foreignPrice?: number;
- 
+
   @IsOptional()
   @IsString()
   currencyCode?: string;
- 
+
   @IsOptional()
   @IsNumber()
   exchangeRate?: number;
- 
+
   @IsOptional()
   @IsNumber()
   additionalFee?: number;
@@ -202,6 +202,10 @@ export class CreateProductDTO {
   @IsOptional()
   @IsBoolean()
   isCustom?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isSample?: boolean;
 
   @IsOptional()
   @IsBoolean()

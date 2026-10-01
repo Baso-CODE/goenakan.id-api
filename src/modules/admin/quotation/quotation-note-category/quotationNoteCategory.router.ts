@@ -28,7 +28,7 @@ export class QuotationNoteCategoryRouter {
     // Pasang middleware pelindung di sini satu kali saja.
     // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
-    this.router.use(autoVerifyPermission());
+    this.router.use(autoVerifyPermission("quotation"));
 
     // ==========================================
     // GET ALL (Otomatis dicek izin 'read')
