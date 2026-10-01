@@ -227,11 +227,12 @@ model User {
 }
 
 model Role {
-  id          String       @id @default(cuid())
-  name        String       @unique
-  description String?
-  users       User[]
-  permissions Permission[] @relation("RoleToPermission")
+  id                String       @id @default(cuid())
+  name              String       @unique
+  description       String?
+  permissionVersion Int          @default(1)
+  users             User[]
+  permissions       Permission[] @relation("RoleToPermission")
 
   @@map("roles")
 }

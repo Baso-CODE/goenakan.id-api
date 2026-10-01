@@ -5,27 +5,30 @@ import { PrismaService } from "../../prisma/prisma.service";
 @injectable()
 export class RoleAccessService {
   constructor(private readonly prisma: PrismaService) {}
-
   // ==========================================
   // 1. MEMBERIKAN / MENETAPKAN PERMISSIONS KE SEBUAH ROLE
   // ==========================================
   async assignPermissionsToRole(roleId: string, permissionIds: string[]) {
-    // 1. Cek apakah role-nya ada
     const role = await this.prisma.role.findUnique({
       where: { id: roleId },
+      select: {
+        id: true,
+        permissionVersion: true,
+      },
     });
 
     if (!role) {
       throw new ApiError("Role tidak ditemukan", 404);
     }
 
-    // 2. Perbarui relasi permissions menggunakan metode 'set'
-    // Ini akan menimpa izin lama dengan daftar izin yang baru dicentang
     const updatedRole = await this.prisma.role.update({
       where: { id: roleId },
       data: {
         permissions: {
           set: permissionIds.map((id) => ({ id })),
+        },
+        permissionVersion: {
+          increment: 1,
         },
       },
       include: {
