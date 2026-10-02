@@ -2023,11 +2023,30 @@ model ClientLogo {
 }
 
 model AppSetting {
-  id                         String  @id @default(uuid())
-  googleAdsId                String?
-  gtmId                      String?
-  pixelId                    String?
-  globalForeignPriceAdjuster Float?  @default(0)
+  id String @id @default(uuid())
+
+  // Google
+  googleAnalyticsId      String?
+  googleAnalyticsEnabled Boolean @default(false)
+
+  googleAdsId      String?
+  googleAdsEnabled Boolean @default(false)
+
+  gtmId      String?
+  gtmEnabled Boolean @default(false)
+
+  googleSiteVerification String?
+
+  // Meta
+  pixelId      String?
+  pixelEnabled Boolean @default(false)
+
+  // Microsoft
+  microsoftClarityId      String?
+  microsoftClarityEnabled Boolean @default(false)
+
+  // Pricing
+  globalForeignPriceAdjuster Float? @default(0)
 
   updatedAt DateTime @updatedAt
 

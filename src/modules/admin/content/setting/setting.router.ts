@@ -19,25 +19,14 @@ export class AppSettingRouter {
   }
 
   private initializeRoutes = (): void => {
-    // ==========================================
-    // === PUBLIC ROUTE (Tanpa Autentikasi)
-    // ==========================================
-    // Frontend perlu mengambil ID ini untuk dipasang di <head> (Google Ads, Pixel, dll)
-    this.router.get("/", this.appSettingController.getSettings);
+    this.router.get("/", this.appSettingController.getPublicSettings);
 
-    // ==========================================
-    // 🛡️ GATEKEEPER LEVEL ROUTER
-    // Pasang pelindung token dan permission dinamis di sini satu kali saja.
-    // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
 
-    //  Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
     this.router.use(autoVerifyPermission("app_setting"));
 
-    // ==========================================
-    // === PROTECTED ROUTE (ADMIN ONLY) (Otomatis Terlindungi)
-    // ==========================================
-    // Update atau Create Settings
+    this.router.get("/admin", this.appSettingController.getAdminSettings);
+
     this.router.patch(
       "/",
       validateBody(UpdateAppSettingDTO),

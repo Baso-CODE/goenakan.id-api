@@ -1,4 +1,5 @@
 import { injectable } from "tsyringe";
+
 import { PrismaService } from "../../../prisma/prisma.service";
 import { UpdateAppSettingDTO } from "./dto/setting.dto";
 
@@ -6,41 +7,68 @@ import { UpdateAppSettingDTO } from "./dto/setting.dto";
 export class AppSettingService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // === GET SETTINGS (SINGLETON) ===
-  // Mengambil satu-satunya data setting yang ada di database
-  async getSettings() {
-    const settings = await this.prisma.appSetting.findFirst();
-    return settings;
+  async getPublicSettings() {
+    return this.prisma.appSetting.findFirst({
+      select: {
+        googleAnalyticsId: true,
+        googleAnalyticsEnabled: true,
+
+        googleAdsId: true,
+        googleAdsEnabled: true,
+
+        gtmId: true,
+        gtmEnabled: true,
+
+        googleSiteVerification: true,
+
+        pixelId: true,
+        pixelEnabled: true,
+
+        microsoftClarityId: true,
+        microsoftClarityEnabled: true,
+      },
+    });
   }
 
-  // === SAVE SETTINGS (UPSERT LOGIC) ===
-  // Logic: "Update if exists, Create if not"
+  async getAdminSettings() {
+    return this.prisma.appSetting.findFirst();
+  }
+
   async saveSettings(data: UpdateAppSettingDTO) {
-    // 1. Cek apakah data sudah ada?
     const existing = await this.prisma.appSetting.findFirst();
 
+    const settingData = {
+      googleAnalyticsId: data.googleAnalyticsId,
+      googleAnalyticsEnabled: data.googleAnalyticsEnabled,
+
+      googleAdsId: data.googleAdsId,
+      googleAdsEnabled: data.googleAdsEnabled,
+
+      gtmId: data.gtmId,
+      gtmEnabled: data.gtmEnabled,
+
+      googleSiteVerification: data.googleSiteVerification,
+
+      pixelId: data.pixelId,
+      pixelEnabled: data.pixelEnabled,
+
+      microsoftClarityId: data.microsoftClarityId,
+      microsoftClarityEnabled: data.microsoftClarityEnabled,
+
+      globalForeignPriceAdjuster: data.globalForeignPriceAdjuster,
+    };
+
     if (existing) {
-      // 2a. Jika SUDAH ADA -> Lakukan UPDATE
-      // Kita update berdasarkan ID yang ditemukan
-      return await this.prisma.appSetting.update({
-        where: { id: existing.id },
-        data: {
-          googleAdsId: data.googleAdsId,
-          gtmId: data.gtmId,
-          pixelId: data.pixelId,
-          globalForeignPriceAdjuster: data.globalForeignPriceAdjuster,
+      return this.prisma.appSetting.update({
+        where: {
+          id: existing.id,
         },
-      });
-    } else {
-      // 2b. Jika BELUM ADA (Kosong) -> Lakukan CREATE baru
-      return await this.prisma.appSetting.create({
-        data: {
-          googleAdsId: data.googleAdsId,
-          gtmId: data.gtmId,
-          pixelId: data.pixelId,
-          globalForeignPriceAdjuster: data.globalForeignPriceAdjuster,
-        },
+        data: settingData,
       });
     }
+
+    return this.prisma.appSetting.create({
+      data: settingData,
+    });
   }
 }

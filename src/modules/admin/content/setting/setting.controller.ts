@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
+
 import { UpdateAppSettingDTO } from "./dto/setting.dto";
 import { AppSettingService } from "./setting.service";
 
@@ -7,28 +8,48 @@ import { AppSettingService } from "./setting.service";
 export class AppSettingController {
   constructor(private readonly appSettingService: AppSettingService) {}
 
-  // === GET SETTINGS ===
-  getSettings = async (req: Request, res: Response, next: NextFunction) => {
+  getPublicSettings = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
     try {
-      const result = await this.appSettingService.getSettings();
+      const result = await this.appSettingService.getPublicSettings();
 
-      // Jika belum ada data, kita kembalikan object kosong atau null (status 200)
-      // agar frontend tidak error
-      res.status(200).json(result || {});
+      res.status(200).json({
+        data: result || {},
+      });
     } catch (error) {
       next(error);
     }
   };
 
-  // === SAVE SETTINGS (UPSERT) ===
+  getAdminSettings = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const result = await this.appSettingService.getAdminSettings();
+
+      res.status(200).json({
+        data: result || {},
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   saveSettings = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // req.body sudah divalidasi oleh middleware sebagai UpdateAppSettingDTO
       const body = req.body as UpdateAppSettingDTO;
 
       const result = await this.appSettingService.saveSettings(body);
 
-      res.status(200).json(result);
+      res.status(200).json({
+        message: "Application settings berhasil diperbarui",
+        data: result,
+      });
     } catch (error) {
       next(error);
     }
