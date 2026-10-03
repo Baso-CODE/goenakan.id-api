@@ -2275,8 +2275,8 @@ model ArticleBanner {
   id              String @id @default(uuid())
   backgroundColor String @db.VarChar(50)
 
-  buttonTextId String @db.VarChar(100)
-  buttonTextEn String @db.VarChar(100)
+  buttonTextId String? @db.VarChar(100)
+  buttonTextEn String? @db.VarChar(100)
 
   ctaLink  String  @db.Text
   isActive Boolean @default(false)
