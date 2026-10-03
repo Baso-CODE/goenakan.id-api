@@ -1,27 +1,26 @@
 import { IsBoolean, IsNotEmpty, IsOptional, IsString } from "class-validator";
 
 export class CreateArticleBannerDTO {
-  @IsString({ message: "Article ID harus berupa teks" })
-  @IsNotEmpty({ message: "Article ID tidak boleh kosong" })
+  @IsString()
+  @IsNotEmpty()
   articleId!: string;
 
-  @IsString({ message: "Background color harus berupa teks" })
-  @IsNotEmpty({ message: "Background color tidak boleh kosong" })
+  @IsString()
+  @IsNotEmpty()
   backgroundColor!: string;
 
-  @IsString({ message: "Button text harus berupa teks" })
-  @IsNotEmpty({ message: "Button text tidak boleh kosong" })
-  buttonText!: string;
+  @IsString()
+  @IsNotEmpty()
+  buttonTextId!: string;
 
-  @IsString({ message: "CTA Link harus berupa teks" })
-  @IsNotEmpty({ message: "CTA Link tidak boleh kosong" })
+  @IsString()
+  @IsNotEmpty()
   ctaLink!: string;
 
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
 }
-
 export class UpdateArticleBannerDTO {
   @IsString()
   @IsOptional()
@@ -33,7 +32,7 @@ export class UpdateArticleBannerDTO {
 
   @IsString()
   @IsOptional()
-  buttonText?: string;
+  buttonTextId?: string;
 
   @IsString()
   @IsOptional()

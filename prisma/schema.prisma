@@ -2272,11 +2272,14 @@ model ArticleProduct {
 }
 
 model ArticleBanner {
-  id              String  @id @default(uuid())
-  backgroundColor String  @db.VarChar(50)
-  buttonText      String  @db.VarChar(100)
-  ctaLink         String  @db.Text
-  isActive        Boolean @default(false)
+  id              String @id @default(uuid())
+  backgroundColor String @db.VarChar(50)
+
+  buttonTextId String @db.VarChar(100)
+  buttonTextEn String @db.VarChar(100)
+
+  ctaLink  String  @db.Text
+  isActive Boolean @default(false)
 
   articleId String
   article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)

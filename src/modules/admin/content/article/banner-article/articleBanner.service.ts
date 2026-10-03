@@ -1,3 +1,4 @@
+import { translate } from "@vitalets/google-translate-api";
 import { injectable } from "tsyringe";
 
 import { ApiError } from "../../../../../utils/api-error";
@@ -15,25 +16,69 @@ export class ArticleBannerService {
     private readonly pagination: PaginationService,
   ) {}
 
-  // =========================================================================
-  // 1. CREATE BANNER
-  // =========================================================================
+  private async translateText(text: string): Promise<string> {
+    const value = text.trim();
+
+    if (!value) {
+      throw new ApiError("Teks tidak boleh kosong", 400);
+    }
+
+    const maxAttempts = 3;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const response = await translate(value, {
+          from: "id",
+          to: "en",
+        });
+
+        if (!response.text?.trim()) {
+          throw new Error("Google Translate returned empty result");
+        }
+
+        return response.text.trim();
+      } catch (error) {
+        console.error(`Translation attempt ${attempt} failed:`, error);
+
+        if (attempt === maxAttempts) {
+          throw new ApiError(
+            "Gagal menerjemahkan teks Indonesia ke Inggris",
+            502,
+          );
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, attempt * 750));
+      }
+    }
+
+    throw new ApiError("Gagal menerjemahkan teks", 502);
+  }
+
   async createBanner(data: CreateArticleBannerDTO) {
-    // Pastikan artikel yang dipilih benar-benar ada
     const articleExists = await this.prisma.article.findUnique({
-      where: { id: data.articleId },
+      where: {
+        id: data.articleId,
+      },
+      select: {
+        id: true,
+      },
     });
 
     if (!articleExists) {
       throw new ApiError("Article not found", 404);
     }
 
+    const buttonTextEn = await this.translateText(data.buttonTextId);
+
     try {
       const banner = await this.prisma.articleBanner.create({
         data: {
           articleId: data.articleId,
           backgroundColor: data.backgroundColor,
-          buttonText: data.buttonText,
+
+          buttonTextId: data.buttonTextId,
+          buttonTextEn,
+
           ctaLink: data.ctaLink,
           isActive: data.isActive ?? false,
         },
@@ -41,115 +86,98 @@ export class ArticleBannerService {
 
       return this.getBannerById(banner.id);
     } catch (error) {
-      console.error("🔥 ERROR CREATING BANNER:", error);
+      console.error("ERROR CREATING BANNER:", error);
+
+      if (error instanceof ApiError) {
+        throw error;
+      }
+
       throw new ApiError("Database error occurred while creating banner.", 500);
     }
   }
 
-  // =========================================================================
-  // 2. UPDATE BANNER
-  // =========================================================================
   async updateBanner(id: string, data: UpdateArticleBannerDTO) {
     const existing = await this.prisma.articleBanner.findUnique({
-      where: { id },
+      where: {
+        id,
+      },
     });
 
     if (!existing) {
       throw new ApiError("Banner not found", 404);
     }
 
-    // Jika ganti articleId, pastikan artikel baru tersebut ada
-    if (data.articleId && data.articleId !== existing.articleId) {
+    if (data.articleId !== undefined && data.articleId !== existing.articleId) {
       const articleExists = await this.prisma.article.findUnique({
-        where: { id: data.articleId },
+        where: {
+          id: data.articleId,
+        },
+        select: {
+          id: true,
+        },
       });
-      if (!articleExists) throw new ApiError("Target article not found", 404);
+
+      if (!articleExists) {
+        throw new ApiError("Target article not found", 404);
+      }
+    }
+
+    let buttonTextEn = existing.buttonTextEn;
+
+    if (data.buttonTextId !== undefined) {
+      buttonTextEn = await this.translateText(data.buttonTextId);
     }
 
     try {
       const updated = await this.prisma.articleBanner.update({
-        where: { id },
+        where: {
+          id,
+        },
         data: {
-          articleId: data.articleId,
-          backgroundColor: data.backgroundColor,
-          buttonText: data.buttonText,
-          ctaLink: data.ctaLink,
-          isActive: data.isActive,
+          ...(data.articleId !== undefined && {
+            articleId: data.articleId,
+          }),
+
+          ...(data.backgroundColor !== undefined && {
+            backgroundColor: data.backgroundColor,
+          }),
+
+          ...(data.buttonTextId !== undefined && {
+            buttonTextId: data.buttonTextId,
+            buttonTextEn,
+          }),
+
+          ...(data.ctaLink !== undefined && {
+            ctaLink: data.ctaLink,
+          }),
+
+          ...(data.isActive !== undefined && {
+            isActive: data.isActive,
+          }),
         },
       });
 
       return this.getBannerById(updated.id);
     } catch (error) {
-      console.error("🔥 ERROR UPDATING BANNER:", error);
+      console.error("ERROR UPDATING BANNER:", error);
+
+      if (error instanceof ApiError) {
+        throw error;
+      }
+
       throw new ApiError("Database error occurred while updating banner.", 500);
     }
   }
 
-  // =========================================================================
-  // 3. GET BANNER BY ID (Untuk Form Edit di Admin)
-  // =========================================================================
   async getBannerById(id: string) {
     const banner = await this.prisma.articleBanner.findUnique({
-      where: { id },
+      where: {
+        id,
+      },
       include: {
         article: {
           select: {
             id: true,
-            title_id: true, // Sesuaikan dengan model baru
-            title_en: true, // Anda mungkin juga butuh ini di frontend
-            coverImage: true,
-          },
-        },
-      },
-    });
-
-    if (!banner) throw new ApiError("Banner not found", 404);
-
-    // Opsional: Jika ingin tetap mempertahankan properti 'title' untuk kemudahan frontend
-    return {
-      ...banner,
-      article: banner.article
-        ? {
-            ...banner.article,
-            title: banner.article.title_id, // Memetakan kembali ke 'title' agar frontend tidak rusak
-          }
-        : null,
-    };
-  }
-  async getAllBanners(query: {
-    page?: number;
-    take?: number;
-    search?: string;
-    isActive?: boolean | string;
-  }) {
-    const where: any = {};
-
-    // Perbaikan: Mencari berdasarkan title_id
-    if (query.search) {
-      where.article = {
-        title_id: { contains: query.search },
-      };
-    }
-
-    if (query.isActive !== undefined) {
-      if (typeof query.isActive === "string") {
-        where.isActive = query.isActive === "true";
-      } else {
-        where.isActive = query.isActive;
-      }
-    }
-
-    const count = await this.prisma.articleBanner.count({ where });
-
-    const data = await this.prisma.articleBanner.findMany({
-      where,
-      skip: (Number(query.page || 1) - 1) * Number(query.take || 10),
-      take: Number(query.take || 10),
-      orderBy: { createdAt: "desc" },
-      include: {
-        article: {
-          // Perbaikan: Select title_id (dan opsional title_en)
-          select: {
             title_id: true,
             title_en: true,
             coverImage: true,
@@ -159,67 +187,182 @@ export class ArticleBannerService {
       },
     });
 
-    // Melakukan mapping data agar tetap kompatibel dengan frontend yang mengharapkan 'title'
-    const formattedData = data.map((banner) => ({
-      ...banner,
-      article: banner.article
-        ? {
-            ...banner.article,
-            title: banner.article.title_id, // Frontend tetap menerima 'title'
-          }
-        : null,
-    }));
-
-    const meta = this.pagination.generateMeta({
-      count,
-      page: Number(query.page || 1),
-      take: Number(query.take || 10),
-    });
-
-    return { data: formattedData, meta };
-  }
-  // =========================================================================
-  // 5. DELETE BANNER
-  // =========================================================================
-  async deleteBanner(id: string) {
-    const existing = await this.prisma.articleBanner.findUnique({
-      where: { id },
-    });
-
-    if (!existing) throw new ApiError("Banner not found", 404);
-
-    try {
-      const deleted = await this.prisma.articleBanner.delete({
-        where: { id },
-      });
-      return deleted;
-    } catch (error) {
-      console.error("🔥 ERROR DELETING BANNER:", error);
-      throw new ApiError("Database error occurred while deleting banner.", 500);
+    if (!banner) {
+      throw new ApiError("Banner not found", 404);
     }
+
+    return banner;
   }
 
-  // =========================================================================
-  // 6. GET ACTIVE BANNERS (KHUSUS UNTUK CLIENT PUBLIK / CAROUSEL)
-  // =========================================================================
-  async getActiveBannersPublic() {
-    try {
-      const banners = await this.prisma.articleBanner.findMany({
-        where: {
-          isActive: true,
-        },
+  async getAllBanners(
+    query: {
+      page?: number;
+      take?: number;
+      search?: string;
+      isActive?: boolean | string;
+    },
+    lang: string = "id",
+  ) {
+    const page = Number(query.page || 1);
+
+    const take = Number(query.take || 10);
+
+    const where: any = {};
+
+    if (query.search) {
+      where.article = {
+        OR: [
+          {
+            title_id: {
+              contains: query.search,
+            },
+          },
+          {
+            title_en: {
+              contains: query.search,
+            },
+          },
+        ],
+      };
+    }
+
+    if (query.isActive !== undefined) {
+      where.isActive =
+        typeof query.isActive === "string"
+          ? query.isActive === "true"
+          : query.isActive;
+    }
+
+    const [count, data] = await Promise.all([
+      this.prisma.articleBanner.count({
+        where,
+      }),
+
+      this.prisma.articleBanner.findMany({
+        where,
+        skip: (page - 1) * take,
+        take,
         orderBy: {
           createdAt: "desc",
         },
         include: {
           article: {
             select: {
-              title_id: true, // Update: Ambil title_id
-              title_en: true, // Update: Ambil title_en untuk kebutuhan frontend
+              id: true,
+              title_id: true,
+              title_en: true,
+              coverImage: true,
+              slug: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const isEn = lang === "en";
+
+    const formattedData = data.map((banner) => {
+      const buttonText =
+        isEn && banner.buttonTextEn ? banner.buttonTextEn : banner.buttonTextId;
+
+      const articleTitle =
+        isEn && banner.article?.title_en
+          ? banner.article.title_en
+          : banner.article?.title_id;
+
+      return {
+        id: banner.id,
+        articleId: banner.articleId,
+
+        backgroundColor: banner.backgroundColor,
+
+        buttonTextId: banner.buttonTextId,
+        buttonTextEn: banner.buttonTextEn,
+
+        buttonText,
+
+        ctaLink: banner.ctaLink,
+        isActive: banner.isActive,
+
+        createdAt: banner.createdAt,
+        updatedAt: banner.updatedAt,
+
+        article: banner.article
+          ? {
+              id: banner.article.id,
+
+              slug: banner.article.slug,
+
+              coverImage: banner.article.coverImage,
+
+              title_id: banner.article.title_id,
+
+              title_en: banner.article.title_en,
+
+              title: articleTitle,
+            }
+          : null,
+      };
+    });
+
+    const meta = this.pagination.generateMeta({
+      count,
+      page,
+      take,
+    });
+
+    return {
+      data: formattedData,
+      meta,
+    };
+  }
+
+  async deleteBanner(id: string) {
+    const existing = await this.prisma.articleBanner.findUnique({
+      where: {
+        id,
+      },
+    });
+
+    if (!existing) {
+      throw new ApiError("Banner not found", 404);
+    }
+
+    try {
+      return await this.prisma.articleBanner.delete({
+        where: {
+          id,
+        },
+      });
+    } catch (error) {
+      console.error("ERROR DELETING BANNER:", error);
+
+      throw new ApiError("Database error occurred while deleting banner.", 500);
+    }
+  }
+
+  async getActiveBannersPublic(lang: string = "id") {
+    try {
+      const banners = await this.prisma.articleBanner.findMany({
+        where: {
+          isActive: true,
+        },
+
+        orderBy: {
+          createdAt: "desc",
+        },
+
+        include: {
+          article: {
+            select: {
+              id: true,
+              title_id: true,
+              title_en: true,
               coverImage: true,
               publishedAt: true,
               createdAt: true,
               slug: true,
+
               category: {
                 select: {
                   name_id: true,
@@ -231,17 +374,59 @@ export class ArticleBannerService {
         },
       });
 
-      return banners.map((banner) => ({
-        ...banner,
-        article: banner.article
-          ? {
-              ...banner.article,
-              title: banner.article.title_id, // Tetap sediakan 'title' untuk UI
-            }
-          : null,
-      }));
+      const isEn = lang === "en";
+
+      return banners.map((banner) => {
+        const buttonText =
+          isEn && banner.buttonTextEn
+            ? banner.buttonTextEn
+            : banner.buttonTextId;
+
+        const articleTitle =
+          isEn && banner.article?.title_en
+            ? banner.article.title_en
+            : banner.article?.title_id;
+
+        const categoryName =
+          isEn && banner.article?.category?.name_en
+            ? banner.article.category.name_en
+            : banner.article?.category?.name_id;
+
+        return {
+          id: banner.id,
+
+          backgroundColor: banner.backgroundColor,
+
+          buttonText,
+
+          ctaLink: banner.ctaLink,
+
+          article: banner.article
+            ? {
+                id: banner.article.id,
+
+                title: articleTitle,
+
+                slug: banner.article.slug,
+
+                coverImage: banner.article.coverImage,
+
+                publishedAt: banner.article.publishedAt,
+
+                createdAt: banner.article.createdAt,
+
+                category: banner.article.category
+                  ? {
+                      name: categoryName,
+                    }
+                  : null,
+              }
+            : null,
+        };
+      });
     } catch (error) {
-      console.error("🔥 ERROR FETCHING PUBLIC BANNERS:", error);
+      console.error("ERROR FETCHING PUBLIC BANNERS:", error);
+
       throw new ApiError("Failed to fetch active banners.", 500);
     }
   }
