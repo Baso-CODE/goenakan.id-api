@@ -67,6 +67,17 @@ export class OrderController {
     }
   };
 
+  deleteOrder = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+
+      const result = await this.orderService.deleteOrder(id);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
   getOrderByIdUpdate = async (
     req: Request,
     res: Response,

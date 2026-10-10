@@ -103,6 +103,9 @@ export class OrderRouter {
       validateBody(UpdateOrderDTO),
       this.orderController.updateOrder,
     );
+
+    // 17. Delete Sales Order
+    this.router.delete("/:id", this.orderController.deleteOrder);
   };
 
   getRouter(): Router {
