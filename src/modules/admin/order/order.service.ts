@@ -538,6 +538,106 @@ export class OrderService {
     return updatedOrder;
   }
 
+  async deleteOrder(id: string) {
+    return await this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          orderNumber: true,
+          status: true,
+          salesCategory: true,
+          _count: {
+            select: {
+              invoices: true,
+              cashflows: true,
+              cashflowSummary: true,
+              productionTrackers: true,
+              shipments: true,
+              deliveryNotes: true,
+              purchaseOrderItems: true,
+              warranties: true,
+              replacementOrders: true,
+              resultingOrders: true,
+              quotations: true,
+              whatsappMessages: true,
+            },
+          },
+        },
+      });
+
+      if (!order) {
+        throw new ApiError("Order tidak ditemukan", 404);
+      }
+
+      if (order.salesCategory !== "SALES") {
+        throw new ApiError(
+          "Hanya Sales Order yang dapat dihapus melalui fitur ini",
+          400,
+        );
+      }
+
+      if (order.status !== "PENDING") {
+        throw new ApiError(
+          "Order tidak dapat dihapus karena sudah diproses",
+          400,
+        );
+      }
+
+      const processedRelations = Object.entries(order._count).filter(
+        ([, count]) => count > 0,
+      );
+
+      if (processedRelations.length > 0) {
+        throw new ApiError(
+          `Order tidak dapat dihapus karena sudah memiliki data proses: ${processedRelations
+            .map(([relation]) => relation)
+            .join(", ")}`,
+          400,
+        );
+      }
+
+      await tx.orderProduct.deleteMany({
+        where: { orderId: id },
+      });
+
+      await tx.orderSampleFollowUp.deleteMany({
+        where: { orderId: id },
+      });
+
+      await tx.sampleProductHistory.deleteMany({
+        where: { orderId: id },
+      });
+
+      await tx.clientPurchaseOrder.deleteMany({
+        where: { orderId: id },
+      });
+
+      const deleted = await tx.order.deleteMany({
+        where: {
+          id,
+          status: "PENDING",
+          salesCategory: "SALES",
+        },
+      });
+
+      if (deleted.count !== 1) {
+        throw new ApiError(
+          "Order tidak dapat dihapus karena statusnya telah berubah",
+          409,
+        );
+      }
+
+      return {
+        message: "Sales Order berhasil dihapus",
+        data: {
+          id: order.id,
+          orderNumber: order.orderNumber,
+        },
+      };
+    });
+  }
+
   async getOrderForUpdate(id: string) {
     const order = await this.prisma.order.findUnique({
       where: { id },
