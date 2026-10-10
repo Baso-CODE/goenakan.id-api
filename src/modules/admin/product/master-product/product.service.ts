@@ -1585,7 +1585,15 @@ export class ProductService {
   async addImage(
     id: string,
     file?: Express.Multer.File,
-    metadata?: { isFeatured?: boolean; altText?: string; url?: string },
+    metadata?: {
+      isFeatured?: boolean | string;
+      altText?: string;
+      url?: string;
+      mockupSideName?: string | null;
+      attributeValueId?: string | null;
+      printPositionValueId?: string | null;
+      printSideValueId?: string | null;
+    },
   ) {
     let secureUrl = "";
     let publicId = "";
@@ -1616,8 +1624,13 @@ export class ProductService {
         productId: id,
         url: secureUrl,
         publicId: publicId,
-        isFeatured: metadata?.isFeatured || false,
+        isFeatured:
+          metadata?.isFeatured === true || metadata?.isFeatured === "true",
         altText: metadata?.altText || "Product Image",
+        mockupSideName: metadata?.mockupSideName || null,
+        attributeValueId: metadata?.attributeValueId || null,
+        printPositionValueId: metadata?.printPositionValueId || null,
+        printSideValueId: metadata?.printSideValueId || null,
         sortOrder: nextOrder,
       },
     });
