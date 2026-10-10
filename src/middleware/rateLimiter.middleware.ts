@@ -1,50 +1,46 @@
-import { Request, Response } from "express";
-import rateLimit from "express-rate-limit";
+import { Request } from "express";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+
+const isLocalhost = (req: Request): boolean => {
+  if (process.env.NODE_ENV === "production") return false;
+  return ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.ip || "");
+};
 
 export const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 menit
-  max: 1000, // ⬆️ Dinaikkan dari 100 menjadi 1000 request per 15 menit
+  windowMs: 15 * 60 * 1000,
+  limit: 1000,
   message: "Terlalu banyak request, coba lagi nanti",
-  standardHeaders: true,
+  standardHeaders: "draft-7",
   legacyHeaders: false,
-  skip: (req: Request) => {
-    return req.ip === "127.0.0.1" || req.ip === "::1";
-  },
+  skip: isLocalhost,
 });
 
 export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 menit
-  max: 20, // ⬆️ Dinaikkan dari 5 menjadi 20 (Memberi ruang jika user salah ketik password beberapa kali)
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
   message: "Terlalu banyak percobaan login, coba lagi dalam 15 menit",
-  standardHeaders: true,
+  standardHeaders: "draft-7",
   legacyHeaders: false,
-
-  keyGenerator: (req: Request, res: Response): string => {
-    const ip = req.ip || "unknown";
-    const email = (req.body as any)?.email || "unknown";
-    return `${ip}-${email}`;
+  keyGenerator: (req: Request): string => {
+    return ipKeyGenerator(req.ip || "unknown");
   },
-
-  skip: (req: Request) => {
-    const ip = req.ip;
-    return ip === "127.0.0.1" || ip === "::1" || !ip;
-  },
+  skip: isLocalhost,
 });
 
 export const strictLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 menit
-  max: 100, // ⬆️ Dinaikkan dari 20 menjadi 100 request
+  windowMs: 15 * 60 * 1000,
+  limit: 100,
   message: "Terlalu banyak request sensitif, coba lagi nanti",
-  standardHeaders: true,
+  standardHeaders: "draft-7",
   legacyHeaders: false,
-  skip: (req: Request) => req.ip === "127.0.0.1" || req.ip === "::1",
+  skip: isLocalhost,
 });
 
 export const publicLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 menit
-  max: 3000, // ⬆️ Dinaikkan dari 500 menjadi 3000 request (Sangat longgar untuk API publik)
+  windowMs: 15 * 60 * 1000,
+  limit: 3000,
   message: "Terlalu banyak request, coba lagi nanti",
-  standardHeaders: true,
+  standardHeaders: "draft-7",
   legacyHeaders: false,
-  skip: (req: Request) => req.ip === "127.0.0.1" || req.ip === "::1",
+  skip: isLocalhost,
 });

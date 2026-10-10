@@ -540,6 +540,8 @@ export class OrderService {
 
   async deleteOrder(id: string) {
     return await this.prisma.$transaction(async (tx) => {
+      const allowedStatuses = ["PENDING", "CANCELLED"] as const;
+
       const order = await tx.order.findUnique({
         where: { id },
         select: {
@@ -577,9 +579,13 @@ export class OrderService {
         );
       }
 
-      if (order.status !== "PENDING") {
+      if (
+        !allowedStatuses.includes(
+          order.status as (typeof allowedStatuses)[number],
+        )
+      ) {
         throw new ApiError(
-          "Order tidak dapat dihapus karena sudah diproses",
+          "Maaf, Sales Order tidak dapat dihapus karena sudah dalam proses.",
           400,
         );
       }
@@ -590,7 +596,7 @@ export class OrderService {
 
       if (processedRelations.length > 0) {
         throw new ApiError(
-          `Order tidak dapat dihapus karena sudah memiliki data proses: ${processedRelations
+          `Sales Order tidak dapat dihapus karena memiliki data terkait: ${processedRelations
             .map(([relation]) => relation)
             .join(", ")}`,
           400,
@@ -616,7 +622,7 @@ export class OrderService {
       const deleted = await tx.order.deleteMany({
         where: {
           id,
-          status: "PENDING",
+          status: { in: ["PENDING", "CANCELLED"] },
           salesCategory: "SALES",
         },
       });
