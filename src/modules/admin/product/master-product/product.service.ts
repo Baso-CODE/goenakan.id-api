@@ -893,6 +893,8 @@ export class ProductService {
     id: string,
     payload: {
       basePrice: number | string;
+      basePriceAir?: number | string | null;
+      availableFreightModes?: string | null;
       activeVendorPriceRecordId?: string | null;
       activePriceFreightMode?: string | null;
       foreignPrice?: number | string | null;
@@ -904,11 +906,14 @@ export class ProductService {
         minQuantity: number;
         maxQuantity?: number | null;
         price: number | string;
+        freightMode?: string | null;
       }[];
     },
   ) {
     const {
       basePrice,
+      basePriceAir,
+      availableFreightModes,
       activeVendorPriceRecordId,
       activePriceFreightMode,
       priceTiers,
@@ -919,151 +924,195 @@ export class ProductService {
       foreignPriceAdjuster,
     } = payload;
 
+    // Validate tier ranges separately per freightMode (SEA vs AIR)
     if (priceTiers.length > 0) {
-      const sortedTiers = priceTiers.sort(
-        (a, b) => a.minQuantity - b.minQuantity,
-      );
-      for (let i = 0; i < sortedTiers.length; i++) {
-        const current = sortedTiers[i];
-        const next = sortedTiers[i + 1];
-        if (current.maxQuantity && current.minQuantity > current.maxQuantity) {
-          throw new ApiError(
-            `Invalid tier range: ${current.minQuantity} - ${current.maxQuantity}`,
-            400,
-          );
-        }
-        if (
-          next &&
-          current.maxQuantity &&
-          next.minQuantity <= current.maxQuantity
-        ) {
-          throw new ApiError(
-            `Price tiers overlap between range ending at ${current.maxQuantity} and starting at ${next.minQuantity}`,
-            400,
-          );
+      const seaTiers = priceTiers
+        .filter((t) => !t.freightMode || t.freightMode === "SEA")
+        .sort((a, b) => a.minQuantity - b.minQuantity);
+      const airTiers = priceTiers
+        .filter((t) => t.freightMode === "AIR")
+        .sort((a, b) => a.minQuantity - b.minQuantity);
+
+      for (const group of [seaTiers, airTiers]) {
+        for (let i = 0; i < group.length; i++) {
+          const current = group[i];
+          const next = group[i + 1];
+          if (current.maxQuantity && current.minQuantity > current.maxQuantity) {
+            throw new ApiError(
+              `Invalid tier range: ${current.minQuantity} - ${current.maxQuantity}`,
+              400,
+            );
+          }
+          if (
+            next &&
+            current.maxQuantity &&
+            next.minQuantity <= current.maxQuantity
+          ) {
+            throw new ApiError(
+              `Price tiers overlap between range ending at ${current.maxQuantity} and starting at ${next.minQuantity}`,
+              400,
+            );
+          }
         }
       }
     }
 
-    return await this.prisma.$transaction(async (tx) => {
-      // 1. Get the current product details before update to compare basePrice and tiers
-      const oldProduct = await tx.product.findUnique({
-        where: { id },
-        include: {
-          priceTiers: true,
-          productVariants: {
-            include: {
-              priceTiers: true,
-              attributeValues: true,
+    return await this.prisma.$transaction(
+      async (tx) => {
+        // 1. Get the current product details before update to compare basePrice and tiers
+        const oldProduct = await tx.product.findUnique({
+          where: { id },
+          include: {
+            priceTiers: true,
+            productVariants: {
+              include: {
+                priceTiers: true,
+                attributeValues: true,
+              },
             },
+            attributeValues: true,
           },
-          attributeValues: true,
-        },
-      });
-
-      const oldBasePrice = oldProduct?.basePrice
-        ? Number(oldProduct.basePrice)
-        : 0;
-      const oldTiers = oldProduct?.priceTiers || [];
-
-      const product = await tx.product.update({
-        where: { id },
-        data: {
-          basePrice: basePrice.toString(),
-          activeVendorPriceRecordId: activeVendorPriceRecordId || null,
-          activePriceFreightMode: activePriceFreightMode || null,
-          foreignPrice:
-            foreignPrice !== undefined && foreignPrice !== null
-              ? foreignPrice.toString()
-              : null,
-          currencyCode: currencyCode || "IDR",
-          exchangeRate:
-            exchangeRate !== undefined && exchangeRate !== null
-              ? exchangeRate.toString()
-              : null,
-          additionalFee:
-            additionalFee !== undefined && additionalFee !== null
-              ? additionalFee.toString()
-              : null,
-          foreignPriceAdjuster:
-            foreignPriceAdjuster !== undefined && foreignPriceAdjuster !== null
-              ? Number(foreignPriceAdjuster)
-              : 0,
-        },
-      });
-
-      // Clear existing tiers
-      await tx.priceTier.deleteMany({ where: { productId: id } });
-
-      // Insert new tiers
-      if (priceTiers.length > 0) {
-        await tx.priceTier.createMany({
-          data: priceTiers.map((t) => ({
-            productId: id,
-            minQuantity: t.minQuantity,
-            maxQuantity: t.maxQuantity ?? null,
-            price: t.price.toString(),
-          })),
         });
-      }
 
-      // 4. Synchronize product variants
-      if (oldProduct && oldProduct.productVariants.length > 0) {
-        for (const variant of oldProduct.productVariants) {
-          const vPrice = variant.price ? Number(variant.price) : 0;
+        const oldBasePrice = oldProduct?.basePrice
+          ? Number(oldProduct.basePrice)
+          : 0;
 
-          // Calculate price modifier for this variant:
-          // 1. Try to find attribute-based modifier sum from ProductAttributeValue
-          let modifier = 0;
-          let hasAttrModifier = false;
-          if (variant.attributeValues && oldProduct.attributeValues) {
-            const variantAttrValIds = new Set(
-              variant.attributeValues.map((av: any) => av.attributeValueId),
-            );
-            for (const pav of oldProduct.attributeValues) {
-              if (
-                variantAttrValIds.has(pav.attributeValueId) &&
-                pav.priceModifier !== null &&
-                pav.priceModifier !== undefined
-              ) {
-                modifier += Number(pav.priceModifier) || 0;
-                hasAttrModifier = true;
+        const product = await tx.product.update({
+          where: { id },
+          data: {
+            basePrice: basePrice.toString(),
+            basePriceAir:
+              basePriceAir !== undefined &&
+              basePriceAir !== null &&
+              basePriceAir !== ""
+                ? basePriceAir.toString()
+                : null,
+            availableFreightModes: availableFreightModes || "SEA",
+            activeVendorPriceRecordId: activeVendorPriceRecordId || null,
+            activePriceFreightMode: activePriceFreightMode || null,
+            foreignPrice:
+              foreignPrice !== undefined && foreignPrice !== null
+                ? foreignPrice.toString()
+                : null,
+            currencyCode: currencyCode || "IDR",
+            exchangeRate:
+              exchangeRate !== undefined && exchangeRate !== null
+                ? exchangeRate.toString()
+                : null,
+            additionalFee:
+              additionalFee !== undefined && additionalFee !== null
+                ? additionalFee.toString()
+                : null,
+            foreignPriceAdjuster:
+              foreignPriceAdjuster !== undefined &&
+              foreignPriceAdjuster !== null
+                ? Number(foreignPriceAdjuster)
+                : 0,
+          },
+        });
+
+        // 2. Clear existing product tiers
+        await tx.priceTier.deleteMany({ where: { productId: id } });
+
+        // 3. Insert new product tiers
+        if (priceTiers.length > 0) {
+          await tx.priceTier.createMany({
+            data: priceTiers.map((t) => ({
+              productId: id,
+              minQuantity: t.minQuantity,
+              maxQuantity: t.maxQuantity ?? null,
+              price: t.price.toString(),
+              freightMode: t.freightMode === "AIR" ? "AIR" : "SEA",
+            })),
+          });
+        }
+
+        // 4. Synchronize product variants (batched for performance)
+        if (oldProduct && oldProduct.productVariants.length > 0) {
+          const variantIds = oldProduct.productVariants.map((v) => v.id);
+
+          // Bulk delete existing variant tiers in one query
+          await tx.priceTier.deleteMany({
+            where: { variantId: { in: variantIds } },
+          });
+
+          const allVariantTiersToCreate: any[] = [];
+
+          for (const variant of oldProduct.productVariants) {
+            const vPrice = variant.price ? Number(variant.price) : 0;
+
+            // Calculate price modifier for this variant:
+            let modifier = 0;
+            let hasAttrModifier = false;
+            if (variant.attributeValues && oldProduct.attributeValues) {
+              const variantAttrValIds = new Set(
+                variant.attributeValues.map((av: any) => av.attributeValueId),
+              );
+              for (const pav of oldProduct.attributeValues) {
+                if (
+                  variantAttrValIds.has(pav.attributeValueId) &&
+                  pav.priceModifier !== null &&
+                  pav.priceModifier !== undefined
+                ) {
+                  modifier += Number(pav.priceModifier) || 0;
+                  hasAttrModifier = true;
+                }
+              }
+            }
+
+            if (!hasAttrModifier && oldBasePrice > 0 && vPrice > 0) {
+              modifier = vPrice - oldBasePrice;
+            }
+
+            const newVariantPrice = Math.max(0, Number(basePrice) + modifier);
+            const newVariantPriceAir =
+              basePriceAir !== undefined &&
+              basePriceAir !== null &&
+              basePriceAir !== ""
+                ? Math.max(0, Number(basePriceAir) + modifier)
+                : null;
+
+            // Apply variant price update
+            await tx.productVariant.update({
+              where: { id: variant.id },
+              data: {
+                price: newVariantPrice,
+                priceAir: newVariantPriceAir
+                  ? newVariantPriceAir.toString()
+                  : null,
+              },
+            });
+
+            if (priceTiers.length > 0) {
+              for (const t of priceTiers) {
+                allVariantTiersToCreate.push({
+                  variantId: variant.id,
+                  minQuantity: t.minQuantity,
+                  maxQuantity: t.maxQuantity ?? null,
+                  price: Math.max(0, Number(t.price) + modifier).toString(),
+                  freightMode: t.freightMode === "AIR" ? "AIR" : "SEA",
+                  productId: null,
+                });
               }
             }
           }
 
-          // 2. If no attribute modifier found, use historical diff from oldBasePrice (if oldBasePrice > 0 and vPrice > 0)
-          if (!hasAttrModifier && oldBasePrice > 0 && vPrice > 0) {
-            modifier = vPrice - oldBasePrice;
-          }
-
-          const newVariantPrice = Math.max(0, Number(basePrice) + modifier);
-
-          // Apply variant price update
-          await tx.productVariant.update({
-            where: { id: variant.id },
-            data: { price: newVariantPrice },
-          });
-
-          // Apply variant tiers update mirroring product tiers + variant modifier
-          await tx.priceTier.deleteMany({ where: { variantId: variant.id } });
-
-          if (priceTiers.length > 0) {
+          // Bulk insert all variant tiers in one query
+          if (allVariantTiersToCreate.length > 0) {
             await tx.priceTier.createMany({
-              data: priceTiers.map((t) => ({
-                variantId: variant.id,
-                minQuantity: t.minQuantity,
-                maxQuantity: t.maxQuantity ?? null,
-                price: Math.max(0, Number(t.price) + modifier).toString(),
-                productId: null,
-              })),
+              data: allVariantTiersToCreate,
             });
           }
         }
-      }
 
-      return product;
-    });
+        return product;
+      },
+      {
+        maxWait: 15000,
+        timeout: 45000,
+      },
+    );
   }
 
   // === PRIVATE MATHEMATICAL COGS FORMULA ===
@@ -4192,7 +4241,13 @@ export class ProductService {
             ? parseFloat((rawVariantPrice * conversionRate).toFixed(2))
             : null;
 
-        const formattedVariantTiers = (v.priceTiers || []).map((tier) => {
+        const rawVariantPriceAir = v.priceAir ? Number(v.priceAir) : null;
+        const convertedVariantPriceAir =
+          rawVariantPriceAir !== null
+            ? parseFloat((rawVariantPriceAir * conversionRate).toFixed(2))
+            : null;
+
+        const mapTier = (tier: any) => {
           let label = "";
           if (tier.maxQuantity) {
             label = `${tier.minQuantity} - ${tier.maxQuantity} pcs`;
@@ -4210,12 +4265,23 @@ export class ProductService {
             pricePerPcs: convertedTierPrice,
             label: label,
           };
-        });
+        };
+
+        const variantTiersSea = (v.priceTiers || []).filter(
+          (tier: any) => !tier.freightMode || tier.freightMode === "SEA",
+        );
+        const variantTiersAir = (v.priceTiers || []).filter(
+          (tier: any) => tier.freightMode === "AIR",
+        );
+
+        const formattedVariantTiers = variantTiersSea.map(mapTier);
+        const formattedVariantTiersAir = variantTiersAir.map(mapTier);
 
         return {
           id: v.id,
           name: v.variantName || v.sku,
           price: convertedVariantPrice,
+          priceAir: convertedVariantPriceAir,
           sku: v.sku,
           stock: v.stock || 0,
           rawWeight: vWeight,
@@ -4226,6 +4292,7 @@ export class ProductService {
           dimensionsString: vDimensionsString,
           attributes,
           priceTiers: formattedVariantTiers,
+          priceTiersAir: formattedVariantTiersAir,
           images: v.images.map((img) => ({
             id: img.id,
             type: "image" as const,
@@ -4242,7 +4309,8 @@ export class ProductService {
       ].filter((val) => val !== null && val !== undefined);
       const dimensionsString =
         dimensionParts.length > 0 ? `${dimensionParts.join(" x ")} cm` : "-";
-      let formattedTiers = product.priceTiers.map((tier) => {
+
+      const mapProductTier = (tier: any) => {
         let label = "";
         if (tier.maxQuantity) {
           label = `${tier.minQuantity} - ${tier.maxQuantity} pcs`;
@@ -4258,15 +4326,41 @@ export class ProductService {
           pricePerPcs: convertedTierPrice,
           label: label,
         };
-      });
+      };
+
+      const productTiersSea = (product.priceTiers || []).filter(
+        (t: any) => !t.freightMode || t.freightMode === "SEA",
+      );
+      const productTiersAir = (product.priceTiers || []).filter(
+        (t: any) => t.freightMode === "AIR",
+      );
+
+      let formattedTiers = productTiersSea.map(mapProductTier);
+      let formattedTiersAir = productTiersAir.map(mapProductTier);
+
       const convertedBasePrice = parseFloat(
         (Number(product.basePrice) * conversionRate).toFixed(2),
       );
+      const convertedBasePriceAir =
+        product.basePriceAir !== null && product.basePriceAir !== undefined
+          ? parseFloat(
+              (Number(product.basePriceAir) * conversionRate).toFixed(2),
+            )
+          : null;
+
       if (formattedTiers.length === 0) {
         formattedTiers.push({
           minQty: 1,
           maxQty: null,
           pricePerPcs: convertedBasePrice,
+          label: "1+ pcs",
+        });
+      }
+      if (formattedTiersAir.length === 0 && convertedBasePriceAir !== null) {
+        formattedTiersAir.push({
+          minQty: 1,
+          maxQty: null,
+          pricePerPcs: convertedBasePriceAir,
           label: "1+ pcs",
         });
       }
@@ -4332,6 +4426,8 @@ export class ProductService {
         sku: product.sku,
         slug: product.slug,
         basePrice: convertedBasePrice,
+        basePriceAir: convertedBasePriceAir,
+        availableFreightModes: product.availableFreightModes || "SEA",
         currencyCode: targetCurrency,
         foreignPriceAdjuster: product.foreignPriceAdjuster || 0,
         category:
@@ -4342,6 +4438,7 @@ export class ProductService {
         media: combinedMedia,
         variants: formattedVariants,
         priceTiers: formattedTiers,
+        priceTiersAir: formattedTiersAir,
         description: productDescription || "",
         weight: product.weight ? `${product.weight} gram` : "-",
         dimensions: dimensionsString,

@@ -31,7 +31,7 @@ export function errorMiddleware(
         break;
       default:
         res.status(500).send({
-          message: "An unexpected Prisma error occurred.",
+          message: err.message || "An unexpected Prisma error occurred.",
           code: err.code,
         });
         break;
