@@ -157,9 +157,34 @@ export class WebOrderService {
           );
         }
 
-        let actualPrice = Number(dbProduct.basePrice);
+        let parsedCustomization: any = null;
+        if (item.customization) {
+          try {
+            parsedCustomization =
+              typeof item.customization === "string"
+                ? JSON.parse(item.customization)
+                : item.customization;
+          } catch (e) {}
+        }
+
+        const isAir = parsedCustomization?.freightMode === "AIR";
+
+        let actualPrice =
+          isAir && dbProduct.basePriceAir
+            ? Number(dbProduct.basePriceAir)
+            : Number(dbProduct.basePrice);
         let productName = dbProduct.name;
-        let activeTiers: any[] = dbProduct.priceTiers || [];
+
+        const allProductTiers = dbProduct.priceTiers || [];
+        const filteredProductTiers = isAir
+          ? allProductTiers.filter((t: any) => t.freightMode === "AIR")
+          : allProductTiers.filter(
+              (t: any) => !t.freightMode || t.freightMode === "SEA",
+            );
+        let activeTiers: any[] =
+          filteredProductTiers.length > 0
+            ? filteredProductTiers
+            : allProductTiers;
 
         if (item.variantId) {
           const dbVariant = await this.prisma.productVariant.findUnique({
@@ -174,13 +199,30 @@ export class WebOrderService {
             );
           }
 
-          actualPrice = Number(dbVariant.price ?? actualPrice);
+          if (isAir && dbVariant.priceAir) {
+            actualPrice = Number(dbVariant.priceAir);
+          } else {
+            actualPrice = Number(dbVariant.price ?? actualPrice);
+          }
           productName = `${dbProduct.name} - ${dbVariant.variantName || "Varian"}`;
 
-          if (dbVariant.priceTiers && dbVariant.priceTiers.length > 0) {
-            activeTiers = dbVariant.priceTiers;
+          const allVariantTiers = dbVariant.priceTiers || [];
+          const filteredVariantTiers = isAir
+            ? allVariantTiers.filter((t: any) => t.freightMode === "AIR")
+            : allVariantTiers.filter(
+                (t: any) => !t.freightMode || t.freightMode === "SEA",
+              );
+
+          if (filteredVariantTiers.length > 0) {
+            activeTiers = filteredVariantTiers;
+          } else if (allVariantTiers.length > 0) {
+            activeTiers = allVariantTiers;
           } else if (activeTiers.length > 0 && dbVariant.price) {
-            const diff = Number(dbVariant.price) - Number(dbProduct.basePrice);
+            const vBase =
+              isAir && dbProduct.basePriceAir
+                ? Number(dbProduct.basePriceAir)
+                : Number(dbProduct.basePrice);
+            const diff = actualPrice - vBase;
             activeTiers = activeTiers.map((t) => ({
               ...t,
               price: Number(t.price) + diff,
@@ -249,15 +291,6 @@ export class WebOrderService {
 
         calculatedSubtotal += actualTotalItem;
 
-        let parsedCustomization: any = null;
-        if (item.customization) {
-          try {
-            parsedCustomization =
-              typeof item.customization === "string"
-                ? JSON.parse(item.customization)
-                : item.customization;
-          } catch (e) {}
-        }
 
         return {
           productName: productName,

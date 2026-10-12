@@ -46,6 +46,7 @@ export class CartService {
                 name_en: true,
                 slug: true,
                 basePrice: true,
+                basePriceAir: true,
                 images: { take: 1, orderBy: { isFeatured: "desc" } },
                 materialType: true,
                 weight: true,
@@ -61,6 +62,7 @@ export class CartService {
                 variantName: true,
                 sku: true,
                 price: true,
+                priceAir: true,
                 priceTiers: { orderBy: { minQuantity: "desc" } },
               },
             },
@@ -101,20 +103,62 @@ export class CartService {
             item.product.name || item.product.name_en || "Produk Tanpa Nama";
         }
 
-        let calculatedPriceIdr = item.product.basePrice.toNumber();
-        let activeTiers: any[] = item.product.priceTiers || [];
+        // Ekstrak Customization & Freight Mode lebih awal
+        let customData: any = {};
+        try {
+          if (item.customization) {
+            customData =
+              typeof item.customization === "string"
+                ? JSON.parse(item.customization)
+                : item.customization;
+          }
+        } catch (e) {
+          console.error("Gagal mem-parsing customization keranjang", e);
+        }
+
+        const isAir = customData?.freightMode === "AIR";
+
+        let calculatedPriceIdr =
+          isAir && item.product.basePriceAir
+            ? item.product.basePriceAir.toNumber()
+            : item.product.basePrice.toNumber();
+
+        const allProductTiers = item.product.priceTiers || [];
+        const filteredProductTiers = isAir
+          ? allProductTiers.filter((t: any) => t.freightMode === "AIR")
+          : allProductTiers.filter(
+              (t: any) => !t.freightMode || t.freightMode === "SEA",
+            );
+        let activeTiers: any[] =
+          filteredProductTiers.length > 0
+            ? filteredProductTiers
+            : allProductTiers;
 
         // Penyesuaian Varian
         if (item.variantId && item.variant) {
-          if (item.variant.price) {
+          if (isAir && item.variant.priceAir) {
+            calculatedPriceIdr = item.variant.priceAir.toNumber();
+          } else if (item.variant.price) {
             calculatedPriceIdr = item.variant.price.toNumber();
           }
 
-          if (item.variant.priceTiers && item.variant.priceTiers.length > 0) {
-            activeTiers = item.variant.priceTiers;
+          const allVariantTiers = item.variant.priceTiers || [];
+          const filteredVariantTiers = isAir
+            ? allVariantTiers.filter((t: any) => t.freightMode === "AIR")
+            : allVariantTiers.filter(
+                (t: any) => !t.freightMode || t.freightMode === "SEA",
+              );
+
+          if (filteredVariantTiers.length > 0) {
+            activeTiers = filteredVariantTiers;
+          } else if (allVariantTiers.length > 0) {
+            activeTiers = allVariantTiers;
           } else if (activeTiers.length > 0 && item.variant.price) {
-            const diff =
-              item.variant.price.toNumber() - item.product.basePrice.toNumber();
+            const vBase =
+              isAir && item.product.basePriceAir
+                ? item.product.basePriceAir.toNumber()
+                : item.product.basePrice.toNumber();
+            const diff = calculatedPriceIdr - vBase;
             activeTiers = activeTiers.map((t) => ({
               ...t,
               price: Number(t.price) + diff,
@@ -129,19 +173,6 @@ export class CartService {
 
         if (matchedTier) {
           calculatedPriceIdr = Number(matchedTier.price);
-        }
-
-        // Ekstrak Customization
-        let customData: any = {};
-        try {
-          if (item.customization) {
-            customData =
-              typeof item.customization === "string"
-                ? JSON.parse(item.customization)
-                : item.customization;
-          }
-        } catch (e) {
-          console.error("Gagal mem-parsing customization keranjang", e);
         }
 
         let resolvedAttributes: any[] = [];
@@ -313,8 +344,29 @@ export class CartService {
           productName = dbProduct.name_en || dbProduct.name;
         }
 
-        let calculatedPriceIdr = dbProduct.basePrice.toNumber();
-        let activeTiers: any[] = dbProduct.priceTiers || [];
+        let customData: any = item.customization || {};
+        try {
+          if (typeof customData === "string")
+            customData = JSON.parse(customData);
+        } catch (e) {}
+
+        const isAir = customData?.freightMode === "AIR";
+
+        let calculatedPriceIdr =
+          isAir && dbProduct.basePriceAir
+            ? dbProduct.basePriceAir.toNumber()
+            : dbProduct.basePrice.toNumber();
+
+        const allProductTiers = dbProduct.priceTiers || [];
+        const filteredProductTiers = isAir
+          ? allProductTiers.filter((t: any) => t.freightMode === "AIR")
+          : allProductTiers.filter(
+              (t: any) => !t.freightMode || t.freightMode === "SEA",
+            );
+        let activeTiers: any[] =
+          filteredProductTiers.length > 0
+            ? filteredProductTiers
+            : allProductTiers;
 
         if (item.variantId) {
           const dbVariant = await this.prisma.productVariant.findUnique({
@@ -322,15 +374,29 @@ export class CartService {
             include: { priceTiers: { orderBy: { minQuantity: "desc" } } },
           });
 
-          if (dbVariant?.price) {
+          if (isAir && dbVariant?.priceAir) {
+            calculatedPriceIdr = dbVariant.priceAir.toNumber();
+          } else if (dbVariant?.price) {
             calculatedPriceIdr = dbVariant.price.toNumber();
           }
 
-          if (dbVariant?.priceTiers && dbVariant.priceTiers.length > 0) {
-            activeTiers = dbVariant.priceTiers;
+          const allVariantTiers = dbVariant?.priceTiers || [];
+          const filteredVariantTiers = isAir
+            ? allVariantTiers.filter((t: any) => t.freightMode === "AIR")
+            : allVariantTiers.filter(
+                (t: any) => !t.freightMode || t.freightMode === "SEA",
+              );
+
+          if (filteredVariantTiers.length > 0) {
+            activeTiers = filteredVariantTiers;
+          } else if (allVariantTiers.length > 0) {
+            activeTiers = allVariantTiers;
           } else if (activeTiers.length > 0 && dbVariant?.price) {
-            const diff =
-              dbVariant.price.toNumber() - dbProduct.basePrice.toNumber();
+            const vBase =
+              isAir && dbProduct.basePriceAir
+                ? dbProduct.basePriceAir.toNumber()
+                : dbProduct.basePrice.toNumber();
+            const diff = calculatedPriceIdr - vBase;
             activeTiers = activeTiers.map((t) => ({
               ...t,
               price: Number(t.price) + diff,
@@ -345,12 +411,6 @@ export class CartService {
         if (matchedTier) {
           calculatedPriceIdr = Number(matchedTier.price);
         }
-
-        let customData: any = item.customization || {};
-        try {
-          if (typeof customData === "string")
-            customData = JSON.parse(customData);
-        } catch (e) {}
 
         //  Tambahkan Price Modifier Berdasarkan Nama Teks Attribute untuk Guest
         if (

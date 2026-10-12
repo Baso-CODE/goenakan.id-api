@@ -507,6 +507,8 @@ model Product {
   description_en       String?                 @db.Text
   uom                  String                  @default("pcs")
   basePrice            Decimal
+  basePriceAir         Decimal?
+  availableFreightModes String                  @default("SEA")
   foreignPrice         Decimal?
   currencyCode         String?                 @default("IDR")
   exchangeRate         Decimal?                @default(1.0)
@@ -698,6 +700,7 @@ model ProductVariant {
   stock       Int      @default(0)
   variantName String?
   price       Decimal?
+  priceAir    Decimal?
   description String?  @db.Text
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -742,6 +745,7 @@ model PriceTier {
   minQuantity Int      @default(1)
   maxQuantity Int?
   price       Decimal
+  freightMode String?  @default("SEA")
   productId   String?
   product     Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
 
