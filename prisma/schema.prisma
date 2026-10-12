@@ -509,6 +509,7 @@ model Product {
   basePrice            Decimal
   basePriceAir         Decimal?
   availableFreightModes String                  @default("SEA")
+  showFreightSelector  Boolean                 @default(false)
   foreignPrice         Decimal?
   currencyCode         String?                 @default("IDR")
   exchangeRate         Decimal?                @default(1.0)

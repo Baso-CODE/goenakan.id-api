@@ -895,6 +895,7 @@ export class ProductService {
       basePrice: number | string;
       basePriceAir?: number | string | null;
       availableFreightModes?: string | null;
+      showFreightSelector?: boolean | null;
       activeVendorPriceRecordId?: string | null;
       activePriceFreightMode?: string | null;
       foreignPrice?: number | string | null;
@@ -914,6 +915,7 @@ export class ProductService {
       basePrice,
       basePriceAir,
       availableFreightModes,
+      showFreightSelector,
       activeVendorPriceRecordId,
       activePriceFreightMode,
       priceTiers,
@@ -989,6 +991,10 @@ export class ProductService {
                 ? basePriceAir.toString()
                 : null,
             availableFreightModes: availableFreightModes || "SEA",
+            showFreightSelector:
+              showFreightSelector !== undefined && showFreightSelector !== null
+                ? Boolean(showFreightSelector)
+                : false,
             activeVendorPriceRecordId: activeVendorPriceRecordId || null,
             activePriceFreightMode: activePriceFreightMode || null,
             foreignPrice:
@@ -4428,6 +4434,7 @@ export class ProductService {
         basePrice: convertedBasePrice,
         basePriceAir: convertedBasePriceAir,
         availableFreightModes: product.availableFreightModes || "SEA",
+        showFreightSelector: product.showFreightSelector ?? false,
         currencyCode: targetCurrency,
         foreignPriceAdjuster: product.foreignPriceAdjuster || 0,
         category:
