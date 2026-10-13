@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import { injectable } from "tsyringe";
 
 import { ApiError } from "../../../../utils/api-error";
@@ -41,36 +42,31 @@ export class QuotationNoteCategoryService {
     return category;
   }
 
-  // ===============================================
-  // CREATE
-  // ===============================================
   async createCategory(data: CreateQuotationNoteCategoryDTO) {
-    // 1. Cek Duplikasi Nama (Case Insensitive)
     const existing = await this.prisma.quotationNoteCategory.findFirst({
-      where: {
-        name: { equals: data.name },
-      },
+      where: { name: data.name },
     });
 
     if (existing) {
-      throw new ApiError(`Kategori dengan nama '${data.name}' sudah ada`, 400);
+      throw new ApiError(`Kategori '${data.name}' sudah ada`, 400);
     }
 
-    // 2. Create Data
-    return await this.prisma.quotationNoteCategory.create({
+    const templates = (data.templates ?? []).map((template) => ({
+      id: template.id ?? randomUUID(),
+      title: template.title,
+      content: template.content,
+    }));
+
+    return this.prisma.quotationNoteCategory.create({
       data: {
         name: data.name,
         isPublic: data.isPublic ?? true,
-        templates: (data.templates || []) as unknown as Prisma.InputJsonValue,
+        templates: templates as Prisma.InputJsonValue,
       },
     });
   }
 
-  // ===============================================
-  // UPDATE
-  // ===============================================
   async updateCategory(id: string, data: UpdateQuotationNoteCategoryDTO) {
-    // 1. Cek Eksistensi
     const existing = await this.prisma.quotationNoteCategory.findUnique({
       where: { id },
     });
@@ -79,18 +75,27 @@ export class QuotationNoteCategoryService {
       throw new ApiError("Kategori catatan tidak ditemukan", 404);
     }
 
-    // 2. Siapkan Payload Update
     const updateData: Prisma.QuotationNoteCategoryUpdateInput = {
-      name: data.name,
-      isPublic: data.isPublic,
+      ...(data.name !== undefined && { name: data.name }),
+      ...(data.isPublic !== undefined && { isPublic: data.isPublic }),
     };
 
-    if (data.templates) {
-      updateData.templates = data.templates as unknown as Prisma.InputJsonValue;
+    if (data.templates !== undefined) {
+      const templates = data.templates.map((template) => ({
+        id: template.id ?? randomUUID(),
+        title: template.title,
+        content: template.content,
+      }));
+
+      const ids = templates.map((template) => template.id);
+      if (new Set(ids).size !== ids.length) {
+        throw new ApiError("Terdapat ID template yang duplikat", 400);
+      }
+
+      updateData.templates = templates as Prisma.InputJsonValue;
     }
 
-    // 3. Eksekusi Update
-    return await this.prisma.quotationNoteCategory.update({
+    return this.prisma.quotationNoteCategory.update({
       where: { id },
       data: updateData,
     });

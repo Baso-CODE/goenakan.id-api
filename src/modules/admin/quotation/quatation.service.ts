@@ -412,7 +412,16 @@ export class QuotationService {
         tx,
         client.custCode || "000",
       );
+      const noteKeys = (data.notes ?? [])
+        .filter((note) => note.templateId)
+        .map((note) => `${note.categoryId}:${note.templateId}`);
 
+      if (new Set(noteKeys).size !== noteKeys.length) {
+        throw new ApiError(
+          "Terdapat template notes yang dipilih dua kali",
+          400,
+        );
+      }
       const quotation = await tx.quotation.create({
         data: {
           quotationNumber,
@@ -427,19 +436,15 @@ export class QuotationService {
           subTotal,
           totalAmount: subTotal,
 
-          notes:
-            data.notes && data.notes.length > 0
-              ? {
-                  createMany: {
-                    data: data.notes.flatMap((note) =>
-                      note.contents.map((text) => ({
-                        categoryId: note.categoryId,
-                        content: text,
-                      })),
-                    ),
-                  },
-                }
-              : undefined,
+          notes: data.notes?.length
+            ? {
+                create: data.notes.map((note) => ({
+                  categoryId: note.categoryId,
+                  templateId: note.templateId ?? null,
+                  content: note.content,
+                })),
+              }
+            : undefined,
 
           items: { create: itemsToCreate },
         },
@@ -604,21 +609,30 @@ export class QuotationService {
       }
 
       // === LOGIC B: UPDATE NOTES ===
-      if (notes) {
-        await tx.quotationNote.deleteMany({ where: { quotationId: id } });
+      if (notes !== undefined) {
+        const noteKeys = notes
+          .filter((note) => note.templateId)
+          .map((note) => `${note.categoryId}:${note.templateId}`);
+
+        if (new Set(noteKeys).size !== noteKeys.length) {
+          throw new ApiError("Terdapat template notes yang duplikat", 400);
+        }
+
+        await tx.quotationNote.deleteMany({
+          where: { quotationId: id },
+        });
+
         if (notes.length > 0) {
           await tx.quotationNote.createMany({
-            data: notes.flatMap((note) =>
-              note.contents.map((text) => ({
-                quotationId: id,
-                categoryId: note.categoryId,
-                content: text,
-              })),
-            ),
+            data: notes.map((note) => ({
+              quotationId: id,
+              categoryId: note.categoryId,
+              templateId: note.templateId ?? null,
+              content: note.content,
+            })),
           });
         }
       }
-
       // === LOGIC C: BUILD UPDATE PAYLOAD ===
       const updatePayload: Prisma.QuotationUncheckedUpdateInput = {
         ...(headerData.date && { date: new Date(headerData.date) }),

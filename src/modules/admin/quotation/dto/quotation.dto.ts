@@ -19,10 +19,14 @@ export class QuotationNoteInputDTO {
   @IsUUID()
   categoryId!: string;
 
-  @IsArray()
-  @IsString({ each: true })
-  @IsNotEmpty({ each: true })
-  contents!: string[];
+  @IsOptional()
+  @EmptyStringToUndefined
+  @IsUUID()
+  templateId?: string | null;
+
+  @IsNotEmpty()
+  @IsString()
+  content!: string;
 }
 
 export class CreateQuotationDTO {
