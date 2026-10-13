@@ -799,7 +799,18 @@ export class QuotationService {
           include: {
             tiers: true,
             variant: {
-              select: { variantName: true },
+              select: {
+                variantName: true,
+                priceTiers: {
+                  select: {
+                    id: true,
+                    minQuantity: true,
+                    maxQuantity: true,
+                    price: true,
+                  },
+                  orderBy: { minQuantity: "asc" },
+                },
+              },
             },
             product: {
               select: {
@@ -808,6 +819,15 @@ export class QuotationService {
                 slug: true,
                 basePrice: true,
                 description: true,
+                priceTiers: {
+                  select: {
+                    id: true,
+                    minQuantity: true,
+                    maxQuantity: true,
+                    price: true,
+                  },
+                  orderBy: { minQuantity: "asc" },
+                },
                 images: {
                   select: { url: true },
                   take: 1,
@@ -830,6 +850,42 @@ export class QuotationService {
     });
 
     if (!quotation) throw new ApiError("Quotation not found", 404);
+    type PrintableTier = {
+      id?: string;
+      minQuantity: number;
+      maxQuantity: number | null;
+      unitPrice: number;
+    };
+
+    const normalizePriceTiers = (tiers: PrintableTier[]) => {
+      const sorted = [...tiers].sort((a, b) => a.minQuantity - b.minQuantity);
+
+      return sorted.map((tier, index) => {
+        const nextTier = sorted[index + 1];
+
+        const maxQuantity =
+          tier.maxQuantity ?? (nextTier ? nextTier.minQuantity - 1 : null);
+
+        if (
+          tier.minQuantity < 1 ||
+          (maxQuantity !== null && maxQuantity < tier.minQuantity) ||
+          (nextTier &&
+            maxQuantity !== null &&
+            maxQuantity >= nextTier.minQuantity)
+        ) {
+          throw new ApiError("Invalid or overlapping price tier range", 400);
+        }
+
+        return {
+          ...tier,
+          maxQuantity,
+          quantityRange:
+            maxQuantity === null
+              ? `${tier.minQuantity}+ unit`
+              : `${tier.minQuantity}-${maxQuantity} unit`,
+        };
+      });
+    };
 
     const normalizedItems = quotation.items.map((item) => {
       let imageUrl: string | null = null;
@@ -934,6 +990,36 @@ export class QuotationService {
         availableAttributes = Array.from(attrMap.values());
       }
 
+      const quotationTiers = (item.tiers ?? []).map((tier) => ({
+        id: tier.id,
+        minQuantity: tier.minQuantity,
+        maxQuantity: tier.maxQuantity,
+        unitPrice: Number(tier.unitPrice),
+      }));
+
+      const variantTiers = (item.variant?.priceTiers ?? []).map((tier) => ({
+        id: tier.id,
+        minQuantity: tier.minQuantity,
+        maxQuantity: tier.maxQuantity,
+        unitPrice: Number(tier.price),
+      }));
+
+      const productTiers = (item.product?.priceTiers ?? []).map((tier) => ({
+        id: tier.id,
+        minQuantity: tier.minQuantity,
+        maxQuantity: tier.maxQuantity,
+        unitPrice: Number(tier.price),
+      }));
+
+      const selectedTiers =
+        quotationTiers.length > 0
+          ? quotationTiers
+          : variantTiers.length > 0
+            ? variantTiers
+            : productTiers;
+
+      const printableTiers = normalizePriceTiers(selectedTiers);
+
       return {
         ...item,
         product: item.product ? { ...item.product, availableAttributes } : null,
@@ -942,7 +1028,7 @@ export class QuotationService {
         customization: readableCustomization,
         rawAttributes: rawAttrs || {},
         remarks: item.remarks ?? null,
-        tiers: item.tiers || [],
+        tiers: printableTiers,
         isPriceStartFrom, // Kirimkan flag penentu Start From
       };
     });
