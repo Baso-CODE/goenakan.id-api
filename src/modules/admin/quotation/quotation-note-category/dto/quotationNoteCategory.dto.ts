@@ -9,26 +9,23 @@ import {
   ValidateNested,
 } from "class-validator";
 
-// ===============================================
-// 1. SUB-DTO: TEMPLATE STRUKTUR (Untuk JSON)
-// ===============================================
-
 export class NoteTemplateDTO {
-  @IsNotEmpty({ message: "Judul template tidak boleh kosong" })
+  @IsOptional()
+  @IsUUID()
+  id?: string;
+
   @IsString()
+  @IsNotEmpty({ message: "Judul template tidak boleh kosong" })
   title!: string;
 
-  @IsNotEmpty({ message: "Konten template tidak boleh kosong" })
   @IsString()
+  @IsNotEmpty({ message: "Konten template tidak boleh kosong" })
   content!: string;
 }
 
-// ===============================================
-// 2. MASTER DATA: CREATE CATEGORY
-// ===============================================
 export class CreateQuotationNoteCategoryDTO {
-  @IsNotEmpty({ message: "Nama kategori wajib diisi" })
   @IsString()
+  @IsNotEmpty({ message: "Nama kategori wajib diisi" })
   name!: string;
 
   @IsOptional()
@@ -42,9 +39,6 @@ export class CreateQuotationNoteCategoryDTO {
   templates?: NoteTemplateDTO[];
 }
 
-// ===============================================
-// 3. MASTER DATA: UPDATE CATEGORY
-// ===============================================
 export class UpdateQuotationNoteCategoryDTO {
   @IsOptional()
   @IsString()
@@ -61,17 +55,23 @@ export class UpdateQuotationNoteCategoryDTO {
   templates?: NoteTemplateDTO[];
 }
 
-// ===============================================
-// 4. TRANSACTION: INPUT NOTES (Untuk Create/Update Quotation)
-// ===============================================
-
 export class QuotationNoteInputDTO {
-  @IsNotEmpty()
   @IsUUID()
+  @IsNotEmpty()
   categoryId!: string;
 
+  @IsOptional()
+  @IsUUID()
+  templateId?: string | null;
+
+  @IsString()
+  @IsNotEmpty()
+  content!: string;
+}
+
+export class QuotationNotesArrayDTO {
   @IsArray()
-  @IsString({ each: true })
-  @IsNotEmpty({ each: true })
-  contents!: string[];
+  @ValidateNested({ each: true })
+  @Type(() => QuotationNoteInputDTO)
+  notes!: QuotationNoteInputDTO[];
 }
