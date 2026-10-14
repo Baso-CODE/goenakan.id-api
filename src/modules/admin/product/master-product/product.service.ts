@@ -626,7 +626,8 @@ export class ProductService {
     const effectiveDesc =
       data.description !== undefined ? data.description : existing.description;
     const isDescChanged =
-      data.description !== undefined && data.description !== existing.description;
+      data.description !== undefined &&
+      data.description !== existing.description;
     const shouldTranslateDesc = isDescChanged || !existing.description_en;
 
     if (shouldTranslateDesc && effectiveDesc) {
@@ -939,7 +940,10 @@ export class ProductService {
         for (let i = 0; i < group.length; i++) {
           const current = group[i];
           const next = group[i + 1];
-          if (current.maxQuantity && current.minQuantity > current.maxQuantity) {
+          if (
+            current.maxQuantity &&
+            current.minQuantity > current.maxQuantity
+          ) {
             throw new ApiError(
               `Invalid tier range: ${current.minQuantity} - ${current.maxQuantity}`,
               400,
@@ -2851,7 +2855,6 @@ export class ProductService {
     return { data, meta };
   }
 
-  // === GET ALL PRODUCTS FOR ORDER (DENGAN URUTAN BERDASARKAN POSITION & CUSTOM STATUS) ===
   async getAllProductsForOrder(query?: {
     categoryId?: string;
     isCustom?: boolean | string;
@@ -2863,16 +2866,18 @@ export class ProductService {
         where.categoryId = query.categoryId;
       }
 
-      // Filter by isCustom (optional)
       if (query?.isCustom !== undefined) {
-        if (typeof query.isCustom === "string") {
-          where.isCustom = query.isCustom === "true";
-        } else {
-          where.isCustom = query.isCustom;
-        }
+        where.isCustom =
+          typeof query.isCustom === "string"
+            ? query.isCustom === "true"
+            : query.isCustom;
       }
 
-      // === Fetch Data ===
+      const cleanAttributeValue = (value: string | null | undefined) => {
+        if (!value) return "";
+        return value.split("|")[0].trim();
+      };
+
       const products = await this.prisma.product.findMany({
         where,
         orderBy: { name: "asc" },
@@ -2884,7 +2889,10 @@ export class ProductService {
           isCustom: true,
           description: true,
           category: {
-            select: { id: true, name_id: true },
+            select: {
+              id: true,
+              name_id: true,
+            },
           },
           priceTiers: {
             select: {
@@ -2895,8 +2903,6 @@ export class ProductService {
             },
             orderBy: { minQuantity: "asc" },
           },
-
-          // --- AMBIL ATRIBUT PRODUK BESERTA POSITION & ATTR TYPE ---
           attributeValues: {
             select: {
               id: true,
@@ -2905,14 +2911,13 @@ export class ProductService {
                 select: {
                   id: true,
                   value: true,
-                  position: true, // Ambil posisi nilai atribut
+                  position: true,
                   attribute: {
                     select: {
                       id: true,
                       name: true,
                       type: true,
-                      position: true, // Ambil posisi atribut utama
-                      //  TAMBAHAN BARU: Ambil relasi isCustom dari AttributeType
+                      position: true,
                       attrType: {
                         select: {
                           isCustom: true,
@@ -2924,8 +2929,6 @@ export class ProductService {
               },
             },
           },
-
-          // --- PRODUCT VARIANTS ---
           productVariants: {
             select: {
               id: true,
@@ -2957,83 +2960,113 @@ export class ProductService {
         },
       });
 
-      // === Map Response & Urutkan Berdasarkan Position di JavaScript ===
-      return products.map((p) => {
-        const groupedAttributes: Record<string, any> = {};
+      return products.map((product) => {
+        const groupedAttributes = new Map<
+          string,
+          {
+            attributeId: string;
+            attributeName: string;
+            attributeType: string;
+            isCustom: boolean;
+            position: number;
+            values: {
+              valueId: string;
+              value: string;
+              position: number;
+              priceModifier: number;
+              productAttributeValueId: string;
+            }[];
+          }
+        >();
 
-        p.attributeValues.forEach((pav) => {
-          const attr = pav.attributeValue.attribute;
-          const attrName = attr.name;
+        for (const pav of product.attributeValues) {
+          const attributeValue = pav.attributeValue;
+          const attribute = attributeValue.attribute;
+          const attributeId = attribute.id;
 
-          if (!groupedAttributes[attrName]) {
-            groupedAttributes[attrName] = {
-              attributeId: attr.id,
-              attributeName: attrName,
-              attributeType: attr.type,
-              isCustom: attr.attrType?.isCustom || false,
-              position: attr.position,
+          if (!groupedAttributes.has(attributeId)) {
+            groupedAttributes.set(attributeId, {
+              attributeId,
+              attributeName: attribute.name,
+              attributeType: attribute.type,
+              isCustom: attribute.attrType?.isCustom ?? false,
+              position: attribute.position,
               values: [],
-            };
+            });
           }
 
-          groupedAttributes[attrName].values.push({
-            valueId: pav.attributeValue.id,
-            value: pav.attributeValue.value,
-            position: pav.attributeValue.position,
-            priceModifier: pav.priceModifier ? Number(pav.priceModifier) : 0,
+          groupedAttributes.get(attributeId)!.values.push({
+            valueId: attributeValue.id,
+            value: cleanAttributeValue(attributeValue.value),
+            position: attributeValue.position,
+            priceModifier: Number(pav.priceModifier ?? 0),
             productAttributeValueId: pav.id,
           });
-        });
+        }
 
-        //  Urutkan Atribut Utama Berdasarkan 'position'
-        const sortedAttributes = Object.values(groupedAttributes).sort(
-          (a: any, b: any) => a.position - b.position,
+        const sortedAttributes = Array.from(groupedAttributes.values()).sort(
+          (a, b) => a.position - b.position,
         );
 
-        //  Urutkan Nilai (Values) di Dalam Masing-masing Atribut Berdasarkan 'position'
-        sortedAttributes.forEach((attr: any) => {
-          attr.values.sort((a: any, b: any) => a.position - b.position);
-        });
+        for (const attribute of sortedAttributes) {
+          attribute.values.sort((a, b) => a.position - b.position);
+        }
 
         return {
-          id: p.id,
-          name: p.name,
-          sku: p.sku,
-          basePrice: p.basePrice ? Number(p.basePrice) : 0,
-          isCustom: p.isCustom,
-          category: p.category
-            ? { id: p.category.id, name: p.category.name_id }
+          id: product.id,
+          name: product.name,
+          sku: product.sku,
+          basePrice: Number(product.basePrice ?? 0),
+          isCustom: product.isCustom,
+          category: product.category
+            ? {
+                id: product.category.id,
+                name: product.category.name_id,
+              }
             : null,
-          priceTiers: p.priceTiers.map((tier) => ({
+          priceTiers: product.priceTiers.map((tier) => ({
             id: tier.id,
             minQuantity: tier.minQuantity,
             maxQuantity: tier.maxQuantity,
             price: Number(tier.price),
           })),
-
           availableAttributes: sortedAttributes,
-
-          productVariants: p.productVariants.map((v) => ({
-            id: v.id,
-            variantName: v.variantName || "Unnamed Variant",
-            sku: v.sku,
-            price: v.price ? Number(v.price) : 0,
-            stock: v.stock,
-            combinationIds: v.attributeValues.map(
-              (vav: any) => vav.attributeValue.id,
+          productVariants: product.productVariants.map((variant) => ({
+            id: variant.id,
+            variantName: variant.variantName || "Unnamed Variant",
+            sku: variant.sku,
+            price: Number(variant.price ?? 0),
+            stock: variant.stock,
+            combinationIds: variant.attributeValues.map(
+              (item) => item.attributeValue.id,
             ),
-            attributesDescription: v.attributeValues
-              .map(
-                (vav: any) =>
-                  `${vav.attributeValue.attribute.name}: ${vav.attributeValue.value}`,
-              )
+            attributesDescription: variant.attributeValues
+              .sort((a, b) => {
+                const attributePosition =
+                  a.attributeValue.attribute.position -
+                  b.attributeValue.attribute.position;
+
+                if (attributePosition !== 0) {
+                  return attributePosition;
+                }
+
+                return a.attributeValue.position - b.attributeValue.position;
+              })
+              .map((item) => {
+                const attributeName = item.attributeValue.attribute.name;
+                const attributeValue = cleanAttributeValue(
+                  item.attributeValue.value,
+                );
+
+                return `${attributeName}: ${attributeValue}`;
+              })
               .join(", "),
           })),
         };
       });
     } catch (error) {
-      console.error("❌ Error in getAllProductsForOrder:", error);
-      throw new Error("Failed to fetch products for order.");
+      console.error("Error in getAllProductsForOrder:", error);
+      throw error;
     }
   }
 
@@ -3562,79 +3595,106 @@ export class ProductService {
     return newSku;
   }
 
-  // GET TOP SELLING PRODUCTS
   async getTopSellingProducts(query?: {
     limit?: number;
     startDate?: string;
     endDate?: string;
   }) {
-    const limit = Number(query?.limit || 5);
+    const parsedLimit = Number(query?.limit ?? 5);
+    const limit = Number.isFinite(parsedLimit)
+      ? Math.min(100, Math.max(1, Math.trunc(parsedLimit)))
+      : 5;
+
     const dateFilter: any = {};
 
-    // Filter tanggal jika ada (opsional)
     if (query?.startDate || query?.endDate) {
-      dateFilter.createdAt = {};
+      dateFilter.dateOrder = {};
+
       if (query.startDate) {
-        dateFilter.createdAt.gte = new Date(query.startDate);
+        dateFilter.dateOrder.gte = new Date(
+          `${query.startDate}T00:00:00.000+07:00`,
+        );
       }
+
       if (query.endDate) {
-        const end = new Date(query.endDate);
-        end.setDate(end.getDate() + 1); // +1 hari agar inklusif
-        dateFilter.createdAt.lt = end;
+        const endDate = new Date(`${query.endDate}T00:00:00.000+07:00`);
+        endDate.setUTCDate(endDate.getUTCDate() + 1);
+        dateFilter.dateOrder.lt = endDate;
       }
     }
 
-    // 1. Group by productId dan hitung total quantity terjual
     const topSelling = await this.prisma.orderProduct.groupBy({
       by: ["productId"],
-      _sum: {
-        quantity: true,
-      },
-
+      _sum: { quantity: true },
       where: {
         order: {
           ...dateFilter,
+          salesCategory: "SALES",
+          status: { not: "CANCELLED" },
         },
       },
       orderBy: {
-        _sum: {
-          quantity: "desc",
-        },
+        _sum: { quantity: "desc" },
       },
       take: limit,
     });
 
-    // 2. Ambil detail produk berdasarkan ID hasil grouping
     const productIds = topSelling.map((item) => item.productId);
 
-    const products = await this.prisma.product.findMany({
-      where: {
-        id: { in: productIds },
-      },
-      select: {
-        id: true,
-        name: true,
-        sku: true,
-        basePrice: true,
-        category: {
-          select: { name_id: true },
-        },
-        images: {
-          take: 1,
-          orderBy: {
-            isFeatured: "desc",
+    if (!productIds.length) return [];
+
+    const [products, orderItems] = await Promise.all([
+      this.prisma.product.findMany({
+        where: { id: { in: productIds } },
+        select: {
+          id: true,
+          name: true,
+          sku: true,
+          category: {
+            select: { name_id: true },
           },
-          select: { url: true },
+          images: {
+            take: 1,
+            orderBy: { isFeatured: "desc" },
+            select: { url: true },
+          },
         },
-      },
-    });
+      }),
+      this.prisma.orderProduct.findMany({
+        where: {
+          productId: { in: productIds },
+          order: {
+            ...dateFilter,
+            salesCategory: "SALES",
+            status: { not: "CANCELLED" },
+          },
+        },
+        select: {
+          productId: true,
+          quantity: true,
+          unitPrice: true,
+        },
+      }),
+    ]);
 
-    // 3. Gabungkan data agregat dengan detail produk
-    const result = topSelling.map((item) => {
-      const product = products.find((p) => p.id === item.productId);
+    const revenueByProduct = new Map<string, number>();
 
-      const totalSold = item._sum.quantity || 0;
-      const estimatedRevenue = Number(product?.basePrice || 0) * totalSold;
+    for (const item of orderItems) {
+      const revenue = Number(item.unitPrice) * item.quantity;
+
+      revenueByProduct.set(
+        item.productId,
+        (revenueByProduct.get(item.productId) ?? 0) + revenue,
+      );
+    }
+
+    const productMap = new Map(
+      products.map((product) => [product.id, product]),
+    );
+
+    return topSelling.map((item) => {
+      const product = productMap.get(item.productId);
+      const totalSold = item._sum.quantity ?? 0;
 
       let status = "Stable";
       if (totalSold > 100) status = "Trending";
@@ -3644,18 +3704,13 @@ export class ProductService {
         id: item.productId,
         name: product?.name || "Unknown Product",
         sku: product?.sku || "-",
-
-        // 🔄 UPDATE: Gunakan name_id untuk ditampilkan di frontend Admin
         category: product?.category?.name_id || "Uncategorized",
-
         sold: totalSold,
-        revenue: estimatedRevenue,
+        revenue: revenueByProduct.get(item.productId) ?? 0,
         image: product?.images[0]?.url || null,
-        status: status,
+        status,
       };
     });
-
-    return result;
   }
 
   // === GET ALL PRODUCTS PUBLIC (DENGAN PENYESUAIAN HARGA LUAR NEGERI & PRICE TIERS) ===
@@ -4147,13 +4202,13 @@ export class ProductService {
           if (effectiveAdjuster > 0) {
             conversionRate = conversionRate * (1 + effectiveAdjuster / 100);
           }
-          console.log(
-            `[CURRENCY ADJUSTMENT] Slug: ${slug}, Target: ${targetCurrency}`,
-          );
-          console.log(` - Original rate: ${conversionResult.rate}`);
-          console.log(` - Global adjuster: ${globalAdjuster}%`);
-          console.log(` - Product adjuster: ${productAdjuster}%`);
-          console.log(` - Effective adjuster: ${effectiveAdjuster}%`);
+          // console.log(
+          //   `[CURRENCY ADJUSTMENT] Slug: ${slug}, Target: ${targetCurrency}`,
+          // );
+          // console.log(` - Original rate: ${conversionResult.rate}`);
+          // console.log(` - Global adjuster: ${globalAdjuster}%`);
+          // console.log(` - Product adjuster: ${productAdjuster}%`);
+          // console.log(` - Effective adjuster: ${effectiveAdjuster}%`);
           console.log(` - Final rate (adjusted): ${conversionRate}`);
         } catch (error) {
           console.error(
