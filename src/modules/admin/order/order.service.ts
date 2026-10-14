@@ -739,9 +739,7 @@ export class OrderService {
           },
         },
         createdBy: true,
-        //  TAMBAHAN BARU: Sertakan data Client Purchase Order
         clientPurchaseOrder: true,
-
         products: {
           include: {
             product: true,
@@ -755,9 +753,7 @@ export class OrderService {
                 vendor: {
                   include: {
                     contacts: {
-                      include: {
-                        platform: true,
-                      },
+                      include: { platform: true },
                     },
                   },
                 },
@@ -765,7 +761,18 @@ export class OrderService {
             },
           },
         },
-        invoices: true,
+        invoices: {
+          include: {
+            items: {
+              select: {
+                orderProductId: true,
+                quantity: true,
+                price: true,
+              },
+            },
+          },
+          orderBy: { id: "asc" },
+        },
         sampleFollowUps: {
           orderBy: { date: "asc" },
         },
@@ -776,53 +783,54 @@ export class OrderService {
       throw new ApiError(`Order with ID ${id} not found`, 404);
     }
 
-    const activeInvoices = await this.prisma.invoice.findMany({
-      where: {
-        orderId: id,
-        status: { not: "CANCELLED" },
-      },
-      include: {
-        items: true,
-      },
-    });
+    const activeInvoices = order.invoices.filter(
+      (invoice) => invoice.status !== "CANCELLED" && invoice.status !== "DRAFT",
+    );
 
-    const activeInvoiceIds = activeInvoices.map((inv) => inv.id);
-    const billedAmountByProduct = new Map<string, number>();
+    const partialInvoices = activeInvoices.filter(
+      (invoice) => invoice.billingMode === "PARTIAL_QUANTITY",
+    );
 
-    for (const invoice of activeInvoices) {
-      const invoiceItemsTotal = invoice.items.reduce(
-        (sum, item) => sum + Number(item.price) * item.quantity,
-        0,
-      );
+    const billedByOrderProduct = new Map<
+      string,
+      { quantity: number; amount: number }
+    >();
 
+    for (const invoice of partialInvoices) {
       for (const item of invoice.items) {
-        const key = `${item.productId}_${item.variantId ?? "null"}`;
-        const itemBaseAmount = Number(item.price) * item.quantity;
-        const proportion =
-          invoiceItemsTotal > 0 ? itemBaseAmount / invoiceItemsTotal : 0;
-        const paidForThisItem = Number(invoice.totalAmount) * proportion;
+        if (!item.orderProductId) continue;
 
-        billedAmountByProduct.set(
-          key,
-          (billedAmountByProduct.get(key) || 0) + paidForThisItem,
-        );
+        const existing = billedByOrderProduct.get(item.orderProductId) ?? {
+          quantity: 0,
+          amount: 0,
+        };
+
+        billedByOrderProduct.set(item.orderProductId, {
+          quantity: existing.quantity + item.quantity,
+          amount: existing.amount + Number(item.price) * item.quantity,
+        });
       }
     }
 
-    const billedItems =
-      activeInvoiceIds.length > 0
-        ? await this.prisma.invoiceItem.findMany({
-            where: {
-              invoiceId: { in: activeInvoiceIds },
-            },
-          })
-        : [];
+    const totalOrderAmount = Number(order.totalAmount);
 
-    // 3. Client Info Logic
-    let clientInfo = {
+    const totalInvoiced = activeInvoices.reduce(
+      (sum, invoice) => sum + Number(invoice.totalAmount),
+      0,
+    );
+
+    const totalPaid = activeInvoices
+      .filter((invoice) => invoice.status === "PAID")
+      .reduce((sum, invoice) => sum + Number(invoice.totalAmount), 0);
+
+    const remainingToInvoice = Math.max(0, totalOrderAmount - totalInvoiced);
+
+    const outstandingPayment = Math.max(0, totalInvoiced - totalPaid);
+
+    const clientInfo = {
       name: "",
-      phone: "",
-      email: "",
+      phone: "-",
+      email: "-",
       type: order.client.type,
       picName: "-",
       picPhone: "-",
@@ -832,6 +840,7 @@ export class OrderService {
       clientInfo.name = order.client.b2b.companyName;
       clientInfo.phone = order.client.b2b.phone || "-";
       clientInfo.email = order.client.b2b.email || "-";
+
       if (order.pic) {
         clientInfo.picName = order.pic.name;
         clientInfo.picPhone = order.pic.phone || "-";
@@ -842,107 +851,104 @@ export class OrderService {
       clientInfo.picName = order.client.b2c.name;
     }
 
-    // 4. Products Detail Mapping dengan Perhitungan SISA
-    const productsDetail = order.products.map((p) => {
+    const productsDetail = order.products.map((product) => {
       let customizationDetail = "-";
-      if (p.customization) {
+
+      if (product.customization) {
         try {
-          const cObj =
-            typeof p.customization === "string"
-              ? JSON.parse(p.customization)
-              : p.customization;
-          if (cObj && typeof cObj === "object" && "detail" in cObj) {
-            customizationDetail = (cObj as any).detail;
-          } else if (cObj) {
-            customizationDetail = JSON.stringify(cObj);
+          const value =
+            typeof product.customization === "string"
+              ? JSON.parse(product.customization)
+              : product.customization;
+
+          if (value && typeof value === "object" && "detail" in value) {
+            const detail = value.detail;
+            customizationDetail =
+              typeof detail === "string" ? detail : JSON.stringify(detail);
+          } else {
+            customizationDetail = JSON.stringify(value);
           }
-        } catch (e) {
-          customizationDetail = String(p.customization);
+        } catch {
+          customizationDetail = String(product.customization);
         }
       }
-      const totalItemPrice = Number(p.unitPrice) * p.quantity;
-      const currentBilledQty = billedItems
-        .filter(
-          (item) =>
-            item.productId === p.productId && item.variantId === p.variantId,
-        )
-        .reduce((sum, item) => sum + item.quantity, 0);
-      const remainingQty = Math.max(0, p.quantity - currentBilledQty);
 
-      const key = `${p.productId}_${p.variantId ?? "null"}`;
-      const currentBilledAmount = billedAmountByProduct.get(key) || 0;
-      const remainingBilledAmount = Math.max(
-        0,
-        totalItemPrice - currentBilledAmount,
-      );
+      const billing = billedByOrderProduct.get(product.id) ?? {
+        quantity: 0,
+        amount: 0,
+      };
+
+      const totalItemPrice = Number(product.unitPrice) * product.quantity;
+
+      const billedQuantity = billing.quantity;
+      const billedAmount = billing.amount;
 
       return {
-        id: p.id,
-        productId: p.productId,
-        variantId: p.variantId,
-        productName: p.product?.name || "Unknown Product",
-        sku: p.product?.sku || "-",
-        variantName: p.variant ? p.variant.variantName || "-" : "-",
-        quantity: p.quantity,
-        unitPrice: Number(p.unitPrice),
-        totalPrice: Number(p.unitPrice) * p.quantity,
+        id: product.id,
+        productId: product.productId,
+        variantId: product.variantId,
+        productName: product.product?.name || "Unknown Product",
+        sku: product.product?.sku || "-",
+        variantName: product.variant?.variantName || "-",
+        quantity: product.quantity,
+        unitPrice: Number(product.unitPrice),
+        totalPrice: totalItemPrice,
         customization: customizationDetail,
-        remarks: p.remarks || "-",
-        selectedAttributes: p.selectedAttributes || {},
-
-        billedQuantity: currentBilledQty,
-        remainingQuantity: remainingQty,
-        billedAmount: currentBilledAmount,
-        remainingBilledAmount: remainingBilledAmount,
+        remarks: product.remarks || "-",
+        selectedAttributes: product.selectedAttributes || {},
+        billedQuantity,
+        remainingQuantity: Math.max(0, product.quantity - billedQuantity),
+        billedAmount,
+        remainingBilledAmount: Math.max(0, totalItemPrice - billedAmount),
       };
     });
 
-    // Mapping Vendor dari Purchase Order
-    const uniqueVendorsMap = new Map();
+    const uniqueVendorsMap = new Map<
+      string,
+      {
+        id: string;
+        companyName: string;
+        picName: string;
+        picPhone: string;
+        role: string;
+      }
+    >();
 
-    if (order.purchaseOrderItems && order.purchaseOrderItems.length > 0) {
-      order.purchaseOrderItems.forEach((poi) => {
-        const po = poi.purchaseOrder;
+    for (const poi of order.purchaseOrderItems) {
+      const vendor = poi.purchaseOrder?.vendor;
+      if (!vendor || uniqueVendorsMap.has(vendor.id)) continue;
 
-        if (po && po.vendor && !uniqueVendorsMap.has(po.vendor.id)) {
-          const vendorData = po.vendor as any;
+      const primaryContact =
+        vendor.contacts.find((contact) => contact.isPrimary) ??
+        vendor.contacts[0];
 
-          let contactDisplay = "-";
+      const contactDisplay = primaryContact
+        ? `${primaryContact.contactId} (${primaryContact.platform?.name || "Kontak"})`
+        : "-";
 
-          if (vendorData.contacts && vendorData.contacts.length > 0) {
-            const primaryContact =
-              vendorData.contacts.find((c: any) => c.isPrimary) ||
-              vendorData.contacts[0];
-
-            const platformName = primaryContact.platform?.name || "Kontak";
-            contactDisplay = `${primaryContact.contactId} (${platformName})`;
-          }
-
-          uniqueVendorsMap.set(vendorData.id, {
-            id: vendorData.id,
-            companyName: vendorData.companyName,
-            picName: vendorData.picName || "-",
-            picPhone: contactDisplay,
-            role: "Supplier (via PO)",
-          });
-        }
+      uniqueVendorsMap.set(vendor.id, {
+        id: vendor.id,
+        companyName: vendor.companyName,
+        picName: vendor.picName || "-",
+        picPhone: contactDisplay,
+        role: "Supplier (via PO)",
       });
     }
-    const vendorsDetail = Array.from(uniqueVendorsMap.values());
 
-    // 6. Invoices Mapping
-    const invoicesDetail = order.invoices.map((inv) => ({
-      id: inv.id,
-      invoiceNumber: inv.invoiceNumber,
-      totalAmount: Number(inv.totalAmount),
-      status: inv.status,
-      category: inv.category,
-      dueDate: inv.dueDate,
-      createdAt: inv.createdAt,
-      method: inv.method,
+    const invoicesDetail = order.invoices.map((invoice) => ({
+      id: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      totalAmount: Number(invoice.totalAmount),
+      status: invoice.status,
+      category: invoice.category,
+      billingMode: invoice.billingMode,
+      dueDate: invoice.dueDate,
+      createdAt: invoice.createdAt,
+      paymentDate: invoice.paymentDate,
+      paidAt: invoice.paidAt,
+      method: invoice.method,
     }));
 
-    // === RETURN OBJECT ===
     return {
       id: order.id,
       orderNumber: order.orderNumber || "-",
@@ -950,31 +956,29 @@ export class OrderService {
       status: order.status,
       salesCategory: order.salesCategory,
       shippingAddress: order.shippingAddress,
-      totalAmount: Number(order.totalAmount),
+      totalAmount: totalOrderAmount,
+      totalInvoiced,
+      totalPaid,
+      remainingToInvoice,
+      outstandingPayment,
       currencyCode: order.currency?.code || "IDR",
       createdAt: order.createdAt,
-      purchaseChannelName: order.purchaseChannel
-        ? order.purchaseChannel.name
-        : "-",
-      clientInfo: clientInfo,
-
+      purchaseChannelName: order.purchaseChannel?.name || "-",
+      clientInfo,
       sales: {
         name: order.createdBy?.name || "System",
-        phone: (order.createdBy as any)?.phone || "-",
+        phone: order.createdBy?.phone || "-",
       },
-
       products: productsDetail,
-      vendors: vendorsDetail,
+      vendors: Array.from(uniqueVendorsMap.values()),
       invoices: invoicesDetail,
-      sampleFollowUps: order.sampleFollowUps.map((fu) => ({
-        id: fu.id,
-        name: fu.name,
-        date: fu.date,
-        isDone: fu.isDone,
-        createdAt: fu.createdAt,
+      sampleFollowUps: order.sampleFollowUps.map((followUp) => ({
+        id: followUp.id,
+        name: followUp.name,
+        date: followUp.date,
+        isDone: followUp.isDone,
+        createdAt: followUp.createdAt,
       })),
-
-      //  TAMBAHAN BARU: Kirim data PO client ke frontend
       clientPurchaseOrder: order.clientPurchaseOrder
         ? {
             id: order.clientPurchaseOrder.id,
