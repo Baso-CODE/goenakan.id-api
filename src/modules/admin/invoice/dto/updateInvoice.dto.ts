@@ -1,5 +1,5 @@
-import { IsNotEmpty, IsEnum, IsDateString, IsOptional } from "class-validator";
-import { PaymentMethod, InvoiceStatus } from "./createInvoice.dto";
+import { PaymentMethod } from "@prisma/client";
+import { IsDateString, IsEnum, IsNotEmpty } from "class-validator";
 
 export class PayInvoiceDTO {
   @IsNotEmpty()

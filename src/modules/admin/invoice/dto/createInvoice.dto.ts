@@ -1,53 +1,51 @@
+import {
+  InvoiceBillingMode,
+  InvoiceCategory,
+  InvoiceStatus,
+  PaymentMethod,
+} from "@prisma/client";
 import { Type } from "class-transformer";
 import {
+  ArrayNotEmpty,
   IsArray,
+  IsDateString,
   IsEnum,
+  IsInt,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   Min,
   ValidateNested,
 } from "class-validator";
 
-export enum InvoiceCategory {
-  DP = "DP",
-  FULL_PAYMENT = "FULL_PAYMENT",
-  INSTALLMENT = "INSTALLMENT",
-  REMAINING_BALANCE = "REMAINING_BALANCE",
-}
+export {
+  InvoiceBillingMode,
+  InvoiceCategory,
+  InvoiceStatus,
+  PaymentMethod,
+} from "@prisma/client";
 
-export enum InvoiceStatus {
-  DRAFT = "DRAFT",
-  UNPAID = "UNPAID",
-  PAID = "PAID",
-}
-
-export enum PaymentMethod {
-  BANK_TRANSFER = "BANK_TRANSFER",
-  CASH = "CASH",
-  CREDIT_CARD = "CREDIT_CARD",
-  QRIS = "QRIS",
-}
-
-class SelectedItemDTO {
+export class SelectedInvoiceItemDTO {
   @IsNotEmpty()
-  @IsString()
-  productId!: string;
+  @IsUUID()
+  orderProductId!: string;
 
-  @IsNotEmpty()
-  @IsNumber()
+  @Type(() => Number)
+  @IsInt()
   @Min(1)
   quantity!: number;
 }
 
-class InvoiceNoteInputDTO {
+export class InvoiceNoteInputDTO {
   @IsNotEmpty()
-  @IsString()
+  @IsUUID()
   categoryId!: string;
 
   @IsArray()
+  @ArrayNotEmpty()
   @IsString({ each: true })
   @IsNotEmpty({ each: true })
   contents!: string[];
@@ -55,7 +53,7 @@ class InvoiceNoteInputDTO {
 
 export class CreateInvoiceDTO {
   @IsNotEmpty()
-  @IsString()
+  @IsUUID()
   orderId!: string;
 
   @IsNotEmpty()
@@ -63,23 +61,24 @@ export class CreateInvoiceDTO {
   category!: InvoiceCategory;
 
   @IsOptional()
+  @IsEnum(InvoiceBillingMode)
+  billingMode?: InvoiceBillingMode = InvoiceBillingMode.STANDARD;
+
+  @IsOptional()
   @IsEnum(InvoiceStatus)
   status?: InvoiceStatus = InvoiceStatus.UNPAID;
 
-  // Tanggal jatuh tempo
   @IsOptional()
-  @IsString()
-  dueDate?: string; // Format YYYY-MM-DD
+  @IsDateString()
+  dueDate?: string;
 
-  // 🔥 Tanggal pembayaran aktual dilakukan
   @IsOptional()
-  @IsString()
-  paymentDate?: string; // Format YYYY-MM-DD — diisi saat pembayaran dikonfirmasi
+  @IsDateString()
+  paymentDate?: string;
 
-  // 🔥 Tanggal lunas (bisa berbeda dengan paymentDate jika ada cicilan)
   @IsOptional()
-  @IsString()
-  paidAt?: string; // Format YYYY-MM-DD
+  @IsDateString()
+  paidAt?: string;
 
   @IsOptional()
   @IsEnum(PaymentMethod)
@@ -90,21 +89,24 @@ export class CreateInvoiceDTO {
   remarks?: string;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   @Min(1)
   @Max(100)
   dpPercentage?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   customAmount?: number;
 
   @IsOptional()
   @IsArray()
+  @ArrayNotEmpty()
   @ValidateNested({ each: true })
-  @Type(() => SelectedItemDTO)
-  selectedItems?: SelectedItemDTO[];
+  @Type(() => SelectedInvoiceItemDTO)
+  selectedItems?: SelectedInvoiceItemDTO[];
 
   @IsOptional()
   @IsArray()
@@ -113,7 +115,6 @@ export class CreateInvoiceDTO {
   notes?: InvoiceNoteInputDTO[];
 }
 
-// 🔥 UpdateInvoiceDTO — untuk konfirmasi pembayaran / update status
 export class UpdateInvoiceDTO {
   @IsOptional()
   @IsEnum(InvoiceStatus)
@@ -123,18 +124,16 @@ export class UpdateInvoiceDTO {
   @IsEnum(PaymentMethod)
   method?: PaymentMethod;
 
-  // 🔥 Tanggal pembayaran aktual — diisi saat admin konfirmasi bayar
   @IsOptional()
-  @IsString()
-  paymentDate?: string; // Format YYYY-MM-DD
-
-  // 🔥 Tanggal lunas
-  @IsOptional()
-  @IsString()
-  paidAt?: string; // Format YYYY-MM-DD
+  @IsDateString()
+  paymentDate?: string;
 
   @IsOptional()
-  @IsString()
+  @IsDateString()
+  paidAt?: string;
+
+  @IsOptional()
+  @IsDateString()
   dueDate?: string;
 
   @IsOptional()

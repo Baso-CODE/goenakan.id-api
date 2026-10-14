@@ -77,6 +77,11 @@ enum InvoiceCategory {
   REMAINING_BALANCE
 }
 
+enum InvoiceBillingMode {
+  STANDARD
+  PARTIAL_QUANTITY
+}
+
 enum PaymentMethod {
   BANK_TRANSFER
   CASH
@@ -845,21 +850,21 @@ model ProductVideo {
 // ===============================================
 
 model Invoice {
-  id            Int             @id @default(autoincrement())
-  invoiceNumber String?         @unique
+  id            Int                @id @default(autoincrement())
+  invoiceNumber String?            @unique
   clientId      String
   userId        String
   orderId       String?
   totalAmount   Decimal
-  status        InvoiceStatus   @default(UNPAID)
-  category      InvoiceCategory @default(FULL_PAYMENT)
+  status        InvoiceStatus      @default(UNPAID)
+  category      InvoiceCategory    @default(FULL_PAYMENT)
   method        PaymentMethod?
   dueDate       DateTime?
   paymentDate   DateTime?
   paidAt        DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  billingMode   InvoiceBillingMode @default(STANDARD)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
 
   user   User          @relation(fields: [userId], references: [id])
   client Client        @relation(fields: [clientId], references: [id])
@@ -885,6 +890,10 @@ model InvoiceItem {
   product Product         @relation(fields: [productId], references: [id])
   variant ProductVariant? @relation(fields: [variantId], references: [id])
 
+  orderProductId String?
+  orderProduct   OrderProduct? @relation(fields: [orderProductId], references: [id])
+
+  @@index([orderProductId])
   @@map("invoice_items")
 }
 
@@ -1314,6 +1323,7 @@ model OrderProduct {
   variant            ProductVariant?     @relation(fields: [variantId], references: [id])
   productionTrackers ProductionTracker[]
   shipmentItems      ShipmentItem[]
+  invoiceItems       InvoiceItem[]
 
   @@map("order_products")
 }
