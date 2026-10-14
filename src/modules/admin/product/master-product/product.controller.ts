@@ -88,11 +88,6 @@ export class ProductController {
         lang,
       } = req.query;
 
-      // //  2. TAMBAHKAN CONSOLE.LOG UNTUK MENGECEK DATA MASUK
-      // console.log("--- DEBUG QUERY DARI FRONTEND ---");
-      // console.log("Country diterima:", country);
-      // console.log("Lang diterima:", lang);
-
       let targetCurrency = "IDR";
 
       if (country && typeof country === "string") {
@@ -617,9 +612,9 @@ export class ProductController {
       const { country, lang } = req.query;
 
       //  DEBUGGING: Cek data apa yang masuk dari frontend
-      console.log("🔍 [DEBUG DETAIL PRODUCT] Slug:", slug);
-      console.log("🔍 [DEBUG DETAIL PRODUCT] Country from Query:", country);
-      console.log("🔍 [DEBUG DETAIL PRODUCT] Lang from Query:", lang);
+      // console.log("🔍 [DEBUG DETAIL PRODUCT] Slug:", slug);
+      // console.log("🔍 [DEBUG DETAIL PRODUCT] Country from Query:", country);
+      // console.log("🔍 [DEBUG DETAIL PRODUCT] Lang from Query:", lang);
 
       let targetCurrency = "IDR";
       if (country && typeof country === "string") {
