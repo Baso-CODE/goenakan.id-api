@@ -35,7 +35,7 @@ export class IsValidPriceConstraint implements ValidatorConstraintInterface {
   }
 }
 
-class SampleFollowUpDTO {
+export class SampleFollowUpDTO {
   @IsOptional()
   @Type(() => Date)
   @IsDate()
@@ -62,7 +62,7 @@ class SampleFollowUpDTO {
   isDone?: boolean;
 }
 
-class OrderProductDTO {
+export class OrderProductDTO {
   @IsString()
   productId!: string;
 

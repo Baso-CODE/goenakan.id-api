@@ -366,45 +366,91 @@ export class OrderService {
   }
 
   async updateOrder(id: string, data: UpdateOrderDTO) {
-    const {
-      products,
-      clientB2BPICId,
-      purchaseChannelId,
-      referenceQuotationId,
-      referenceSampleId,
-      warrantyDays,
-      sampleFollowUps,
-      updatedById,
-      ...orderCore
-    } = data;
-
     const existingOrder = await this.prisma.order.findUnique({
       where: { id },
+      include: {
+        invoices: {
+          select: { id: true },
+        },
+      },
     });
 
     if (!existingOrder) {
       throw new ApiError(`Order with ID ${id} not found`, 404);
     }
 
-    if (orderCore.clientId !== existingOrder.clientId) {
+    if (
+      data.clientId !== undefined &&
+      data.clientId !== existingOrder.clientId
+    ) {
       throw new ApiError("Client tidak dapat diubah setelah order dibuat", 400);
     }
-    if (orderCore.salesCategory !== existingOrder.salesCategory) {
+
+    if (
+      data.salesCategory !== undefined &&
+      data.salesCategory !== existingOrder.salesCategory
+    ) {
       throw new ApiError(
         "Sales category tidak dapat diubah setelah order dibuat",
         400,
       );
     }
 
+    if (data.dateOrder !== undefined) {
+      const date = new Date(data.dateOrder);
+      if (Number.isNaN(date.getTime())) {
+        throw new ApiError("Tanggal order tidak valid", 400);
+      }
+    }
+
     const isPending = existingOrder.status === "PENDING";
+    const shouldUpdateProducts = data.products !== undefined;
+    const shouldUpdateFollowUps = data.sampleFollowUps !== undefined;
 
-    let totalAmount = Number(existingOrder.totalAmount);
+    if (shouldUpdateProducts && !isPending) {
+      throw new ApiError(
+        "Produk hanya dapat diperbarui ketika order PENDING",
+        400,
+      );
+    }
+
+    if (shouldUpdateProducts && existingOrder.invoices.length > 0) {
+      throw new ApiError(
+        "Produk order tidak dapat diganti karena sudah memiliki invoice",
+        400,
+      );
+    }
+
+    if (shouldUpdateProducts && !data.products?.length) {
+      throw new ApiError("Order harus memiliki minimal satu produk", 400);
+    }
+
+    if (shouldUpdateFollowUps && existingOrder.salesCategory !== "SAMPLE") {
+      throw new ApiError(
+        "Sample follow-up hanya berlaku untuk sample order",
+        400,
+      );
+    }
+
     const orderProductsData: any[] = [];
+    let totalAmount = Number(existingOrder.totalAmount);
 
-    if (isPending) {
+    if (shouldUpdateProducts) {
       totalAmount = 0;
 
-      for (const item of products) {
+      for (const item of data.products ?? []) {
+        if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
+          throw new ApiError("Quantity produk tidak valid", 400);
+        }
+
+        if (
+          item.price === undefined ||
+          !Number.isFinite(Number(item.price)) ||
+          Number(item.price) < 0
+        ) {
+          throw new ApiError("Harga produk tidak valid", 400);
+        }
+
         const product = await this.prisma.product.findUnique({
           where: { id: item.productId },
           include: { productVariants: true },
@@ -424,10 +470,11 @@ export class OrderService {
           );
         }
 
-        if (product.isCustom && item.variantId) {
-          const variantExists = product.productVariants.find(
-            (v) => v.id === item.variantId,
+        if (item.variantId) {
+          const variantExists = product.productVariants.some(
+            (variant) => variant.id === item.variantId,
           );
+
           if (!variantExists) {
             throw new ApiError(
               `Invalid variant for product: ${product.name}`,
@@ -446,84 +493,116 @@ export class OrderService {
           variant: item.variantId
             ? { connect: { id: item.variantId } }
             : undefined,
-          selectedAttributes: item.selectedAttributes
-            ? item.selectedAttributes
+          selectedAttributes: item.selectedAttributes ?? undefined,
+          remarks: item.remarks ?? null,
+          customization: item.customization
+            ? JSON.stringify({ detail: item.customization })
             : undefined,
         };
-
-        if (item.customization) {
-          productData.customization = JSON.stringify({
-            detail: item.customization,
-          });
-        }
-        if (item.remarks) {
-          productData.remarks = item.remarks;
-        }
 
         orderProductsData.push(productData);
       }
     }
 
     const followUpsData =
-      existingOrder.salesCategory === "SAMPLE" && sampleFollowUps?.length
-        ? sampleFollowUps.map((fu) => ({
-            name: fu.name,
-            date: fu.date ? new Date(fu.date) : new Date(),
-            method: fu.method || null,
-            notes: fu.notes || null,
-            nextAction: fu.nextAction || null,
-            isDone: false,
+      shouldUpdateFollowUps && existingOrder.salesCategory === "SAMPLE"
+        ? (data.sampleFollowUps ?? []).map((followUp) => ({
+            name: followUp.name || "",
+            date: followUp.date ? new Date(followUp.date) : new Date(),
+            method: followUp.method || null,
+            notes: followUp.notes || null,
+            nextAction: followUp.nextAction || null,
+            isDone: followUp.isDone ?? false,
           }))
         : [];
 
-    const updatedOrder = await this.prisma.$transaction(async (tx) => {
-      if (isPending) {
-        await tx.orderProduct.deleteMany({ where: { orderId: id } });
+    return this.prisma.$transaction(async (tx) => {
+      if (shouldUpdateProducts) {
+        await tx.orderProduct.deleteMany({
+          where: { orderId: id },
+        });
       }
 
-      await tx.orderSampleFollowUp.deleteMany({ where: { orderId: id } });
-
-      const updateRelations: any = {};
-
-      updateRelations.pic = clientB2BPICId
-        ? { connect: { id: clientB2BPICId } }
-        : { disconnect: true };
-
-      updateRelations.purchaseChannel = purchaseChannelId
-        ? { connect: { id: purchaseChannelId } }
-        : { disconnect: true };
-
-      updateRelations.referenceQuotation = referenceQuotationId
-        ? { connect: { id: referenceQuotationId } }
-        : { disconnect: true };
-
-      updateRelations.referenceSample = referenceSampleId
-        ? { connect: { id: referenceSampleId } }
-        : { disconnect: true };
-      if (updatedById) {
-        updateRelations.updatedBy = { connect: { id: updatedById } };
+      if (shouldUpdateFollowUps) {
+        await tx.orderSampleFollowUp.deleteMany({
+          where: { orderId: id },
+        });
       }
-      const order = await tx.order.update({
+
+      const updateData: any = {};
+
+      if (data.dateOrder !== undefined) {
+        updateData.dateOrder = new Date(data.dateOrder);
+      }
+
+      if (data.warrantyDays !== undefined) {
+        updateData.warrantyDays = data.warrantyDays;
+      }
+
+      if (data.clientPoNumber !== undefined) {
+        updateData.clientPoNumber = data.clientPoNumber || null;
+      }
+
+      if (data.remark !== undefined) {
+        updateData.remark = data.remark || null;
+      }
+
+      if (data.shippingAddress !== undefined) {
+        updateData.shippingAddress = data.shippingAddress;
+      }
+
+      if (data.currencyCode !== undefined) {
+        updateData.currency = {
+          connect: { code: data.currencyCode },
+        };
+      }
+
+      if (data.clientB2BPICId !== undefined) {
+        updateData.pic = data.clientB2BPICId
+          ? { connect: { id: data.clientB2BPICId } }
+          : { disconnect: true };
+      }
+
+      if (data.purchaseChannelId !== undefined) {
+        updateData.purchaseChannel = data.purchaseChannelId
+          ? { connect: { id: data.purchaseChannelId } }
+          : { disconnect: true };
+      }
+
+      if (data.referenceQuotationId !== undefined) {
+        updateData.referenceQuotation = data.referenceQuotationId
+          ? { connect: { id: data.referenceQuotationId } }
+          : { disconnect: true };
+      }
+
+      if (data.referenceSampleId !== undefined) {
+        updateData.referenceSample = data.referenceSampleId
+          ? { connect: { id: data.referenceSampleId } }
+          : { disconnect: true };
+      }
+
+      if (data.updatedById !== undefined && data.updatedById) {
+        updateData.updatedBy = {
+          connect: { id: data.updatedById },
+        };
+      }
+
+      if (shouldUpdateProducts) {
+        updateData.totalAmount = totalAmount;
+        updateData.products = {
+          create: orderProductsData,
+        };
+      }
+
+      if (shouldUpdateFollowUps && followUpsData.length) {
+        updateData.sampleFollowUps = {
+          create: followUpsData,
+        };
+      }
+
+      return tx.order.update({
         where: { id },
-        data: {
-          dateOrder: new Date(orderCore.dateOrder),
-          warrantyDays: warrantyDays ?? null,
-          clientPoNumber: orderCore.clientPoNumber || null,
-          remark: orderCore.remark || null,
-          currency: { connect: { code: orderCore.currencyCode || "IDR" } },
-          shippingAddress: orderCore.shippingAddress,
-          totalAmount,
-          ...updateRelations,
-
-          sampleFollowUps: followUpsData.length
-            ? { create: followUpsData }
-            : undefined,
-
-          // Products hanya di-recreate jika PENDING
-          ...(isPending && orderProductsData.length
-            ? { products: { create: orderProductsData } }
-            : {}),
-        },
+        data: updateData,
         include: {
           products: true,
           pic: true,
@@ -531,11 +610,7 @@ export class OrderService {
           sampleFollowUps: true,
         },
       });
-
-      return order;
     });
-
-    return updatedOrder;
   }
 
   async deleteOrder(id: string) {
