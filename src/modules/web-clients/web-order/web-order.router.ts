@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response, Router } from "express";
 import { injectable } from "tsyringe";
-import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
+import { PublicAuthMiddleware } from "../../../middleware/publicAuth.middleware";
 import { validateBody } from "../../../middleware/validation.middleware";
 import { CancelOrderDTO } from "./dto/web-order.dto";
 import { WebOrderController } from "./web-order.controller";
@@ -11,27 +11,30 @@ export class WebOrderRouter {
 
   constructor(
     private readonly orderController: WebOrderController,
-    private readonly nextAuthMiddleware: NextAuthMiddleware,
+    private readonly publicAuthMiddleware: PublicAuthMiddleware,
   ) {
     this.initializeRoutes();
   }
 
   private initializeRoutes = (): void => {
-    const auth = this.nextAuthMiddleware.verifyNextAuthToken;
+    const auth = this.publicAuthMiddleware.verifyPublicToken;
 
-    const optionalAuth = (req: Request, res: Response, next: NextFunction) => {
-      if (
-        req.headers.authorization &&
-        req.headers.authorization.startsWith("Bearer ")
-      ) {
-        return auth(req, res, next);
+    const optionalAuth = (
+      req: Request,
+      res: Response,
+      next: NextFunction,
+    ): void => {
+      const authorization = req.headers.authorization;
+
+      if (authorization?.startsWith("Bearer ")) {
+        void auth(req, res, next);
+        return;
       }
+
       next();
     };
 
-    // ==========================================================
-    // 🌍 ENDPOINT PUBLIK (Bisa Diakses Tanpa Login / Guest)
-    // ==========================================================
+    this.router.post("/webhook/midtrans", this.orderController.midtransWebhook);
 
     this.router.post("/", optionalAuth, this.orderController.createOrder);
 
@@ -41,18 +44,12 @@ export class WebOrderRouter {
       this.orderController.createPayment,
     );
 
-    this.router.post("/webhook/midtrans", this.orderController.midtransWebhook);
-
-    //  PERBAIKAN: Pindahkan rute ini ke blok opsional
     this.router.get(
       "/:orderId",
       optionalAuth,
       this.orderController.getOrderDetail,
     );
 
-    // ==========================================================
-    // 🔒 ENDPOINT PRIVAT (Wajib Login)
-    // ==========================================================
     this.router.get("/", auth, this.orderController.getMyOrders);
 
     this.router.patch(
