@@ -4143,6 +4143,7 @@ export class ProductService {
         include: {
           materialType: true,
           category: true,
+          seo: true,
           images: {
             orderBy: { sortOrder: "asc" },
             include: { mockupAreas: true },
@@ -4481,6 +4482,49 @@ export class ProductService {
             : a.valuePosition - b.valuePosition,
         )
         .map(({ attributePosition, valuePosition, ...rest }) => rest);
+
+      const productSeo = product.seo;
+      const isEnglish = lang === "en";
+
+      const seo = productSeo
+        ? {
+            metaTitle: isEnglish
+              ? productSeo.metaTitleEn?.trim() ||
+                productSeo.metaTitleId?.trim() ||
+                null
+              : productSeo.metaTitleId?.trim() || null,
+            metaDescription: isEnglish
+              ? productSeo.metaDescriptionEn?.trim() ||
+                productSeo.metaDescriptionId?.trim() ||
+                null
+              : productSeo.metaDescriptionId?.trim() || null,
+            keywords: isEnglish
+              ? productSeo.keywordsEn?.trim() ||
+                productSeo.keywordsId?.trim() ||
+                null
+              : productSeo.keywordsId?.trim() || null,
+            canonicalUrl: isEnglish
+              ? productSeo.canonicalUrlEn?.trim() || null
+              : productSeo.canonicalUrlId?.trim() || null,
+            ogTitle: isEnglish
+              ? productSeo.ogTitleEn?.trim() ||
+                productSeo.ogTitleId?.trim() ||
+                null
+              : productSeo.ogTitleId?.trim() || null,
+            ogDescription: isEnglish
+              ? productSeo.ogDescriptionEn?.trim() ||
+                productSeo.ogDescriptionId?.trim() ||
+                null
+              : productSeo.ogDescriptionId?.trim() || null,
+            ogImage: productSeo.ogImage?.trim() || null,
+            structuredData: isEnglish
+              ? productSeo.structuredDataEn?.trim() ||
+                productSeo.structuredDataId?.trim() ||
+                null
+              : productSeo.structuredDataId?.trim() || null,
+          }
+        : null;
+
       return {
         id: product.id,
         name: productName,
@@ -4525,6 +4569,7 @@ export class ProductService {
         mockupBackImageId: product.mockupBackImageId,
         colorMockupTrigger: product.colorMockupTrigger,
         attributeValues: attributeValuesSorted,
+        seo,
       };
     } catch (error) {
       console.error(`❌ Error fetching product by slug (${slug}):`, error);

@@ -69,6 +69,7 @@ import { PortfolioRouter } from "./modules/admin/content/portfolio/portfolio.rou
 import { AppSettingRouter } from "./modules/admin/content/setting/setting.router";
 import { SuccessStoryRouter } from "./modules/admin/content/success-story/successStory.router";
 import { SampleHistoryRouter } from "./modules/admin/sampleHistory/sampleHistory.router";
+import { SeoSitemapRouter } from "./modules/seo/seo-sitemap.router";
 import { UploadRouter } from "./modules/upload/upload.router";
 import { AuthWebClientRouter } from "./modules/web-clients/auth-client/auth-client.router";
 import { CartRouter } from "./modules/web-clients/cart/cart.router";
@@ -180,10 +181,13 @@ export default class App {
     const sampleHistoryRouter = container.resolve(SampleHistoryRouter);
     const sucessStoryRouter = container.resolve(SuccessStoryRouter);
     const uploadRouter = container.resolve(UploadRouter);
+    const seoSitemapRouter = container.resolve(SeoSitemapRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
     });
+
+    this.app.use("/seo/sitemap", publicLimiter, seoSitemapRouter.getRouter());
 
     this.app.use("/vendors", vendorRouter.getRouter());
     this.app.use("/vendor-categories", categoryVendorRouter.getRouter());
