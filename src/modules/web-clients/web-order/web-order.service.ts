@@ -17,7 +17,6 @@ import { CounterService } from "../../../utils/counter.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { EmailService } from "../auth-client/email.service";
 import { CreateWebOrderDTO } from "./dto/web-order.dto";
-import { WebOrderPaymentRecordService } from "./web-order-payment-record.service";
 
 @injectable()
 export class WebOrderService {
@@ -25,7 +24,6 @@ export class WebOrderService {
     private readonly prisma: PrismaService,
     private readonly counterService: CounterService,
     private readonly emailService: EmailService,
-    private readonly paymentRecordService: WebOrderPaymentRecordService,
   ) {}
 
   // ====================================================================
@@ -737,7 +735,7 @@ export class WebOrderService {
               transactionDate: paidAt,
               type: TransactionType.INCOME,
               amount,
-              referenceNumber: `MIDTRANS:${webOrder.orderNumber}`,
+              referenceNumber: `MIDTRANS:${paymentAttemptId}`,
               description:
                 `Pembayaran Website ${webOrder.orderNumber} - ` +
                 `Invoice ${invoiceNumber} - Midtrans ${paymentMethod}`,
@@ -1006,19 +1004,134 @@ export class WebOrderService {
     } catch (error) {
       console.error("[MIDTRANS CREATE PAYMENT]", error);
 
-      await this.prisma.webPaymentAttempt.updateMany({
-        where: {
-          id: prepared.attemptId,
-          status: "CREATING",
+      const currentAttempt = await this.prisma.webPaymentAttempt.findUnique({
+        where: { id: prepared.attemptId },
+        select: {
+          status: true,
+          redirectUrl: true,
+          midtransOrderId: true,
         },
-        data: { status: "FAILED" },
       });
 
+      if (currentAttempt?.status === "PAID") {
+        throw new ApiError(
+          "Pembayaran sudah berhasil. Periksa status pesanan.",
+          409,
+        );
+      }
+
+      if (currentAttempt?.status === "PENDING" && currentAttempt.redirectUrl) {
+        return {
+          redirect_url: currentAttempt.redirectUrl,
+          reused: true,
+        };
+      }
+
+      console.error(
+        "[MIDTRANS RECOVERY REQUIRED]",
+        currentAttempt?.midtransOrderId,
+      );
+
       throw new ApiError(
-        "Gagal membuat sesi pembayaran. Silakan coba kembali.",
-        502,
+        "Status pembayaran belum dapat dipastikan. " +
+          "Hubungi admin untuk pemeriksaan transaksi Midtrans.",
+        503,
       );
     }
+  }
+
+  private async processPaidWebOrderWithRetry(
+    orderNumber: string,
+    paymentMethod: string,
+    paymentAttemptId: string,
+    midtransTransactionId: string | null,
+  ) {
+    const maxAttempts = 3;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await this.processPaidWebOrder(
+          orderNumber,
+          paymentMethod,
+          paymentAttemptId,
+          midtransTransactionId,
+        );
+        return;
+      } catch (error) {
+        const isRetryable =
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2034";
+
+        if (!isRetryable || attempt === maxAttempts) {
+          throw error;
+        }
+
+        console.warn(
+          `[MIDTRANS] Transaction conflict ${orderNumber}, retry ${attempt}/${maxAttempts}`,
+        );
+
+        await new Promise<void>((resolve) =>
+          setTimeout(resolve, attempt * 150),
+        );
+      }
+    }
+  }
+
+  private async verifyPaidOrderConsistency(
+    orderNumber: string,
+    paymentAttemptId: string,
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { orderNumber },
+      select: {
+        id: true,
+        orderNumber: true,
+        totalAmount: true,
+        invoices: {
+          where: {
+            status: "PAID",
+            category: "FULL_PAYMENT",
+          },
+          select: {
+            id: true,
+            totalAmount: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new Error(
+        `Order Sales ${orderNumber} tidak ditemukan setelah pembayaran`,
+      );
+    }
+
+    if (
+      order.invoices.length !== 1 ||
+      !order.invoices[0].totalAmount.equals(order.totalAmount)
+    ) {
+      throw new Error(`Invoice PAID untuk ${orderNumber} tidak konsisten`);
+    }
+
+    const financeTransactions = await this.prisma.financeTransaction.findMany({
+      where: {
+        referenceNumber: `MIDTRANS:${paymentAttemptId}`,
+        type: "INCOME",
+      },
+      select: {
+        id: true,
+        amount: true,
+      },
+    });
+
+    if (
+      financeTransactions.length !== 1 ||
+      !financeTransactions[0].amount.equals(order.totalAmount)
+    ) {
+      throw new Error(`Finance INCOME untuk ${orderNumber} tidak konsisten`);
+    }
+
+    return true;
   }
 
   async handleMidtransNotification(notificationRaw: any) {
@@ -1077,7 +1190,54 @@ export class WebOrderService {
 
       if (isPaid) {
         if (attempt.status === "PAID") {
-          return { success: true, alreadyProcessed: true };
+          const primaryFinance = await this.prisma.financeTransaction.findFirst(
+            {
+              where: {
+                referenceNumber: `MIDTRANS:${attempt.id}`,
+                type: "INCOME",
+              },
+              select: { id: true },
+            },
+          );
+
+          if (!primaryFinance) {
+            const otherPaidAttempt =
+              await this.prisma.webPaymentAttempt.findFirst({
+                where: {
+                  webOrderId: attempt.webOrder.id,
+                  id: { not: attempt.id },
+                  status: "PAID",
+                },
+                select: { id: true },
+              });
+
+            if (attempt.webOrder.status === "PAID" && otherPaidAttempt) {
+              console.error(
+                `[MIDTRANS DUPLICATE PAYMENT] ${midtransOrderId} ` +
+                  "memerlukan rekonsiliasi/refund.",
+              );
+
+              return {
+                success: true,
+                duplicatePayment: true,
+              };
+            }
+
+            throw new Error(
+              `Pembayaran ${midtransOrderId} belum memiliki ` +
+                "catatan Finance yang konsisten.",
+            );
+          }
+
+          await this.verifyPaidOrderConsistency(
+            attempt.webOrder.orderNumber,
+            attempt.id,
+          );
+
+          return {
+            success: true,
+            alreadyProcessed: true,
+          };
         }
 
         if (attempt.webOrder.status === "PAID") {
@@ -1113,7 +1273,7 @@ export class WebOrderService {
           );
         }
 
-        await this.processPaidWebOrder(
+        await this.processPaidWebOrderWithRetry(
           attempt.webOrder.orderNumber,
           paymentType,
           attempt.id,
