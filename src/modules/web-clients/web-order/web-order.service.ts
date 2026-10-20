@@ -1,4 +1,15 @@
-import { ClientType, SalesCategory, WebOrderStatus } from "@prisma/client";
+import {
+  ClientType,
+  InvoiceBillingMode,
+  InvoiceCategory,
+  InvoiceStatus,
+  PaymentMethod,
+  Prisma,
+  SalesCategory,
+  TransactionType,
+  WebOrderStatus,
+} from "@prisma/client";
+
 import { injectable } from "tsyringe";
 import { coreApi, snap } from "../../../lib/midtrans";
 import { ApiError } from "../../../utils/api-error";
@@ -6,6 +17,7 @@ import { CounterService } from "../../../utils/counter.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { EmailService } from "../auth-client/email.service";
 import { CreateWebOrderDTO } from "./dto/web-order.dto";
+import { WebOrderPaymentRecordService } from "./web-order-payment-record.service";
 
 @injectable()
 export class WebOrderService {
@@ -13,6 +25,7 @@ export class WebOrderService {
     private readonly prisma: PrismaService,
     private readonly counterService: CounterService,
     private readonly emailService: EmailService,
+    private readonly paymentRecordService: WebOrderPaymentRecordService,
   ) {}
 
   // ====================================================================
@@ -291,7 +304,6 @@ export class WebOrderService {
 
         calculatedSubtotal += actualTotalItem;
 
-
         return {
           productName: productName,
           quantity: item.quantity,
@@ -357,397 +369,811 @@ export class WebOrderService {
     return createdWebOrder;
   }
 
+  private mapMidtransPaymentMethod(paymentType: string): PaymentMethod | null {
+    const method = paymentType?.toLowerCase();
+
+    if (method === "credit_card") return PaymentMethod.CREDIT_CARD;
+
+    if (method === "qris") return PaymentMethod.QRIS;
+
+    if (
+      [
+        "bank_transfer",
+        "echannel",
+        "permata",
+        "bca_klikpay",
+        "bca_klikbca",
+        "bri_epay",
+      ].includes(method)
+    ) {
+      return PaymentMethod.BANK_TRANSFER;
+    }
+
+    return null;
+  }
+
   // =========================================================================
   // 🌟 FUNGSI: PROSES KONVERSI KE SISTEM UTAMA (ORDER & CLIENT)
   // =========================================================================
+
   private async processPaidWebOrder(
     orderNumber: string,
     paymentMethod: string,
+    paymentAttemptId: string,
+    midtransTransactionId: string | null,
   ) {
-    console.log(
-      `\n🚀 [WEBHOOK START] Memulai proses konversi Web Order: ${orderNumber}`,
-    );
+    console.log(`[WEBHOOK] Processing paid order: ${orderNumber}`);
 
     try {
-      // ✨ PERUBAHAN: Kita membungkus transaction ke dalam variabel resultData
-      // agar kita bisa mengambil email pembeli untuk dikirimkan di luar transaksi.
-      const resultData = await this.prisma.$transaction(async (tx) => {
-        const webOrder = await tx.webOrder.findUnique({
-          where: { orderNumber },
-          include: {
-            profile: true,
-            items: true,
-          },
-        });
-
-        if (!webOrder) {
-          throw new Error("Web Order tidak ditemukan");
-        }
-
-        if (webOrder.status === "PAID" || webOrder.status === "PROCESSING") {
-          return null; // Menghentikan jika sudah berstatus PAID (Mencegah duplikat)
-        }
-
-        const webChannel = await tx.purchaseChannel.findUnique({
-          where: { slug: "website" },
-        });
-        if (!webChannel) {
-          throw new Error(
-            "Mohon buat data PurchaseChannel dengan slug 'website'!",
-          );
-        }
-
-        let clientIdToUse = "";
-        let addressData: any = {};
-        try {
-          addressData =
-            typeof webOrder.shippingAddress === "string"
-              ? JSON.parse(webOrder.shippingAddress)
-              : webOrder.shippingAddress;
-        } catch (e) {}
-
-        const formattedAddressString = [
-          addressData.fullAddress,
-          addressData.subDistrict,
-          addressData.district,
-          addressData.city,
-          addressData.province,
-          addressData.postalCode,
-        ]
-          .filter(Boolean)
-          .join(", ");
-
-        const finalAddress =
-          formattedAddressString || addressData.fullAddress || "-";
-
-        const existingClient = webOrder.profile?.userId
-          ? await tx.client.findFirst({
-              where: { userId: webOrder.profile.userId },
-            })
-          : null;
-
-        if (existingClient) {
-          clientIdToUse = existingClient.id;
-          const isCorporate = webOrder.profile?.accountType === "CORPORATE";
-          if (isCorporate) {
-            await tx.clientB2B
-              .update({
-                where: { id: clientIdToUse },
-                data: {
-                  fullAddress: addressData.fullAddress || "-",
-                },
-              })
-              .catch(() => {});
-          } else {
-            await tx.clientB2C
-              .update({
-                where: { id: clientIdToUse },
-                data: {
-                  fullAddress: addressData.fullAddress || "-",
-                },
-              })
-              .catch(() => {});
-          }
-        } else {
-          const isCorporate = webOrder.profile?.accountType === "CORPORATE";
-          const clientType = isCorporate ? ClientType.B2B : ClientType.B2C;
-          const prefix = clientType === ClientType.B2B ? "B" : "C";
-          const counterType =
-            clientType === ClientType.B2B ? "CLIENT_B2B_OFF" : "CLIENT_B2C_OFF";
-
-          const sequence = await this.counterService.getNextFormattedNumber(
-            tx,
-            counterType,
-            "",
-            5,
-          );
-          const custCode = `${prefix}${sequence}`;
-
-          const newClient = await tx.client.create({
-            data: {
-              custCode: custCode,
-              type: clientType,
-              status: "OFFICIAL",
-              userId: webOrder.profile?.userId || undefined,
+      const resultData = await this.prisma.$transaction(
+        async (tx) => {
+          const webOrder = await tx.webOrder.findUnique({
+            where: { orderNumber },
+            include: {
+              profile: true,
+              items: true,
             },
           });
-          clientIdToUse = newClient.id;
 
-          if (isCorporate) {
-            const defaultDept = await tx.department.findFirst();
-            if (!defaultDept) throw new Error("Belum ada data Department!");
-
-            await tx.clientB2B.create({
-              data: {
-                id: newClient.id,
-                companyName: webOrder.profile?.companyName || "Perusahaan Web",
-                departmentId: defaultDept.id,
-                website: "-",
-                phone: webOrder.guestPhone || addressData.phone,
-                fullAddress: addressData.fullAddress || "-",
-              },
-            });
-          } else {
-            await tx.clientB2C.create({
-              data: {
-                id: newClient.id,
-                prefix: "Mr/Ms",
-                name: webOrder.guestName || addressData.recipient || "Guest",
-                phone: webOrder.guestPhone || addressData.phone,
-                fullAddress: addressData.fullAddress || "-",
-              },
-            });
+          if (!webOrder) {
+            throw new ApiError("Web Order tidak ditemukan", 404);
           }
-        }
 
-        const generatedOrderNumber = webOrder.orderNumber;
+          if (webOrder.status === "PAID" || webOrder.status === "PROCESSING") {
+            return null;
+          }
 
-        const processedOrderProducts = await Promise.all(
-          webOrder.items.map(async (item: any) => {
-            let mappedSelectedAttributes: Record<string, string> | null = null;
+          if (webOrder.status !== "PENDING_PAYMENT") {
+            throw new ApiError(
+              `Web Order tidak dapat diproses dari status ${webOrder.status}`,
+              409,
+            );
+          }
+
+          const claim = await tx.webOrder.updateMany({
+            where: {
+              id: webOrder.id,
+              status: "PENDING_PAYMENT",
+            },
+            data: {
+              status: "PAID",
+              paymentMethod,
+            },
+          });
+
+          if (claim.count !== 1) return null;
+
+          const systemUserId = process.env.WEB_ORDER_SYSTEM_USER_ID;
+
+          if (!systemUserId) {
+            throw new Error("WEB_ORDER_SYSTEM_USER_ID belum dikonfigurasi");
+          }
+
+          const [systemUser, financeCategory, webChannel] = await Promise.all([
+            tx.user.findUnique({
+              where: { id: systemUserId },
+              select: { id: true },
+            }),
+            tx.financeCategory.findUnique({
+              where: { slug: "penjualan-website" },
+              select: {
+                id: true,
+                type: true,
+                isActive: true,
+              },
+            }),
+            tx.purchaseChannel.findUnique({
+              where: { slug: "website" },
+            }),
+          ]);
+
+          if (!systemUser) {
+            throw new Error("User sistem Web Order tidak ditemukan");
+          }
+
+          if (
+            !financeCategory ||
+            !financeCategory.isActive ||
+            financeCategory.type !== TransactionType.INCOME
+          ) {
+            throw new Error(
+              "Kategori Finance penjualan-website tidak ditemukan atau tidak valid",
+            );
+          }
+
+          if (!webChannel) {
+            throw new Error(
+              "PurchaseChannel dengan slug website tidak ditemukan",
+            );
+          }
+
+          if (!webOrder.items.length) {
+            throw new Error("Web Order tidak memiliki produk");
+          }
+
+          const addressData: Record<string, any> =
+            webOrder.shippingAddress &&
+            typeof webOrder.shippingAddress === "object" &&
+            !Array.isArray(webOrder.shippingAddress)
+              ? (webOrder.shippingAddress as Record<string, any>)
+              : {};
+
+          const finalAddress =
+            [
+              addressData.fullAddress,
+              addressData.subDistrict,
+              addressData.district,
+              addressData.city,
+              addressData.province,
+              addressData.postalCode,
+            ]
+              .filter(Boolean)
+              .join(", ") || "-";
+
+          const isCorporate = webOrder.profile?.accountType === "CORPORATE";
+
+          const existingClient = webOrder.profile?.userId
+            ? await tx.client.findFirst({
+                where: { userId: webOrder.profile.userId },
+              })
+            : null;
+
+          let clientIdToUse: string;
+
+          if (existingClient) {
+            clientIdToUse = existingClient.id;
+
+            if (isCorporate) {
+              await tx.clientB2B.update({
+                where: { id: clientIdToUse },
+                data: {
+                  fullAddress: addressData.fullAddress || "-",
+                },
+              });
+            } else {
+              await tx.clientB2C.update({
+                where: { id: clientIdToUse },
+                data: {
+                  fullAddress: addressData.fullAddress || "-",
+                },
+              });
+            }
+          } else {
+            const clientType = isCorporate ? ClientType.B2B : ClientType.B2C;
+
+            const counterType = isCorporate
+              ? "CLIENT_B2B_OFF"
+              : "CLIENT_B2C_OFF";
+
+            const sequence = await this.counterService.getNextFormattedNumber(
+              tx,
+              counterType,
+              "",
+              5,
+            );
+
+            const newClient = await tx.client.create({
+              data: {
+                custCode: `${isCorporate ? "B" : "C"}${sequence}`,
+                type: clientType,
+                status: "OFFICIAL",
+                userId: webOrder.profile?.userId || undefined,
+              },
+            });
+
+            clientIdToUse = newClient.id;
+
+            if (isCorporate) {
+              const department = await tx.department.findFirst();
+
+              if (!department) {
+                throw new Error("Department default belum tersedia");
+              }
+
+              await tx.clientB2B.create({
+                data: {
+                  id: clientIdToUse,
+                  companyName:
+                    webOrder.profile?.companyName || "Perusahaan Web",
+                  departmentId: department.id,
+                  website: "-",
+                  phone: webOrder.guestPhone || addressData.phone || "-",
+                  fullAddress: addressData.fullAddress || "-",
+                },
+              });
+            } else {
+              await tx.clientB2C.create({
+                data: {
+                  id: clientIdToUse,
+                  prefix: "Mr/Ms",
+                  name: webOrder.guestName || addressData.recipient || "Guest",
+                  phone: webOrder.guestPhone || addressData.phone || "-",
+                  fullAddress: addressData.fullAddress || "-",
+                },
+              });
+            }
+          }
+
+          const processedOrderProducts = [];
+
+          for (const item of webOrder.items) {
+            let selectedAttributes: Record<string, string> | undefined;
+
             if (
               item.selectedAttributes &&
-              typeof item.selectedAttributes === "object"
+              typeof item.selectedAttributes === "object" &&
+              !Array.isArray(item.selectedAttributes)
             ) {
-              mappedSelectedAttributes = {};
-              const attrEntries = Object.entries(item.selectedAttributes);
+              const mapped: Record<string, string> = {};
 
-              for (const [attrName, attrValue] of attrEntries) {
-                const dbAttrValue = await tx.productAttributeValue.findFirst({
+              for (const [attrName, attrValue] of Object.entries(
+                item.selectedAttributes,
+              )) {
+                if (typeof attrValue !== "string") continue;
+
+                const attribute = await tx.productAttributeValue.findFirst({
                   where: {
                     productId: item.productId,
                     attribute: { name: attrName },
                     attributeValue: {
-                      value: { contains: attrValue as string },
+                      value: { contains: attrValue },
                     },
                   },
                 });
 
-                if (dbAttrValue && dbAttrValue.attributeId) {
-                  mappedSelectedAttributes[dbAttrValue.attributeId] =
-                    dbAttrValue.attributeValueId;
+                if (attribute?.attributeId) {
+                  mapped[attribute.attributeId] = attribute.attributeValueId;
                 }
+              }
+
+              if (Object.keys(mapped).length) {
+                selectedAttributes = mapped;
               }
             }
 
-            return {
+            processedOrderProducts.push({
               productId: item.productId,
               variantId: item.variantId,
               quantity: item.quantity,
               unitPrice: item.price,
-              customization: item.customization || undefined,
+              customization:
+                item.customization === null
+                  ? undefined
+                  : (item.customization as Prisma.InputJsonValue),
               remarks: item.notes,
-              selectedAttributes: mappedSelectedAttributes || undefined,
-            };
-          }),
-        );
-
-        // ✨ TAMBAHAN: Set warrantyDays ke 30 secara default untuk setiap order baru
-        await tx.order.create({
-          data: {
-            orderNumber: generatedOrderNumber,
-            dateOrder: new Date(),
-            salesCategory: SalesCategory.SALES,
-            clientId: clientIdToUse,
-            purchaseChannelId: webChannel.id,
-            shippingAddress: finalAddress,
-            totalAmount: webOrder.totalAmount,
-            webOrderId: webOrder.id,
-            warrantyDays: 30, // <== Penambahan Warranty 30 Hari
-            products: {
-              create: processedOrderProducts,
-            },
-          },
-        });
-
-        await tx.webOrder.update({
-          where: { id: webOrder.id },
-          data: {
-            status: "PAID",
-            paymentMethod: paymentMethod,
-          },
-        });
-
-        // ✨ TAMBAHAN: Mengumpulkan data untuk dikirimkan melalui Email
-        let customerEmail = webOrder.guestEmail;
-        let customerName =
-          webOrder.guestName || addressData.recipient || "Pelanggan";
-
-        // Jika Guest Email kosong, coba ambil dari data User jika dia login
-        if (!customerEmail && webOrder.profile?.userId) {
-          const user = await tx.user.findUnique({
-            where: { id: webOrder.profile.userId },
-            select: { email: true, name: true },
-          });
-          if (user) {
-            customerEmail = user.email;
-            customerName = user.name || customerName;
+              selectedAttributes,
+            });
           }
-        }
 
-        return {
-          email: customerEmail,
-          name: customerName,
-          orderNumber: generatedOrderNumber,
-        };
-      });
+          const paidAt = new Date();
+          const currencyCode = webOrder.currencyCode || "IDR";
+          const method = this.mapMidtransPaymentMethod(paymentMethod);
+          const amount = new Prisma.Decimal(webOrder.totalAmount);
 
-      // ✨ TAMBAHAN: Eksekusi pengiriman email DILUAR prisma transaction
-      if (resultData && resultData.email) {
+          const createdOrder = await tx.order.create({
+            data: {
+              orderNumber: webOrder.orderNumber,
+              dateOrder: paidAt,
+              salesCategory: SalesCategory.SALES,
+              clientId: clientIdToUse,
+              purchaseChannelId: webChannel.id,
+              shippingAddress: finalAddress,
+              totalAmount: amount,
+              currencyCode,
+              webOrderId: webOrder.id,
+              warrantyDays: 30,
+              products: {
+                create: processedOrderProducts,
+              },
+            },
+            include: {
+              products: true,
+              client: {
+                select: { custCode: true },
+              },
+            },
+          });
+
+          const invoiceItems = createdOrder.products.map((item) => ({
+            orderProductId: item.id,
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+            price: item.unitPrice,
+            remarks: item.remarks,
+            customization: item.customization
+              ? (item.customization as Prisma.InputJsonValue)
+              : Prisma.JsonNull,
+          }));
+
+          const invoice = await tx.invoice.create({
+            data: {
+              orderId: createdOrder.id,
+              clientId: clientIdToUse,
+              userId: systemUser.id,
+              totalAmount: amount,
+              category: InvoiceCategory.FULL_PAYMENT,
+              billingMode: InvoiceBillingMode.STANDARD,
+              status: InvoiceStatus.PAID,
+              method,
+              paidAt,
+              paymentDate: paidAt,
+              items: {
+                createMany: { data: invoiceItems },
+              },
+            },
+          });
+
+          const romanMonths = [
+            "I",
+            "II",
+            "III",
+            "IV",
+            "V",
+            "VI",
+            "VII",
+            "VIII",
+            "IX",
+            "X",
+            "XI",
+            "XII",
+          ];
+
+          const invoiceNumber = [
+            "INV",
+            String(invoice.id).padStart(4, "0"),
+            createdOrder.client.custCode || "NOC",
+            romanMonths[paidAt.getMonth()],
+            paidAt.getFullYear(),
+          ].join("_");
+
+          await tx.invoice.update({
+            where: { id: invoice.id },
+            data: { invoiceNumber },
+          });
+
+          await tx.financeTransaction.create({
+            data: {
+              transactionDate: paidAt,
+              type: TransactionType.INCOME,
+              amount,
+              referenceNumber: `MIDTRANS:${webOrder.orderNumber}`,
+              description:
+                `Pembayaran Website ${webOrder.orderNumber} - ` +
+                `Invoice ${invoiceNumber} - Midtrans ${paymentMethod}`,
+              method,
+              currencyCode,
+              createdBy: systemUser.id,
+              categoryId: financeCategory.id,
+            },
+          });
+
+          const updatedAttempt = await tx.webPaymentAttempt.updateMany({
+            where: {
+              id: paymentAttemptId,
+              webOrderId: webOrder.id,
+              status: { not: "PAID" },
+            },
+            data: {
+              status: "PAID",
+              paymentType: paymentMethod,
+              midtransTransactionId,
+              paidAt,
+            },
+          });
+
+          if (updatedAttempt.count !== 1) {
+            throw new Error(
+              `Payment attempt ${paymentAttemptId} gagal dikonfirmasi`,
+            );
+          }
+
+          let customerEmail = webOrder.guestEmail;
+          let customerName =
+            webOrder.guestName || addressData.recipient || "Pelanggan";
+
+          if (!customerEmail && webOrder.profile?.userId) {
+            const user = await tx.user.findUnique({
+              where: { id: webOrder.profile.userId },
+              select: { email: true, name: true },
+            });
+
+            if (user) {
+              customerEmail = user.email;
+              customerName = user.name || customerName;
+            }
+          }
+
+          return {
+            email: customerEmail,
+            name: customerName,
+            orderNumber: webOrder.orderNumber,
+            invoiceNumber,
+          };
+        },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+          timeout: 30000,
+        },
+      );
+
+      if (!resultData) {
+        console.log(`[WEBHOOK] Order ${orderNumber} sudah diproses sebelumnya`);
+        return;
+      }
+
+      console.log(
+        `[WEBHOOK SUCCESS] ${resultData.orderNumber} - ${resultData.invoiceNumber}`,
+      );
+
+      if (resultData.email) {
         try {
           await this.emailService.sendOrderConfirmationEmail(
             resultData.email,
             resultData.name,
             resultData.orderNumber,
           );
-          console.log(
-            `✉️ Email konfirmasi pesanan berhasil dikirim ke ${resultData.email}`,
-          );
         } catch (emailError) {
           console.error(
-            "❌ Gagal mengirim email konfirmasi pesanan:",
+            "[WEBHOOK] Gagal mengirim email konfirmasi:",
             emailError,
           );
         }
       }
     } catch (error) {
-      console.error(
-        `🚨 [WEBHOOK FAILED] Terjadi kesalahan saat memproses Order ${orderNumber}:`,
-        error,
-      );
+      console.error(`[WEBHOOK FAILED] Order ${orderNumber}:`, error);
       throw error;
     }
   }
 
   async createPayment(orderId: string) {
-    const order = await this.prisma.webOrder.findUnique({
-      where: { id: orderId },
-      include: { items: true },
-    });
+    const prepared = await this.prisma.$transaction(
+      async (tx) => {
+        const order = await tx.webOrder.findUnique({
+          where: { id: orderId },
+          include: {
+            items: true,
+            paymentAttempts: {
+              orderBy: { attemptNumber: "desc" },
+            },
+          },
+        });
 
-    if (!order) {
-      throw new ApiError("Order tidak ditemukan", 404);
-    }
+        if (!order) throw new ApiError("Order tidak ditemukan", 404);
+        if (order.status !== "PENDING_PAYMENT") {
+          throw new ApiError("Order tidak membutuhkan pembayaran", 400);
+        }
+        if (!order.items.length) {
+          throw new ApiError("Order tidak memiliki produk", 400);
+        }
 
-    if (order.status !== "PENDING_PAYMENT") {
-      throw new ApiError("Order ini tidak membutuhkan pembayaran", 400);
-    }
+        await tx.webOrder.update({
+          where: { id: order.id },
+          data: { updatedAt: new Date() },
+        });
 
-    const itemDetails = order.items.map((item) => ({
-      id: item.productId,
-      price: Math.round(Number(item.price)),
-      quantity: item.quantity,
-      name: item.productName.substring(0, 50),
-    }));
+        const latest = order.paymentAttempts[0];
 
-    if (order.shippingCost && Number(order.shippingCost) > 0) {
-      itemDetails.push({
-        id: "SHIPPING-FEE",
-        price: Math.round(Number(order.shippingCost)),
-        quantity: 1,
-        name: "Ongkos Kirim",
-      });
-    }
+        if (latest?.status === "PAID") {
+          throw new ApiError("Pembayaran sudah berhasil", 409);
+        }
 
-    if (order.taxAmount && Number(order.taxAmount) > 0) {
-      itemDetails.push({
-        id: "TAX-FEE",
-        price: Math.round(Number(order.taxAmount)),
-        quantity: 1,
-        name: "Pajak PPN",
-      });
-    }
+        if (latest?.status === "CREATING") {
+          throw new ApiError(
+            "Sesi pembayaran sedang dibuat. Silakan coba kembali.",
+            409,
+          );
+        }
 
-    const midtransOrderId = `${order.orderNumber}_${Date.now()}`;
+        if (latest?.status === "PENDING") {
+          if (!latest.redirectUrl) {
+            throw new ApiError(
+              "URL pembayaran belum tersedia. Hubungi admin.",
+              409,
+            );
+          }
 
-    const parameter = {
-      transaction_details: {
-        order_id: midtransOrderId,
-        gross_amount: Math.round(Number(order.totalAmount)),
+          return {
+            reused: true as const,
+            redirect_url: latest.redirectUrl,
+            attemptId: latest.id,
+          };
+        }
+
+        const amount = Math.round(Number(order.totalAmount));
+        if (!Number.isSafeInteger(amount) || amount <= 0) {
+          throw new ApiError("Nominal pembayaran tidak valid", 400);
+        }
+
+        const itemDetails = order.items.map((item) => ({
+          id: item.productId,
+          price: Math.round(Number(item.price)),
+          quantity: item.quantity,
+          name: item.productName.substring(0, 50),
+        }));
+
+        if (Number(order.shippingCost || 0) > 0) {
+          itemDetails.push({
+            id: "SHIPPING-FEE",
+            price: Math.round(Number(order.shippingCost)),
+            quantity: 1,
+            name: "Ongkos Kirim",
+          });
+        }
+
+        if (Number(order.taxAmount || 0) > 0) {
+          itemDetails.push({
+            id: "TAX-FEE",
+            price: Math.round(Number(order.taxAmount)),
+            quantity: 1,
+            name: "Pajak",
+          });
+        }
+
+        const calculatedTotal = itemDetails.reduce(
+          (sum, item) => sum + item.price * item.quantity,
+          0,
+        );
+
+        if (calculatedTotal !== amount) {
+          throw new ApiError(
+            `Total item ${calculatedTotal} tidak sama dengan total order ${amount}`,
+            400,
+          );
+        }
+
+        const attemptNumber = (latest?.attemptNumber || 0) + 1;
+        const midtransOrderId = `${order.orderNumber}_${attemptNumber}`;
+
+        const attempt = await tx.webPaymentAttempt.create({
+          data: {
+            webOrderId: order.id,
+            midtransOrderId,
+            attemptNumber,
+            status: "CREATING",
+            amount: order.totalAmount,
+            currencyCode: order.currencyCode || "IDR",
+          },
+        });
+
+        return {
+          reused: false as const,
+          attemptId: attempt.id,
+          parameter: {
+            transaction_details: {
+              order_id: midtransOrderId,
+              gross_amount: amount,
+            },
+            item_details: itemDetails,
+            customer_details: {
+              first_name: order.guestName || "Customer",
+              email: order.guestEmail || undefined,
+              phone: order.guestPhone || undefined,
+            },
+          },
+        };
       },
-      item_details: itemDetails,
-      customer_details: {
-        first_name: order.guestName || "Customer",
-        email: order.guestEmail || undefined,
-        phone: order.guestPhone || undefined,
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        timeout: 20000,
       },
-    };
+    );
+
+    if (prepared.reused) {
+      return {
+        redirect_url: prepared.redirect_url,
+        reused: true,
+      };
+    }
 
     try {
-      const transaction = await snap.createTransaction(parameter);
+      const transaction = await snap.createTransaction(prepared.parameter);
 
-      await this.prisma.webOrder.update({
-        where: { id: orderId },
+      const updated = await this.prisma.webPaymentAttempt.updateMany({
+        where: {
+          id: prepared.attemptId,
+          status: "CREATING",
+        },
+        data: {
+          status: "PENDING",
+          redirectUrl: transaction.redirect_url,
+          snapToken: transaction.token,
+        },
+      });
+
+      if (updated.count === 0) {
+        const current = await this.prisma.webPaymentAttempt.findUnique({
+          where: { id: prepared.attemptId },
+        });
+
+        if (current?.status !== "PAID") {
+          throw new Error("Status payment attempt berubah");
+        }
+      }
+
+      await this.prisma.webOrder.updateMany({
+        where: {
+          id: orderId,
+          status: "PENDING_PAYMENT",
+        },
         data: { paymentUrl: transaction.redirect_url },
       });
 
-      return transaction;
-    } catch (error: any) {
-      console.error(
-        ">>> ERROR MIDTRANS ASLI:",
-        error?.ApiResponse || error.message,
-      );
+      return {
+        ...transaction,
+        reused: false,
+      };
+    } catch (error) {
+      console.error("[MIDTRANS CREATE PAYMENT]", error);
+
+      await this.prisma.webPaymentAttempt.updateMany({
+        where: {
+          id: prepared.attemptId,
+          status: "CREATING",
+        },
+        data: { status: "FAILED" },
+      });
 
       throw new ApiError(
-        "Gagal membuat transaksi ke Midtrans. Cek log server.",
-        500,
+        "Gagal membuat sesi pembayaran. Silakan coba kembali.",
+        502,
       );
     }
   }
 
   async handleMidtransNotification(notificationRaw: any) {
     try {
-      const statusResponse = await (coreApi as any).transaction.notification(
+      const notification = await (coreApi as any).transaction.notification(
         notificationRaw,
       );
 
-      const rawOrderId = statusResponse.order_id;
-      const transactionStatus = statusResponse.transaction_status;
-      const fraudStatus = statusResponse.fraud_status;
+      const midtransOrderId = String(notification.order_id || "");
+      const transactionStatus = String(notification.transaction_status || "");
+      const fraudStatus = notification.fraud_status;
+      const paymentType = String(notification.payment_type || "other");
+      const transactionId = notification.transaction_id
+        ? String(notification.transaction_id)
+        : null;
 
-      const actualOrderNumber = rawOrderId.split("_")[0];
-      const paymentMethodFromMidtrans = statusResponse.payment_type;
+      const attempt = await this.prisma.webPaymentAttempt.findUnique({
+        where: { midtransOrderId },
+        include: {
+          webOrder: {
+            select: {
+              id: true,
+              orderNumber: true,
+              status: true,
+              totalAmount: true,
+            },
+          },
+        },
+      });
 
-      let newStatus: WebOrderStatus | undefined;
+      if (!attempt) {
+        throw new Error(`Payment attempt tidak ditemukan: ${midtransOrderId}`);
+      }
+
+      const paidAmount = new Prisma.Decimal(String(notification.gross_amount));
 
       if (
-        transactionStatus === "capture" ||
-        transactionStatus === "settlement"
+        !paidAmount.equals(attempt.amount) ||
+        !paidAmount.equals(attempt.webOrder.totalAmount)
       ) {
-        if (fraudStatus === "accept" || !fraudStatus) {
-          newStatus = "PAID";
-        }
-      } else if (
-        transactionStatus === "cancel" ||
-        transactionStatus === "deny" ||
-        transactionStatus === "expire"
-      ) {
-        newStatus = "CANCELLED";
-      } else if (transactionStatus === "pending") {
-        newStatus = "PENDING_PAYMENT";
+        throw new Error(`Nominal Midtrans tidak sesuai: ${midtransOrderId}`);
       }
 
-      if (newStatus) {
-        if (newStatus === "PAID") {
-          await this.processPaidWebOrder(
-            actualOrderNumber,
-            paymentMethodFromMidtrans,
-          );
-        } else {
-          await this.prisma.webOrder.update({
-            where: { orderNumber: actualOrderNumber },
+      if (
+        attempt.midtransTransactionId &&
+        transactionId &&
+        attempt.midtransTransactionId !== transactionId
+      ) {
+        throw new Error("Midtrans transaction ID tidak sesuai");
+      }
+
+      const isPaid =
+        transactionStatus === "settlement" ||
+        (transactionStatus === "capture" &&
+          (fraudStatus === "accept" || !fraudStatus));
+
+      if (isPaid) {
+        if (attempt.status === "PAID") {
+          return { success: true, alreadyProcessed: true };
+        }
+
+        if (attempt.webOrder.status === "PAID") {
+          await this.prisma.webPaymentAttempt.updateMany({
+            where: {
+              id: attempt.id,
+              status: { not: "PAID" },
+            },
             data: {
-              status: newStatus,
-              paymentMethod: paymentMethodFromMidtrans,
+              status: "PAID",
+              paymentType,
+              midtransTransactionId: transactionId,
+              paidAt: new Date(),
             },
           });
+
+          console.error(
+            `[MIDTRANS DUPLICATE PAYMENT] ${midtransOrderId}: ` +
+              "Order sudah lunas dari percobaan pembayaran lain. " +
+              "Perlu pemeriksaan dan refund jika benar terjadi pembayaran ganda.",
+          );
+
+          return {
+            success: true,
+            duplicatePayment: true,
+          };
         }
+
+        if (attempt.webOrder.status !== "PENDING_PAYMENT") {
+          throw new Error(
+            `WebOrder ${attempt.webOrder.orderNumber} ` +
+              `berstatus ${attempt.webOrder.status}`,
+          );
+        }
+
+        await this.processPaidWebOrder(
+          attempt.webOrder.orderNumber,
+          paymentType,
+          attempt.id,
+          transactionId,
+        );
+
+        return { success: true };
       }
+
+      if (attempt.status === "PAID") {
+        return { success: true, alreadyProcessed: true };
+      }
+
+      if (transactionStatus === "pending") {
+        await this.prisma.webPaymentAttempt.updateMany({
+          where: {
+            id: attempt.id,
+            status: "CREATING",
+          },
+          data: {
+            status: "PENDING",
+            paymentType,
+            midtransTransactionId: transactionId,
+          },
+        });
+
+        return { success: true };
+      }
+
+      const statusMap = {
+        expire: "EXPIRED",
+        cancel: "CANCELLED",
+        deny: "FAILED",
+        failure: "FAILED",
+      } as const;
+
+      const nextStatus = statusMap[transactionStatus as keyof typeof statusMap];
+
+      if (nextStatus) {
+        await this.prisma.webPaymentAttempt.updateMany({
+          where: {
+            id: attempt.id,
+            status: { in: ["CREATING", "PENDING"] },
+          },
+          data: {
+            status: nextStatus,
+            paymentType,
+            midtransTransactionId: transactionId,
+          },
+        });
+
+        return { success: true };
+      }
+
+      console.log(`[MIDTRANS] Status ${transactionStatus} belum diproses`);
 
       return { success: true };
     } catch (error) {
-      console.error("🔥 Gagal memproses Webhook Midtrans:", error);
-      throw new Error("Gagal memproses notifikasi");
+      console.error("[MIDTRANS WEBHOOK ERROR]", error);
+      throw error;
     }
   }
 }
