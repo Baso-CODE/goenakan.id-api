@@ -825,6 +825,31 @@ export class WebOrderService {
   }
 
   async createPayment(orderId: string) {
+    const publicWebUrl = process.env.PUBLIC_WEB_URL?.trim();
+
+    if (!publicWebUrl) {
+      throw new ApiError("PUBLIC_WEB_URL belum dikonfigurasi", 500);
+    }
+
+    let finishUrl: string;
+
+    try {
+      const origin = new URL(publicWebUrl);
+      if (
+        origin.protocol !== "https:" &&
+        process.env.NODE_ENV === "production"
+      ) {
+        throw new Error("PUBLIC_WEB_URL harus HTTPS");
+      }
+
+      finishUrl = new URL(
+        `/id/order-status?id=${encodeURIComponent(orderId)}`,
+        origin.origin,
+      ).toString();
+    } catch {
+      throw new ApiError("Konfigurasi PUBLIC_WEB_URL tidak valid", 500);
+    }
+
     const prepared = await this.prisma.$transaction(
       async (tx) => {
         const order = await tx.webOrder.findUnique({
@@ -838,9 +863,11 @@ export class WebOrderService {
         });
 
         if (!order) throw new ApiError("Order tidak ditemukan", 404);
+
         if (order.status !== "PENDING_PAYMENT") {
           throw new ApiError("Order tidak membutuhkan pembayaran", 400);
         }
+
         if (!order.items.length) {
           throw new ApiError("Order tidak memiliki produk", 400);
         }
@@ -864,9 +891,9 @@ export class WebOrderService {
         }
 
         if (latest?.status === "PENDING") {
-          if (!latest.redirectUrl) {
+          if (!latest.redirectUrl && !latest.snapToken) {
             throw new ApiError(
-              "URL pembayaran belum tersedia. Hubungi admin.",
+              "Sesi pembayaran belum tersedia. Hubungi admin.",
               409,
             );
           }
@@ -874,11 +901,13 @@ export class WebOrderService {
           return {
             reused: true as const,
             redirect_url: latest.redirectUrl,
+            token: latest.snapToken,
             attemptId: latest.id,
           };
         }
 
         const amount = Math.round(Number(order.totalAmount));
+
         if (!Number.isSafeInteger(amount) || amount <= 0) {
           throw new ApiError("Nominal pembayaran tidak valid", 400);
         }
@@ -948,6 +977,9 @@ export class WebOrderService {
               email: order.guestEmail || undefined,
               phone: order.guestPhone || undefined,
             },
+            callbacks: {
+              finish: finishUrl,
+            },
           },
         };
       },
@@ -959,6 +991,7 @@ export class WebOrderService {
 
     if (prepared.reused) {
       return {
+        token: prepared.token,
         redirect_url: prepared.redirect_url,
         reused: true,
       };
@@ -994,7 +1027,9 @@ export class WebOrderService {
           id: orderId,
           status: "PENDING_PAYMENT",
         },
-        data: { paymentUrl: transaction.redirect_url },
+        data: {
+          paymentUrl: transaction.redirect_url,
+        },
       });
 
       return {
@@ -1009,6 +1044,7 @@ export class WebOrderService {
         select: {
           status: true,
           redirectUrl: true,
+          snapToken: true,
           midtransOrderId: true,
         },
       });
@@ -1020,8 +1056,12 @@ export class WebOrderService {
         );
       }
 
-      if (currentAttempt?.status === "PENDING" && currentAttempt.redirectUrl) {
+      if (
+        currentAttempt?.status === "PENDING" &&
+        (currentAttempt.redirectUrl || currentAttempt.snapToken)
+      ) {
         return {
+          token: currentAttempt.snapToken,
           redirect_url: currentAttempt.redirectUrl,
           reused: true,
         };
