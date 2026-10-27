@@ -19,7 +19,9 @@ export class ContactController {
       res.status(201).json({
         success: true,
         message: "Pesan berhasil dikirim",
-        data: result,
+        data: {
+          id: result.id,
+        },
       });
     } catch (error) {
       next(error); // Lempar error ke error handler global
