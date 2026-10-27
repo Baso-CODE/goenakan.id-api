@@ -2201,6 +2201,7 @@ model WebOrder {
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   paymentAttempts WebPaymentAttempt[]
+  attribution     Json?
 
   @@map("web_orders")
 }
@@ -2445,15 +2446,16 @@ model Portfolio {
 }
 
 model ContactMessage {
-  id        Int      @id @default(autoincrement())
-  name      String   @db.VarChar(255)
-  email     String   @db.VarChar(255)
-  phone     String   @db.VarChar(50)
-  interest  String?  @db.VarChar(100)
-  message   String   @db.Text
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(255)
+  email       String   @db.VarChar(255)
+  phone       String   @db.VarChar(50)
+  interest    String?  @db.VarChar(100)
+  message     String   @db.Text
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  attribution Json?
 
   @@map("contact_messages")
 }

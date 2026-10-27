@@ -337,6 +337,9 @@ export class WebOrderService {
         guestEmail: form.email,
         guestPhone: form.phone,
         customerNote: note || null,
+        attribution: data.attribution
+          ? (data.attribution as Prisma.InputJsonValue)
+          : Prisma.DbNull,
 
         shippingAddress: {
           recipient: form.fullName,

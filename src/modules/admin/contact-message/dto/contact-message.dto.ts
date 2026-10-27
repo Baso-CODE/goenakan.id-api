@@ -20,4 +20,7 @@ export class CreateContactMessageDTO {
   @IsString()
   @IsNotEmpty({ message: "Pesan tidak boleh kosong" })
   message!: string;
+
+  @IsOptional()
+  attribution?: unknown;
 }

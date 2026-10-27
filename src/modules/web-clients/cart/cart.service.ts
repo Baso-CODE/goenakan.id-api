@@ -54,6 +54,18 @@ export class CartService {
                 height: true,
                 length: true,
                 priceTiers: { orderBy: { minQuantity: "desc" } },
+                category: {
+                  select: {
+                    id: true,
+                    name_en: true,
+                  },
+                },
+                itemCategory: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
               },
             },
             variant: {
@@ -230,11 +242,25 @@ export class CartService {
 
         return {
           ...item,
+
           product: {
             ...item.product,
             name: productName,
           },
+
           price: finalConvertedPrice,
+
+          // =============================
+          // GTM ECOMMERCE METADATA
+          // =============================
+          variantSku: item.variant?.sku ?? null,
+          itemCategoryEn: item.product.category?.name_en ?? null,
+          itemCategoryName: item.product.itemCategory?.name ?? null,
+          trackingPriceIdr: calculatedPriceIdr,
+
+          // =============================
+          // EXISTING CART DATA
+          // =============================
           materialType: materialTypeName,
           customization: customData,
           selectedAttributes: item.selectedAttributes || null,
@@ -330,10 +356,33 @@ export class CartService {
       items.map(async (item) => {
         const dbProduct = await this.prisma.product.findUnique({
           where: { id: item.productId },
+
           include: {
-            images: { take: 1 },
+            images: {
+              take: 1,
+            },
+
             materialType: true,
-            priceTiers: { orderBy: { minQuantity: "desc" } },
+
+            category: {
+              select: {
+                id: true,
+                name_en: true,
+              },
+            },
+
+            itemCategory: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+
+            priceTiers: {
+              orderBy: {
+                minQuantity: "desc",
+              },
+            },
           },
         });
 
@@ -368,11 +417,14 @@ export class CartService {
             ? filteredProductTiers
             : allProductTiers;
 
+        let variantSku: string | null = null;
         if (item.variantId) {
           const dbVariant = await this.prisma.productVariant.findUnique({
             where: { id: item.variantId },
             include: { priceTiers: { orderBy: { minQuantity: "desc" } } },
           });
+
+          variantSku = dbVariant?.sku ?? null;
 
           if (isAir && dbVariant?.priceAir) {
             calculatedPriceIdr = dbVariant.priceAir.toNumber();
@@ -461,18 +513,41 @@ export class CartService {
 
         return {
           id: item.id,
+
           productId: item.productId,
           variantId: item.variantId,
+
           name: productName,
+
           price: finalConvertedPrice,
           quantity: item.quantity,
+
+          // =============================
+          // GTM ECOMMERCE METADATA
+          // =============================
+          variantSku,
+
+          itemCategoryEn: dbProduct.category?.name_en ?? null,
+
+          itemCategoryName: dbProduct.itemCategory?.name ?? null,
+
+          trackingPriceIdr: calculatedPriceIdr,
+
+          // =============================
+          // EXISTING CART DATA
+          // =============================
           image:
             dbProduct.images?.[0]?.url || "/images/products/demo-products.png",
+
           materialType: materialTypeName,
+
           dimensions:
             dimParts.length > 0 ? `${dimParts.join(" x ")} cm` : undefined,
+
           weight: dbProduct.weight ? `${dbProduct.weight} gram` : undefined,
+
           customization: customData,
+
           selectedAttributes: item.selectedAttributes || null,
         };
       }),

@@ -111,4 +111,7 @@ export class CreateWebOrderDTO {
   @IsNumber()
   @IsOptional()
   shippingCost?: number; // Biaya pengiriman dari client
+
+  @IsOptional()
+  attribution?: unknown;
 }
