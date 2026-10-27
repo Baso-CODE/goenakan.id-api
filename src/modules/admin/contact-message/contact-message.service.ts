@@ -1,5 +1,6 @@
 import { injectable } from "tsyringe";
 
+import { Prisma } from "@prisma/client";
 import { ApiError } from "../../../utils/api-error";
 import { PaginationService } from "../../pagination/pagination.service";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -31,12 +32,15 @@ export class ContactService {
           phone: data.phone,
           interest: data.interest,
           message: data.message,
+          attribution: data.attribution
+            ? (data.attribution as Prisma.InputJsonValue)
+            : Prisma.DbNull,
         },
       });
 
       return newMessage;
     } catch (error) {
-      console.error("🔥 ERROR CREATING CONTACT MESSAGE:", error);
+      console.error("ERROR CREATING CONTACT MESSAGE:", error);
       throw new ApiError("Gagal mengirim pesan, silakan coba lagi.", 500);
     }
   }
