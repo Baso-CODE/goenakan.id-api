@@ -4143,6 +4143,7 @@ export class ProductService {
         include: {
           materialType: true,
           category: true,
+          itemCategory: true,
           seo: true,
           images: {
             orderBy: { sortOrder: "asc" },
@@ -4297,6 +4298,31 @@ export class ProductService {
               ? a.attributePosition - b.attributePosition
               : a.valuePosition - b.valuePosition,
           );
+        // Harga tracking GTM dalam IDR, tanpa konversi mata uang.
+        const variantTiersIdr = v.priceTiers
+          .filter((tier) => !tier.freightMode || tier.freightMode === "SEA")
+          .sort((a, b) => a.minQuantity - b.minQuantity);
+
+        const productTiersIdr = product.priceTiers
+          .filter((tier) => !tier.freightMode || tier.freightMode === "SEA")
+          .sort((a, b) => a.minQuantity - b.minQuantity);
+
+        const productBasePriceIdr = Number(product.basePrice);
+        const variantBasePriceIdr =
+          v.price != null ? Number(v.price) : productBasePriceIdr;
+
+        const variantFirstTierIdr = variantTiersIdr[0];
+        const productFirstTierIdr = productTiersIdr[0];
+
+        const trackingPriceIdr = variantFirstTierIdr
+          ? Number(variantFirstTierIdr.price)
+          : productFirstTierIdr
+            ? Math.max(
+                0,
+                Number(productFirstTierIdr.price) +
+                  (variantBasePriceIdr - productBasePriceIdr),
+              )
+            : variantBasePriceIdr;
         const rawVariantPrice = v.price ? Number(v.price) : null;
         const convertedVariantPrice =
           rawVariantPrice !== null
@@ -4344,6 +4370,7 @@ export class ProductService {
           name: v.variantName || v.sku,
           price: convertedVariantPrice,
           priceAir: convertedVariantPriceAir,
+          trackingPriceIdr,
           sku: v.sku,
           stock: v.stock || 0,
           rawWeight: vWeight,
@@ -4530,6 +4557,10 @@ export class ProductService {
         name: productName,
         sku: product.sku,
         slug: product.slug,
+        categoryId: product.categoryId,
+        itemCategoryEn: product.category?.name_en?.trim() || null,
+        itemCategoryName: product.itemCategory?.name?.trim() || null,
+        trackingBasePriceIdr: Number(product.basePrice),
         basePrice: convertedBasePrice,
         basePriceAir: convertedBasePriceAir,
         availableFreightModes: product.availableFreightModes || "SEA",
