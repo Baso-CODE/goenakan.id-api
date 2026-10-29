@@ -44,6 +44,7 @@ export class CartService {
                 id: true,
                 name: true,
                 name_en: true,
+                sku: true,
                 slug: true,
                 basePrice: true,
                 basePriceAir: true,
@@ -253,6 +254,7 @@ export class CartService {
           // =============================
           // GTM ECOMMERCE METADATA
           // =============================
+          productSku: item.product.sku ?? null,
           variantSku: item.variant?.sku ?? null,
           itemCategoryEn: item.product.category?.name_en ?? null,
           itemCategoryName: item.product.itemCategory?.name ?? null,
@@ -513,24 +515,18 @@ export class CartService {
 
         return {
           id: item.id,
-
           productId: item.productId,
           variantId: item.variantId,
-
           name: productName,
-
           price: finalConvertedPrice,
           quantity: item.quantity,
-
           // =============================
           // GTM ECOMMERCE METADATA
           // =============================
+          productSku: dbProduct.sku ?? null,
           variantSku,
-
           itemCategoryEn: dbProduct.category?.name_en ?? null,
-
           itemCategoryName: dbProduct.itemCategory?.name ?? null,
-
           trackingPriceIdr: calculatedPriceIdr,
 
           // =============================
@@ -538,16 +534,11 @@ export class CartService {
           // =============================
           image:
             dbProduct.images?.[0]?.url || "/images/products/demo-products.png",
-
           materialType: materialTypeName,
-
           dimensions:
             dimParts.length > 0 ? `${dimParts.join(" x ")} cm` : undefined,
-
           weight: dbProduct.weight ? `${dbProduct.weight} gram` : undefined,
-
           customization: customData,
-
           selectedAttributes: item.selectedAttributes || null,
         };
       }),
