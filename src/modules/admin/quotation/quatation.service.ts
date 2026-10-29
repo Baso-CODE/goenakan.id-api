@@ -814,7 +814,18 @@ export class QuotationService {
             tiers: true,
             variant: {
               select: {
+                id: true,
                 variantName: true,
+                images: {
+                  select: {
+                    url: true,
+                    isFeatured: true,
+                  },
+                  orderBy: {
+                    isFeatured: "desc",
+                  },
+                  take: 1,
+                },
                 priceTiers: {
                   select: {
                     id: true,
@@ -843,7 +854,12 @@ export class QuotationService {
                   orderBy: { minQuantity: "asc" },
                 },
                 images: {
-                  select: { url: true },
+                  select: {
+                    url: true,
+                    isFeatured: true,
+                    sortOrder: true,
+                  },
+                  orderBy: [{ isFeatured: "desc" }, { sortOrder: "asc" }],
                   take: 1,
                 },
                 attributeValues: {
@@ -902,12 +918,21 @@ export class QuotationService {
     };
 
     const normalizedItems = quotation.items.map((item) => {
-      let imageUrl: string | null = null;
-      if (item.product?.images?.[0]?.url) {
-        imageUrl = item.product.images[0].url;
-      } else if (item.imageUrl) {
-        imageUrl = item.imageUrl;
-      }
+      const variantImage = item.variant?.images?.[0]?.url;
+      const productImage = item.product?.images?.[0]?.url;
+      const manualImage = item.imageUrl;
+
+      const imageUrl =
+        variantImage?.trim() ||
+        productImage?.trim() ||
+        manualImage?.trim() ||
+        null;
+
+      const productSlug = item.product?.slug?.trim() || null;
+
+      const productUrl = productSlug
+        ? `https://goenakan.id/en/products/${encodeURIComponent(productSlug)}`
+        : null;
 
       const finalDescription =
         item.description || item.product?.description || null;
@@ -1038,6 +1063,7 @@ export class QuotationService {
         ...item,
         product: item.product ? { ...item.product, availableAttributes } : null,
         imageUrl,
+        productUrl,
         description: finalDescription,
         customization: readableCustomization,
         rawAttributes: rawAttrs || {},
