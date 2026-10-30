@@ -289,123 +289,258 @@ export class QuotationService {
     }
 
     // C. PERSIAPKAN DATA ITEMS & HITUNG TOTAL HARGA
+    // SUPPORT PRODUK DATABASE DAN PRODUK MANUAL
     let subTotal = 0;
+
     const itemsToCreate: any[] = [];
+
+    if (!data.items || data.items.length === 0) {
+      throw new ApiError("Quotation harus memiliki minimal satu item.", 400);
+    }
 
     for (let i = 0; i < data.items.length; i++) {
       const item = data.items[i];
       const img = uploadedImages[i];
 
-      //  PERBAIKAN UTAMA KUANTITAS: Pastikan dibaca sebagai angka dengan benar
+      // ==========================================
+      // 1. VALIDASI QUANTITY DAN DISCOUNT
+      // ==========================================
+
       const mainQty =
         item.quantity !== undefined && item.quantity !== null
           ? Number(item.quantity)
           : 1;
 
-      const itemDiscount = item.discount ? Number(item.discount) : 0;
+      const itemDiscount =
+        item.discount !== undefined && item.discount !== null
+          ? Number(item.discount)
+          : 0;
 
-      // 1. Pastikan productId tersedia
-      if (!item.productId) {
-        throw new ApiError(`Product ID diperlukan untuk item ke-${i + 1}`, 400);
-      }
-
-      // 2. Ambil harga dasar produk beserta attributeValues dan priceModifier-nya dari database
-      const productRecord = await this.prisma.product.findUnique({
-        where: { id: item.productId },
-        select: {
-          name: true,
-          basePrice: true,
-          //  PERBAIKAN: Menggunakan 'attributeValues' sesuai skema Prisma kamu
-          attributeValues: {
-            select: {
-              attributeValueId: true,
-              priceModifier: true,
-            },
-          },
-        },
-      });
-
-      if (!productRecord) {
+      if (!Number.isInteger(mainQty) || mainQty <= 0) {
         throw new ApiError(
-          `Produk dengan ID ${item.productId} tidak ditemukan`,
-          404,
+          `Quantity item ke-${i + 1} harus lebih dari 0.`,
+          400,
         );
       }
 
-      // Mulai perhitungan: Unit Price = Base Price
-      let finalUnitPrice = Number(productRecord.basePrice);
-
-      // 3. Tambahkan harga dari atribut yang dipilih (Multi-Select Attributes)
-      if (
-        item.selectedAttributes &&
-        typeof item.selectedAttributes === "object"
-      ) {
-        const allSelectedValIds = Object.values(item.selectedAttributes)
-          .flat()
-          .filter(Boolean) as string[];
-
-        //  PERBAIKAN: Mengambil data dari attributeValues
-        const productAttributes = productRecord.attributeValues as any[];
-
-        if (
-          productAttributes &&
-          productAttributes.length > 0 &&
-          allSelectedValIds.length > 0
-        ) {
-          productAttributes.forEach((attrVal: any) => {
-            if (allSelectedValIds.includes(attrVal.attributeValueId)) {
-              finalUnitPrice += Number(attrVal.priceModifier || 0);
-            }
-          });
-        }
+      if (!Number.isFinite(itemDiscount) || itemDiscount < 0) {
+        throw new ApiError(`Discount item ke-${i + 1} tidak valid.`, 400);
       }
 
-      // 4. Jika ada varian yang dipilih, ambil harga varian dari DB lalu tambahkan
-      if (item.variantId) {
-        const variantRecord = await this.prisma.productVariant.findUnique({
-          where: { id: item.variantId },
-          select: { price: true },
+      // ==========================================
+      // 2. DETEKSI PRODUK DATABASE / MANUAL
+      // ==========================================
+
+      const productId =
+        typeof item.productId === "string" && item.productId.trim() !== ""
+          ? item.productId.trim()
+          : null;
+
+      const variantId =
+        typeof item.variantId === "string" && item.variantId.trim() !== ""
+          ? item.variantId.trim()
+          : null;
+
+      const isManualProduct = productId === null;
+
+      let finalUnitPrice = 0;
+      let finalProductName = "";
+
+      // ==========================================
+      // 3. PRODUK DATABASE
+      // ==========================================
+
+      if (!isManualProduct) {
+        const productRecord = await this.prisma.product.findUnique({
+          where: {
+            id: productId,
+          },
+          select: {
+            name: true,
+            basePrice: true,
+            attributeValues: {
+              select: {
+                attributeValueId: true,
+                priceModifier: true,
+              },
+            },
+          },
         });
 
-        if (variantRecord && variantRecord.price) {
-          finalUnitPrice += Number(variantRecord.price);
+        if (!productRecord) {
+          throw new ApiError(
+            `Produk dengan ID ${productId} tidak ditemukan.`,
+            404,
+          );
+        }
+
+        finalProductName = item.productName?.trim() || productRecord.name;
+
+        // Harga dasar produk
+        finalUnitPrice = Number(productRecord.basePrice);
+
+        // ======================================
+        // ATTRIBUTE PRICE MODIFIER
+        // ======================================
+
+        if (
+          item.selectedAttributes &&
+          typeof item.selectedAttributes === "object"
+        ) {
+          const allSelectedValIds = Object.values(item.selectedAttributes)
+            .flat()
+            .filter(Boolean) as string[];
+
+          if (allSelectedValIds.length > 0) {
+            for (const attribute of productRecord.attributeValues) {
+              if (allSelectedValIds.includes(attribute.attributeValueId)) {
+                finalUnitPrice += Number(attribute.priceModifier || 0);
+              }
+            }
+          }
+        }
+
+        // ======================================
+        // VARIANT PRICE
+        // ======================================
+
+        if (variantId) {
+          const variantRecord = await this.prisma.productVariant.findFirst({
+            where: {
+              id: variantId,
+              productId,
+            },
+            select: {
+              price: true,
+            },
+          });
+
+          if (!variantRecord) {
+            throw new ApiError(
+              `Varian item ke-${i + 1} tidak ditemukan atau bukan milik produk tersebut.`,
+              400,
+            );
+          }
+
+          finalUnitPrice += Number(variantRecord.price || 0);
         }
       }
 
-      //  Hitung total harga per baris menggunakan kuantitas yang benar (Kuantitas * Harga Akhir - Diskon)
+      // ==========================================
+      // 4. PRODUK MANUAL
+      // ==========================================
+      else {
+        finalProductName =
+          typeof item.productName === "string" ? item.productName.trim() : "";
+
+        if (!finalProductName) {
+          throw new ApiError(
+            `Nama produk manual diperlukan untuk item ke-${i + 1}.`,
+            400,
+          );
+        }
+
+        if (variantId) {
+          throw new ApiError(
+            `Produk manual pada item ke-${i + 1} tidak boleh menggunakan variantId.`,
+            400,
+          );
+        }
+
+        // Harga manual dari input admin
+        finalUnitPrice = Number(item.unitPrice ?? 0);
+      }
+
+      // ==========================================
+      // 5. VALIDASI HARGA
+      // ==========================================
+
+      if (!Number.isFinite(finalUnitPrice) || finalUnitPrice < 0) {
+        throw new ApiError(`Harga satuan item ke-${i + 1} tidak valid.`, 400);
+      }
+
+      // ==========================================
+      // 6. HITUNG TOTAL ITEM
+      // ==========================================
+
       const lineTotal = mainQty * finalUnitPrice - itemDiscount;
-      subTotal += lineTotal < 0 ? 0 : lineTotal;
 
-      // Siapkan Tiers
+      subTotal += Math.max(0, lineTotal);
+
+      // ==========================================
+      // 7. SIAPKAN TIERS
+      // ==========================================
+
       const tiersData = item.tiers && item.tiers.length > 0 ? item.tiers : [];
-      const tiersToCreate = tiersData.map((tier: any) => ({
-        minQuantity: tier.minQuantity ? Number(tier.minQuantity) : 1,
-        maxQuantity: tier.maxQuantity ? Number(tier.maxQuantity) : null,
-        quantityLabel: tier.quantityLabel || "Pcs",
-        unitPrice: tier.unitPrice ? Number(tier.unitPrice) : 0,
-        totalPrice:
-          (tier.minQuantity ? Number(tier.minQuantity) : 1) *
-          (tier.unitPrice ? Number(tier.unitPrice) : 0),
-      }));
 
-      // Masukkan hasil data dengan `quantity: mainQty` yang akurat
+      const tiersToCreate = tiersData.map((tier: any, tierIndex: number) => {
+        const minQuantity = Number(tier.minQuantity ?? 1);
+        const maxQuantity =
+          tier.maxQuantity !== undefined &&
+          tier.maxQuantity !== null &&
+          tier.maxQuantity !== ""
+            ? Number(tier.maxQuantity)
+            : null;
+
+        const tierUnitPrice = Number(tier.unitPrice ?? 0);
+
+        if (!Number.isInteger(minQuantity) || minQuantity <= 0) {
+          throw new ApiError(
+            `Minimum quantity tier ke-${tierIndex + 1} pada item ke-${i + 1} tidak valid.`,
+            400,
+          );
+        }
+
+        if (
+          maxQuantity !== null &&
+          (!Number.isInteger(maxQuantity) || maxQuantity < minQuantity)
+        ) {
+          throw new ApiError(
+            `Maximum quantity tier ke-${tierIndex + 1} pada item ke-${i + 1} tidak valid.`,
+            400,
+          );
+        }
+
+        if (!Number.isFinite(tierUnitPrice) || tierUnitPrice < 0) {
+          throw new ApiError(
+            `Harga tier ke-${tierIndex + 1} pada item ke-${i + 1} tidak valid.`,
+            400,
+          );
+        }
+
+        return {
+          minQuantity,
+          maxQuantity,
+          quantityLabel: tier.quantityLabel || "Pcs",
+          unitPrice: tierUnitPrice,
+          totalPrice: minQuantity * tierUnitPrice,
+        };
+      });
+
+      // ==========================================
+      // 8. SIMPAN DATA ITEM
+      // ==========================================
+
       itemsToCreate.push({
-        productId: item.productId,
-        variantId: item.variantId || null,
-        productName: item.productName || productRecord.name,
-        description: item.description,
-        quantity: mainQty, // 👈 Terbaca sesuai inputan user (misal: 10)
-        unitPrice: finalUnitPrice, // 👈 Harga satuan sudah termasuk tambahan atribut/varian
+        // Produk database memiliki ID.
+        // Produk manual disimpan dengan null.
+        productId,
+        variantId: isManualProduct ? null : variantId,
+        productName: finalProductName,
+        description: item.description || null,
+        quantity: mainQty,
+        unitPrice: finalUnitPrice,
         selectedAttributes: item.selectedAttributes ?? Prisma.JsonNull,
-        discount: itemDiscount,
         customization: item.customization ?? Prisma.JsonNull,
-        remarks: item.remarks,
+        discount: itemDiscount,
+        remarks: item.remarks || null,
         imageUrl: img?.url ?? null,
         imagePublicId: img?.publicId ?? null,
-        tiers: { create: tiersToCreate },
+        tiers: {
+          create: tiersToCreate,
+        },
       });
     }
-
     // D. BUKA TRANSAKSI UNTUK MENYIMPAN KE DATABASE
     const newQuotation = await this.prisma.$transaction(async (tx) => {
       const quotationNumber = await this.generateQuotationNumber(
