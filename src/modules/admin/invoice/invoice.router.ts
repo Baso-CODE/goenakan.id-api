@@ -50,6 +50,9 @@ export class InvoiceRouter {
 
     // 5. Get Detail Invoice by ID -> Otomatis butuh 'read'
     this.router.get("/:id", this.invoiceController.getDetailInvoiceById);
+
+    // 6. Delete Invoice -> Otomatis membutuhkan permission 'delete'
+    this.router.delete("/:id", this.invoiceController.deleteInvoice);
   };
 
   getRouter(): Router {
