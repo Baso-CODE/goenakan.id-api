@@ -1,6 +1,7 @@
 // src/modules/invoice/invoice.controller.ts
 import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
+import { ApiError } from "../../../utils/api-error";
 import { CreateInvoiceDTO } from "./dto/createInvoice.dto";
 import { PayInvoiceDTO } from "./dto/updateInvoice.dto";
 import { InvoiceService } from "./invoice.service";
@@ -99,6 +100,26 @@ export class InvoiceController {
       );
 
       res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  deleteInvoice = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = Number(req.params.id);
+
+      if (!Number.isSafeInteger(id) || id <= 0) {
+        throw new ApiError("ID invoice tidak valid", 400);
+      }
+
+      const result = await this.invoiceService.deleteInvoice(id);
+
+      res.status(200).json({
+        success: true,
+        message: "Invoice berhasil dihapus",
+        data: result,
+      });
     } catch (error) {
       next(error);
     }
