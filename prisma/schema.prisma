@@ -205,37 +205,38 @@ enum SampleStatus {
 // ===============================================
 
 model User {
-  id                  String               @id @default(uuid())
-  name                String?
-  email               String               @unique
-  emailVerified       DateTime?
-  password            String?
-  image               String?
-  phone               String?              @unique
-  verificationToken   String?              @unique
-  tokenExpiresAt      DateTime?
-  roleId              String
-  createdAt           DateTime             @default(now())
-  articles            Article[]
-  invoices            Invoice[]
-  sessions            Session[]
-  financeTransactions FinanceTransaction[]
-  customerProfile     CustomerProfile?
-  accounts            Account[]
-  client              Client?
-  createdOrders       Order[]              @relation("OrderCreatedBy")
-  updatedOrders       Order[]              @relation("OrderUpdatedBy")
-  createdPOs          PurchaseOrder[]      @relation("POCreatedBy")
-  updatedPOs          PurchaseOrder[]      @relation("POUpdatedBy")
-  approvedPOs         PurchaseOrder[]      @relation("POApprovedBy")
-  orders              Order[]
-  role                Role                 @relation(fields: [roleId], references: [id])
-  createdQuotations   Quotation[]          @relation("QuotationCreatedBy")
-  updatedQuotations   Quotation[]          @relation("QuotationUpdatedBy")
-  approvedQuotations  Quotation[]          @relation("QuotationApprovedBy")
-  createdReplacements ReplacementOrder[]   @relation("ReplacementCreatedBy")
-  updatedReplacements ReplacementOrder[]   @relation("ReplacementUpdatedBy")
-  approvedCashflows   CashflowSummary[]    @relation("CashflowApprovedBy")
+  id                    String               @id @default(uuid())
+  name                  String?
+  email                 String               @unique
+  emailVerified         DateTime?
+  password              String?
+  image                 String?
+  phone                 String?              @unique
+  verificationToken     String?              @unique
+  tokenExpiresAt        DateTime?
+  roleId                String
+  createdAt             DateTime             @default(now())
+  articles              Article[]
+  invoices              Invoice[]
+  sessions              Session[]
+  financeTransactions   FinanceTransaction[]
+  customerProfile       CustomerProfile?
+  accounts              Account[]
+  client                Client?
+  createdOrders         Order[]              @relation("OrderCreatedBy")
+  updatedOrders         Order[]              @relation("OrderUpdatedBy")
+  createdPOs            PurchaseOrder[]      @relation("POCreatedBy")
+  updatedPOs            PurchaseOrder[]      @relation("POUpdatedBy")
+  approvedPOs           PurchaseOrder[]      @relation("POApprovedBy")
+  orders                Order[]
+  role                  Role                 @relation(fields: [roleId], references: [id])
+  createdQuotations     Quotation[]          @relation("QuotationCreatedBy")
+  updatedQuotations     Quotation[]          @relation("QuotationUpdatedBy")
+  approvedQuotations    Quotation[]          @relation("QuotationApprovedBy")
+  createdReplacements   ReplacementOrder[]   @relation("ReplacementCreatedBy")
+  updatedReplacements   ReplacementOrder[]   @relation("ReplacementUpdatedBy")
+  approvedCashflows     CashflowSummary[]    @relation("CashflowApprovedBy")
+  matchedWhatsappClicks WhatsappClick[]      @relation("WhatsappClickMatchedBy")
 
   @@map("users")
 }
@@ -1255,6 +1256,7 @@ model Order {
   whatsappMessages     WhatsappMessage[]
   replacementOrders    ReplacementOrder[]     @relation("OrderToReplacement")
   clientPurchaseOrder  ClientPurchaseOrder?
+  whatsappClicks       WhatsappClick[]
 
   @@map("orders")
 }
@@ -1751,6 +1753,7 @@ model Quotation {
   items            QuotationItem[]
   followUps        QuotationFollowUp[]
   whatsappMessages WhatsappMessage[]
+  whatsappClicks   WhatsappClick[]
 
   @@map("quotations")
 }
@@ -2178,30 +2181,31 @@ model CustomerAddress {
 }
 
 model WebOrder {
-  id              String              @id @default(uuid())
-  orderNumber     String              @unique
-  profileId       String?
-  profile         CustomerProfile?    @relation(fields: [profileId], references: [id])
-  guestName       String?
-  guestEmail      String?
-  guestPhone      String?
-  shippingAddress Json
-  subtotal        Decimal
-  shippingCost    Decimal?
-  customerNote    String?             @db.Text
-  taxAmount       Decimal?            @default(0)
-  totalAmount     Decimal
-  currencyCode    String?             @default("IDR")
-  status          WebOrderStatus      @default(PENDING_PAYMENT)
-  canceledReason  String?             @db.Text
-  paymentMethod   String?
-  paymentUrl      String?
-  items           WebOrderItem[]
-  order           Order?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  paymentAttempts WebPaymentAttempt[]
-  attribution     Json?
+  id                   String              @id @default(uuid())
+  orderNumber          String              @unique
+  profileId            String?
+  profile              CustomerProfile?    @relation(fields: [profileId], references: [id])
+  guestName            String?
+  guestEmail           String?
+  guestPhone           String?
+  shippingAddress      Json
+  subtotal             Decimal
+  shippingCost         Decimal?
+  customerNote         String?             @db.Text
+  taxAmount            Decimal?            @default(0)
+  totalAmount          Decimal
+  currencyCode         String?             @default("IDR")
+  status               WebOrderStatus      @default(PENDING_PAYMENT)
+  canceledReason       String?             @db.Text
+  paymentMethod        String?
+  paymentUrl           String?
+  items                WebOrderItem[]
+  order                Order?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  paymentAttempts      WebPaymentAttempt[]
+  attribution          Json?
+  guestAccessTokenHash String?             @unique @db.VarChar(64)
 
   @@map("web_orders")
 }
@@ -2446,16 +2450,17 @@ model Portfolio {
 }
 
 model ContactMessage {
-  id          Int      @id @default(autoincrement())
-  name        String   @db.VarChar(255)
-  email       String   @db.VarChar(255)
-  phone       String   @db.VarChar(50)
-  interest    String?  @db.VarChar(100)
-  message     String   @db.Text
-  isRead      Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  attribution Json?
+  id             Int             @id @default(autoincrement())
+  name           String          @db.VarChar(255)
+  email          String          @db.VarChar(255)
+  phone          String          @db.VarChar(50)
+  interest       String?         @db.VarChar(100)
+  message        String          @db.Text
+  isRead         Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  attribution    Json?
+  whatsappClicks WhatsappClick[]
 
   @@map("contact_messages")
 }
@@ -2529,4 +2534,46 @@ model WhatsappMessage {
   @@index([status])
   @@index([type])
   @@map("whatsapp_messages")
+}
+
+// ==========================================
+// WHATSAPP ATTRIBUTION TRACKING
+// GTM CONTRACT V1.5
+// ==========================================
+
+model WhatsappClick {
+  id   String @id @default(uuid())
+  code String @unique @db.VarChar(16)
+
+  // Sumber klik
+  pagePath String @db.VarChar(1000)
+  ctaName  String @db.VarChar(100)
+
+  // First touch, last touch, GA Client ID, GA Session ID
+  attribution Json
+
+  // Relasi lead dari ContactMessage
+  leadId Int?
+  lead   ContactMessage? @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  // Relasi order
+  orderId String?
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  quotationId String?
+  quotation   Quotation? @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+
+  // Admin yang melakukan pencocokan
+  matchedById String?
+  matchedBy   User?   @relation("WhatsappClickMatchedBy", fields: [matchedById], references: [id], onDelete: SetNull)
+
+  matchedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+  @@index([orderId])
+  @@index([matchedById])
+  @@index([createdAt])
+  @@map("whatsapp_clicks")
 }

@@ -1,6 +1,8 @@
+import { Prisma } from "@prisma/client";
 import { injectable } from "tsyringe";
 import { ApiError } from "../../../utils/api-error";
 import { PrismaService } from "../../prisma/prisma.service";
+import { CreateWhatsappClickDTO } from "./dto/whatsapp-click.dto";
 
 @injectable()
 export class TrackingService {
@@ -240,5 +242,206 @@ export class TrackingService {
         })),
       })),
     };
+  }
+
+  public async createWhatsappClick(
+    data: CreateWhatsappClickDTO,
+  ): Promise<void> {
+    // 1. Ambil hanya field attribution yang disetujui.
+    // Jangan simpan payload mentah langsung ke database.
+    const allowedParams = [
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+      "utm_content",
+      "utm_term",
+      "gclid",
+      "gbraid",
+      "wbraid",
+      "gad_source",
+      "gad_campaignid",
+      "fbclid",
+      "ttclid",
+    ] as const;
+
+    const normalizeVisit = (visit: typeof data.attribution.first) => {
+      if (!visit) return null;
+
+      const params: Record<string, string> = {};
+
+      for (const key of allowedParams) {
+        const value = visit.params?.[key];
+
+        if (typeof value === "string" && value.trim()) {
+          params[key] = value.slice(0, 500);
+        }
+      }
+
+      let referrer: string | null = null;
+
+      if (visit.referrer) {
+        try {
+          const parsed = new URL(visit.referrer);
+
+          if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+            referrer = parsed.origin;
+          }
+        } catch {
+          throw new ApiError("Referrer tidak valid.", 400);
+        }
+      }
+
+      return {
+        landing_page: visit.landing_page,
+        timestamp: visit.timestamp,
+        params,
+        referrer,
+      };
+    };
+
+    const attribution = {
+      first: normalizeVisit(data.attribution.first),
+      last: normalizeVisit(data.attribution.last),
+
+      ga_client_id: data.attribution.ga_client_id ?? null,
+      ga_session_id: data.attribution.ga_session_id ?? null,
+    };
+
+    // 2. Pastikan tidak menerima query string pada page_path.
+    if (
+      !data.page_path.startsWith("/") ||
+      data.page_path.startsWith("//") ||
+      data.page_path.includes("?") ||
+      data.page_path.includes("#")
+    ) {
+      throw new ApiError(
+        "page_path harus berupa path tanpa query atau fragment.",
+        400,
+      );
+    }
+
+    // 3. Simpan kode unik.
+    try {
+      await this.prisma.whatsappClick.create({
+        data: {
+          code: data.code,
+          pagePath: data.page_path,
+          ctaName: data.cta_name,
+          attribution: attribution as Prisma.InputJsonValue,
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        throw new ApiError(
+          "Kode WhatsApp sudah digunakan. Silakan buat kode baru.",
+          409,
+        );
+      }
+
+      throw error;
+    }
+  }
+
+  public async matchWhatsappClick(
+    code: string,
+    target:
+      | { type: "lead"; id: number }
+      | { type: "quotation"; id: string }
+      | { type: "order"; id: string },
+    adminId: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Cari kode
+      const click = await tx.whatsappClick.findUnique({
+        where: { code },
+      });
+
+      if (!click) {
+        throw new ApiError("Kode WhatsApp tidak ditemukan.", 404);
+      }
+
+      // 2. Pastikan target tersedia
+      if (target.type === "lead") {
+        const lead = await tx.contactMessage.findUnique({
+          where: { id: target.id },
+          select: { id: true },
+        });
+
+        if (!lead) {
+          throw new ApiError("Lead tidak ditemukan.", 404);
+        }
+      }
+
+      if (target.type === "quotation") {
+        const quotation = await tx.quotation.findUnique({
+          where: { id: target.id },
+          select: { id: true },
+        });
+
+        if (!quotation) {
+          throw new ApiError("Quotation tidak ditemukan.", 404);
+        }
+      }
+
+      if (target.type === "order") {
+        const order = await tx.order.findUnique({
+          where: { id: target.id },
+          select: { id: true },
+        });
+
+        if (!order) {
+          throw new ApiError("Order tidak ditemukan.", 404);
+        }
+      }
+
+      // 3. Cegah pencocokan ke target berbeda.
+      // Gunakan updateMany bersyarat agar dua request
+      // bersamaan tidak bisa mengambil kode yang sama.
+      const updateData =
+        target.type === "lead"
+          ? { leadId: target.id }
+          : target.type === "quotation"
+            ? { quotationId: target.id }
+            : { orderId: target.id };
+
+      const result = await tx.whatsappClick.updateMany({
+        where: {
+          id: click.id,
+          leadId: null,
+          quotationId: null,
+          orderId: null,
+          matchedAt: null,
+        },
+        data: {
+          ...updateData,
+          matchedAt: new Date(),
+          matchedById: adminId,
+        },
+      });
+
+      if (result.count === 0) {
+        throw new ApiError("Kode WhatsApp sudah pernah dicocokkan.", 409);
+      }
+
+      // 4. Ambil hasil
+      return tx.whatsappClick.findUnique({
+        where: { id: click.id },
+        select: {
+          id: true,
+          code: true,
+          pagePath: true,
+          ctaName: true,
+          leadId: true,
+          quotationId: true,
+          orderId: true,
+          matchedAt: true,
+          matchedById: true,
+          createdAt: true,
+        },
+      });
+    });
   }
 }
