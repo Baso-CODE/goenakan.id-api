@@ -17,6 +17,11 @@ import { CounterService } from "../../../utils/counter.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { EmailService } from "../auth-client/email.service";
 import { CreateWebOrderDTO } from "./dto/web-order.dto";
+import {
+  generateGuestOrderToken,
+  hashGuestOrderToken,
+  verifyGuestOrderToken,
+} from "./guest-order-access";
 
 @injectable()
 export class WebOrderService {
@@ -50,7 +55,7 @@ export class WebOrderService {
   async getMyOrders(profileId: string, query: any) {
     const { status } = query;
 
-    return this.prisma.webOrder.findMany({
+    const orders = await this.prisma.webOrder.findMany({
       where: {
         profileId: profileId,
         ...(status && { status: status as WebOrderStatus }),
@@ -70,6 +75,9 @@ export class WebOrderService {
         createdAt: "desc",
       },
     });
+    return orders.map(
+      ({ guestAccessTokenHash: _guestAccessTokenHash, ...order }) => order,
+    );
   }
 
   async getOrderDetail(profileId: string | null, orderId: string) {
@@ -117,7 +125,9 @@ export class WebOrderService {
       throw new ApiError("Anda tidak memiliki akses ke pesanan ini", 403);
     }
 
-    return order;
+    const { guestAccessTokenHash: _guestAccessTokenHash, ...safeOrder } = order;
+
+    return safeOrder;
   }
 
   async cancelOrder(profileId: string, orderId: string, reason: string) {
@@ -329,10 +339,15 @@ export class WebOrderService {
       return await this.generateOrderNumber(tx, "SALES");
     });
 
+    const guestAccessToken = profileId ? null : generateGuestOrderToken();
+
     const createdWebOrder = await this.prisma.webOrder.create({
       data: {
         orderNumber: orderNumber,
         profileId: profileId,
+        guestAccessTokenHash: guestAccessToken
+          ? hashGuestOrderToken(guestAccessToken)
+          : null,
         guestName: form.fullName,
         guestEmail: form.email,
         guestPhone: form.phone,
@@ -367,7 +382,13 @@ export class WebOrderService {
       },
     });
 
-    return createdWebOrder;
+    const { guestAccessTokenHash: _guestAccessTokenHash, ...safeWebOrder } =
+      createdWebOrder;
+
+    return {
+      ...safeWebOrder,
+      guestAccessToken,
+    };
   }
 
   private mapMidtransPaymentMethod(paymentType: string): PaymentMethod | null {
@@ -1377,6 +1398,50 @@ export class WebOrderService {
     } catch (error) {
       console.error("[MIDTRANS WEBHOOK ERROR]", error);
       throw error;
+    }
+  }
+
+  public async assertOrderAccess(
+    orderId: string,
+    profileId: string | null,
+    guestToken?: string,
+  ): Promise<void> {
+    const order = await this.prisma.webOrder.findUnique({
+      where: {
+        id: orderId,
+      },
+      select: {
+        id: true,
+        profileId: true,
+        guestAccessTokenHash: true,
+      },
+    });
+
+    if (!order) {
+      throw new ApiError("Pesanan tidak ditemukan", 404);
+    }
+
+    // ==============================
+    // ORDER MILIK USER LOGIN
+    // ==============================
+    if (order.profileId) {
+      if (profileId !== order.profileId) {
+        throw new ApiError("Anda tidak memiliki akses ke pesanan ini", 403);
+      }
+
+      return;
+    }
+
+    // ==============================
+    // ORDER GUEST
+    // ==============================
+    const isValid = verifyGuestOrderToken(
+      guestToken,
+      order.guestAccessTokenHash,
+    );
+
+    if (!isValid) {
+      throw new ApiError("Token akses pesanan tidak valid", 403);
     }
   }
 }
