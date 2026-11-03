@@ -6,6 +6,7 @@ import { injectable } from "tsyringe";
 import { ApiError } from "../../../utils/api-error";
 import { PaginationService } from "../../pagination/pagination.service";
 import { PrismaService } from "../../prisma/prisma.service";
+import { buildGA4Purchase } from "../../tracking-outbox/ga4-purchase.helper";
 import { OrderService } from "../order/order.service";
 import {
   CreateInvoiceDTO,
@@ -314,49 +315,187 @@ export class InvoiceService {
   }
 
   async payInvoice(invoiceId: number, data: PayInvoiceDTO) {
+    // ==========================================
+    // 1. VALIDASI TANGGAL PEMBAYARAN
+    // ==========================================
     const paidDate = new Date(data.paymentDate);
-    if (Number.isNaN(paidDate.getTime()))
+
+    if (Number.isNaN(paidDate.getTime())) {
       throw new ApiError("Tanggal pembayaran tidak valid", 400);
+    }
 
-    const invoice = await this.prisma.invoice.findUnique({
-      where: { id: invoiceId },
-      select: { id: true, status: true, orderId: true },
-    });
-    if (!invoice) throw new ApiError("Invoice tidak ditemukan", 404);
-    if (invoice.status === InvoiceStatus.PAID)
-      throw new ApiError("Invoice sudah dibayar", 400);
-    if (invoice.status === InvoiceStatus.CANCELLED)
-      throw new ApiError("Invoice dibatalkan", 400);
-    if (invoice.status === InvoiceStatus.DRAFT)
-      throw new ApiError("Invoice draft tidak bisa dilunasi", 400);
+    // ==========================================
+    // 2. TRANSAKSI ATOMIK
+    // Invoice PAID + Tracking Outbox
+    // ==========================================
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        const invoice = await tx.invoice.findUnique({
+          where: {
+            id: invoiceId,
+          },
+          include: {
+            order: {
+              include: {
+                purchaseChannel: {
+                  select: {
+                    slug: true,
+                  },
+                },
+                webOrder: {
+                  select: {
+                    id: true,
+                    attribution: true,
+                  },
+                },
+              },
+            },
+            items: {
+              include: {
+                product: {
+                  select: {
+                    name: true,
+                  },
+                },
+              },
+            },
+          },
+        });
 
-    const updated = await this.prisma.invoice.updateMany({
-      where: {
-        id: invoiceId,
-        status: { in: [InvoiceStatus.UNPAID, InvoiceStatus.OVERDUE] },
+        if (!invoice) {
+          throw new ApiError("Invoice tidak ditemukan", 404);
+        }
+
+        // ==========================================
+        // 3. VALIDASI STATUS INVOICE
+        // ==========================================
+        if (invoice.status === InvoiceStatus.PAID) {
+          throw new ApiError("Invoice sudah dibayar", 400);
+        }
+
+        if (invoice.status === InvoiceStatus.CANCELLED) {
+          throw new ApiError("Invoice dibatalkan", 400);
+        }
+
+        if (invoice.status === InvoiceStatus.DRAFT) {
+          throw new ApiError("Invoice draft tidak bisa dilunasi", 400);
+        }
+
+        if (
+          invoice.status !== InvoiceStatus.UNPAID &&
+          invoice.status !== InvoiceStatus.OVERDUE
+        ) {
+          throw new ApiError("Status invoice tidak dapat dilunasi", 400);
+        }
+
+        // ==========================================
+        // 4. UPDATE INVOICE MENJADI PAID
+        // ==========================================
+        const updated = await tx.invoice.updateMany({
+          where: {
+            id: invoiceId,
+            status: {
+              in: [InvoiceStatus.UNPAID, InvoiceStatus.OVERDUE],
+            },
+          },
+          data: {
+            status: InvoiceStatus.PAID,
+            method: data.method,
+            paidAt: paidDate,
+            paymentDate: paidDate,
+          },
+        });
+
+        if (updated.count !== 1) {
+          throw new ApiError(
+            "Status invoice telah berubah. Muat ulang halaman.",
+            409,
+          );
+        }
+
+        // ==========================================
+        // 5. PERIKSA SUMBER TRANSAKSI WEBSITE
+        // ==========================================
+        const order = invoice.order;
+
+        const isWebsiteOrder =
+          order?.purchaseChannel?.slug === "website" &&
+          Boolean(order.webOrderId) &&
+          Boolean(order.webOrder);
+
+        if (isWebsiteOrder && order?.webOrder) {
+          // ========================================
+          // 6. BANGUN GA4 PURCHASE
+          // ========================================
+          const purchasePayload = buildGA4Purchase({
+            invoiceId: invoice.id,
+            orderNumber: order.orderNumber || `invoice-${invoice.id}`,
+            amount: invoice.totalAmount,
+            currency: order.currencyCode,
+            attribution: order.webOrder.attribution,
+            paidAt: paidDate,
+            items: invoice.items.map((item) => ({
+              productId: item.productId,
+              variantId: item.variantId,
+              productName: item.product.name,
+              quantity: item.quantity,
+              price: item.price,
+            })),
+          });
+
+          // ========================================
+          // 7. SIMPAN GA4 TRACKING OUTBOX
+          // ========================================
+          if (purchasePayload) {
+            await tx.trackingOutbox.createMany({
+              data: [
+                {
+                  eventKey: `ga4:purchase:invoice:${invoice.id}`,
+                  eventName: "purchase",
+                  destination: "GA4",
+                  payload: purchasePayload as Prisma.InputJsonValue,
+                  status: "PENDING",
+                  retryCount: 0,
+                  maxRetries: 5,
+                  nextRetryAt: new Date(),
+                },
+              ],
+              skipDuplicates: true,
+            });
+          } else {
+            console.warn(
+              `[GA4 PURCHASE SKIPPED] Invoice ${invoice.id}: ` +
+                "Attribution atau parameter purchase tidak valid.",
+            );
+          }
+        }
+
+        // ==========================================
+        // 8. AMBIL HASIL INVOICE TERBARU
+        // ==========================================
+        return tx.invoice.findUniqueOrThrow({
+          where: {
+            id: invoiceId,
+          },
+        });
       },
-      data: {
-        status: InvoiceStatus.PAID,
-        method: data.method,
-        paidAt: paidDate,
-        paymentDate: paidDate,
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        timeout: 20000,
       },
-    });
-    if (updated.count !== 1)
-      throw new ApiError(
-        "Status invoice telah berubah. Muat ulang halaman.",
-        409,
-      );
-    const result = await this.prisma.invoice.findUniqueOrThrow({
-      where: { id: invoiceId },
-    });
-    if (invoice.orderId) {
+    );
+
+    // ==========================================
+    // 9. PERTAHANKAN PROSES BISNIS SEBELUMNYA
+    // ==========================================
+    if (result.orderId) {
       try {
-        await this.orderService.checkAndDeleteClientPoIfNeeded(invoice.orderId);
+        await this.orderService.checkAndDeleteClientPoIfNeeded(result.orderId);
       } catch (error) {
         console.error("Gagal memeriksa PO client setelah pembayaran:", error);
       }
     }
+
     return result;
   }
 

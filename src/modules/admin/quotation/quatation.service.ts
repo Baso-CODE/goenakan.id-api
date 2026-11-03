@@ -6,6 +6,7 @@ import { CounterService } from "../../../utils/counter.service";
 import { CloudinaryService } from "../../cloudinary/cloudinary.service";
 import { PaginationService } from "../../pagination/pagination.service";
 import { PrismaService } from "../../prisma/prisma.service";
+import { buildQuotationTrackingEvent } from "../../tracking-outbox/quotation-tracking.helper";
 import { CreateFollowUpDTO } from "./dto/follow-up.dto";
 import { CreateQuotationDTO, UpdateQuotationDTO } from "./dto/quotation.dto";
 
@@ -799,10 +800,28 @@ export class QuotationService {
         totalAmount: newTotalAmount,
       };
 
-      return await tx.quotation.update({
+      // Ambil status terbaru di dalam transaksi
+      const currentQuotation = await tx.quotation.findUniqueOrThrow({
+        where: { id },
+        select: { status: true },
+      });
+
+      const updatedQuotation = await tx.quotation.update({
         where: { id },
         data: updatePayload,
       });
+
+      const previousStatus = currentQuotation.status;
+      const nextStatus = updatedQuotation.status;
+
+      // Tracking hanya saat status berubah
+      if (previousStatus !== nextStatus) {
+        if (nextStatus === "SENT" || nextStatus === "ACCEPTED") {
+          await this.enqueueQuotationTracking(tx, id, nextStatus);
+        }
+      }
+
+      return updatedQuotation;
     });
   }
 
@@ -819,42 +838,63 @@ export class QuotationService {
 
   // Tambah Follow Up Baru
   async addFollowUp(quotationId: string, data: CreateFollowUpDTO) {
-    const quotation = await this.prisma.quotation.findUnique({
-      where: { id: quotationId },
-    });
-
-    if (!quotation) {
-      throw new ApiError("Quotation not found", 404);
-    }
-
-    // 1. Simpan Follow Up ke Database
-    const followUp = await this.prisma.quotationFollowUp.create({
-      data: {
-        quotationId,
-        name: data.name,
-        date: data.date || new Date(),
-        method: data.method,
-        notes: data.notes,
-        nextAction: data.nextAction,
-      },
-    });
-
-    // 2. Logika Update Status Quotation Otomatis
-    const actionName = data.name.toLowerCase();
-
-    if (actionName.includes("convert")) {
-      await this.prisma.quotation.update({
+    return this.prisma.$transaction(async (tx) => {
+      const quotation = await tx.quotation.findUnique({
         where: { id: quotationId },
-        data: { status: "ACCEPTED" },
+        select: {
+          id: true,
+          status: true,
+        },
       });
-    } else if (quotation.status === "DRAFT" || quotation.status === "SENT") {
-      await this.prisma.quotation.update({
-        where: { id: quotationId },
-        data: { status: "FOLLOW_UP" },
-      });
-    }
 
-    return followUp;
+      if (!quotation) {
+        throw new ApiError("Quotation not found", 404);
+      }
+
+      // 1. Simpan follow-up
+      const followUp = await tx.quotationFollowUp.create({
+        data: {
+          quotationId,
+          name: data.name,
+          date: data.date || new Date(),
+          method: data.method,
+          notes: data.notes,
+          nextAction: data.nextAction,
+        },
+      });
+
+      const actionName = data.name.toLowerCase();
+
+      // 2. Otomatis ACCEPTED ketika convert
+      if (actionName.includes("convert")) {
+        const updated = await tx.quotation.updateMany({
+          where: {
+            id: quotationId,
+            status: { not: "ACCEPTED" },
+          },
+          data: {
+            status: "ACCEPTED",
+          },
+        });
+
+        // Tracking hanya jika transisi berhasil
+        if (updated.count === 1) {
+          await this.enqueueQuotationTracking(tx, quotationId, "ACCEPTED");
+        }
+      } else if (quotation.status === "DRAFT" || quotation.status === "SENT") {
+        await tx.quotation.updateMany({
+          where: {
+            id: quotationId,
+            status: { in: ["DRAFT", "SENT"] },
+          },
+          data: {
+            status: "FOLLOW_UP",
+          },
+        });
+      }
+
+      return followUp;
+    });
   }
 
   // Get History Follow Up
@@ -1234,5 +1274,58 @@ export class QuotationService {
       console.error("🔥 GET QUOTATION REFERENCES ERROR:", error);
       throw new ApiError("Gagal mengambil daftar referensi quotation.", 500);
     }
+  }
+
+  private async enqueueQuotationTracking(
+    tx: Prisma.TransactionClient,
+    quotationId: string,
+    status: "SENT" | "ACCEPTED",
+  ) {
+    const quotation = await tx.quotation.findUnique({
+      where: { id: quotationId },
+      select: {
+        id: true,
+        quotationNumber: true,
+        whatsappClicks: {
+          orderBy: { createdAt: "asc" },
+          take: 1,
+          select: {
+            attribution: true,
+          },
+        },
+      },
+    });
+
+    if (!quotation) return;
+
+    const attribution = quotation.whatsappClicks[0]?.attribution ?? null;
+
+    const event = buildQuotationTrackingEvent({
+      quotationId: quotation.id,
+      quotationNumber: quotation.quotationNumber ?? quotation.id,
+      status,
+      attribution,
+      timestamp: new Date(),
+    });
+
+    if (!event) {
+      console.warn(
+        `[GA4 QUOTATION SKIPPED] ${quotationId}: attribution tidak valid`,
+      );
+      return;
+    }
+
+    await tx.trackingOutbox.createMany({
+      data: [
+        {
+          ...event,
+          status: "PENDING",
+          retryCount: 0,
+          maxRetries: 5,
+          nextRetryAt: new Date(),
+        },
+      ],
+      skipDuplicates: true,
+    });
   }
 }
