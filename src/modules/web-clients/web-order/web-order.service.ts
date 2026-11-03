@@ -15,6 +15,7 @@ import { coreApi, snap } from "../../../lib/midtrans";
 import { ApiError } from "../../../utils/api-error";
 import { CounterService } from "../../../utils/counter.service";
 import { PrismaService } from "../../prisma/prisma.service";
+import { buildGA4Purchase } from "../../tracking-outbox/ga4-purchase.helper";
 import { EmailService } from "../auth-client/email.service";
 import { CreateWebOrderDTO } from "./dto/web-order.dto";
 import {
@@ -769,6 +770,44 @@ export class WebOrderService {
               categoryId: financeCategory.id,
             },
           });
+
+          // =====================================================
+          // GA4 PURCHASE — WEBSITE / MIDTRANS
+          // =====================================================
+
+          const purchasePayload = buildGA4Purchase({
+            invoiceId: invoice.id,
+            orderNumber: webOrder.orderNumber,
+            amount,
+            currency: currencyCode,
+            attribution: webOrder.attribution,
+            paidAt,
+            items: webOrder.items.map((item) => ({
+              productId: item.productId,
+              variantId: item.variantId,
+              productName: item.productName,
+              quantity: item.quantity,
+              price: item.price,
+            })),
+          });
+
+          if (purchasePayload) {
+            await tx.trackingOutbox.createMany({
+              data: [
+                {
+                  eventKey: `ga4:purchase:invoice:${invoice.id}`,
+                  eventName: "purchase",
+                  destination: "GA4",
+                  payload: purchasePayload as Prisma.InputJsonValue,
+                  status: "PENDING",
+                  retryCount: 0,
+                  maxRetries: 5,
+                  nextRetryAt: new Date(),
+                },
+              ],
+              skipDuplicates: true,
+            });
+          }
 
           const updatedAttempt = await tx.webPaymentAttempt.updateMany({
             where: {

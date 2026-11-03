@@ -876,11 +876,12 @@ model Invoice {
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
-  user   User          @relation(fields: [userId], references: [id])
-  client Client        @relation(fields: [clientId], references: [id])
-  order  Order?        @relation(fields: [orderId], references: [id])
-  items  InvoiceItem[]
-  notes  InvoiceNote[]
+  user    User            @relation(fields: [userId], references: [id])
+  client  Client          @relation(fields: [clientId], references: [id])
+  order   Order?          @relation(fields: [orderId], references: [id])
+  items   InvoiceItem[]
+  notes   InvoiceNote[]
+  refunds PaymentRefund[]
 
   @@map("invoices")
 }
@@ -2576,4 +2577,50 @@ model WhatsappClick {
   @@index([matchedById])
   @@index([createdAt])
   @@map("whatsapp_clicks")
+}
+
+model TrackingOutbox {
+  id          String @id @default(uuid())
+  eventKey    String @unique @map("event_key") @db.VarChar(191)
+  eventName   String @map("event_name") @db.VarChar(100)
+  destination String @db.VarChar(30)
+  payload     Json
+
+  status      String    @default("PENDING") @db.VarChar(20)
+  retryCount  Int       @default(0) @map("retry_count")
+  maxRetries  Int       @default(5) @map("max_retries")
+  nextRetryAt DateTime? @map("next_retry_at")
+
+  lastError   String?   @map("last_error") @db.Text
+  processedAt DateTime? @map("processed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  lockToken String?  @map("lock_token") @db.VarChar(64)
+
+  @@index([status, nextRetryAt])
+  @@index([destination, eventName])
+  @@map("tracking_outbox")
+}
+
+enum PaymentRefundStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+model PaymentRefund {
+  id                String              @id @default(uuid())
+  invoiceId         Int
+  amount            Decimal
+  status            PaymentRefundStatus @default(PENDING)
+  providerReference String?             @unique
+  completedAt       DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId, status])
+  @@map("payment_refunds")
 }
