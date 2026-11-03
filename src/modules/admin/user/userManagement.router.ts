@@ -6,10 +6,29 @@ import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
 import { parseFormData } from "../../../middleware/parseFormData.middleware";
 import { autoVerifyPermission } from "../../../middleware/permission.middleware";
 import { validateBody } from "../../../middleware/validation.middleware";
-import { CreateUserDTO } from "./dto/userManagement.dto";
+
+import { CreateUserDTO, UpdateUserDTO } from "./dto/userManagement.dto";
+
 import { UserController } from "./userManagement.controller";
 
-const upload = multer({ storage: multer.memoryStorage() });
+// ==========================================
+// MULTER CONFIG
+// ==========================================
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+    files: 1,
+  },
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) {
+      return cb(new Error("File harus berupa gambar"));
+    }
+
+    cb(null, true);
+  },
+});
 
 @autoInjectable()
 export class UserRouter {
@@ -24,29 +43,53 @@ export class UserRouter {
 
   private initializeRoutes = (): void => {
     // ==========================================
-    // 🛡️ GATEKEEPER LEVEL ROUTER
-    // Pasang pelindung token dan permission di sini satu kali saja.
-    // Seluruh route di bawahnya otomatis aman.
+    // AUTHENTICATION & PERMISSION
     // ==========================================
+
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
+
     this.router.use(autoVerifyPermission("user"));
 
     // ==========================================
-    // === GET ALL USERS ===
-    // Otomatis membutuhkan hak akses 'read'
+    // GET ALL USERS
+    // Permission: user.read
     // ==========================================
+
     this.router.get("/", this.userController.getAllUsers);
+
+    // ==========================================
+    // GET AUTHORS
+    // Permission: user.read
+    // ==========================================
+
     this.router.get("/authors", this.userController.getAuthorsForFilter);
+
+    this.router.get("/:id", this.userController.getUserById);
+
     // ==========================================
-    // === CREATE NEW USER ===
-    // Otomatis membutuhkan hak akses 'create'
+    // CREATE USER
+    // Permission: user.create
     // ==========================================
+
     this.router.post(
       "/",
       upload.single("image"),
       parseFormData,
       validateBody(CreateUserDTO),
       this.userController.createUser,
+    );
+
+    // ==========================================
+    // UPDATE USER
+    // Permission: user.update
+    // ==========================================
+
+    this.router.patch(
+      "/:id",
+      upload.single("image"),
+      parseFormData,
+      validateBody(UpdateUserDTO),
+      this.userController.updateUser,
     );
   };
 

@@ -27,3 +27,28 @@ export class CreateUserDTO {
   @IsString()
   image?: string;
 }
+
+// ==========================================
+// UPDATE USER DTO
+// ==========================================
+
+export class UpdateUserDTO {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty({ message: "Nama tidak boleh kosong" })
+  name?: string;
+
+  @IsOptional()
+  @IsEmail({}, { message: "Format email tidak valid" })
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(6, { message: "Password minimal 6 karakter" })
+  password?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty({ message: "Role ID tidak boleh kosong" })
+  roleId?: string;
+}
