@@ -79,10 +79,25 @@ export class ProductService {
       itemNameString = itemNameData.name;
     }
 
-    let translatedNameEn: string | null = null;
-    let translatedDescEn: string | null = null;
+    // ==========================================
+    // PRODUCT ENGLISH TITLE
+    // Prioritas:
+    // 1. English Title manual
+    // 2. Automatic translation
+    // ==========================================
 
-    if (data.name) {
+    let translatedNameEn: string | null = null;
+
+    const manualEnglishTitle =
+      typeof data.name_en === "string" ? data.name_en.trim() : "";
+
+    if (manualEnglishTitle) {
+      // Admin mengisi English Title.
+      // Tidak perlu memanggil Google Translate.
+      translatedNameEn = manualEnglishTitle;
+    } else if (data.name?.trim()) {
+      // English Title kosong.
+      // Gunakan translasi otomatis yang sudah ada.
       translatedNameEn = await this.translateProductNameWithItemName(
         data.name,
         data.itemNameId,
@@ -90,11 +105,11 @@ export class ProductService {
       );
     }
 
-    if (data.description) {
-      translatedDescEn = await this.translateProductDescription(
-        data.description,
-      );
-    }
+    // if (data.description) {
+    //   translatedDescEn = await this.translateProductDescription(
+    //     data.description,
+    //   );
+    // }
 
     // --- Helper untuk Validasi Price Tiers (Bisa dipakai ulang) ---
     const validateTiers = (tiers: CreatePriceTierDTO[], context: string) => {
@@ -280,10 +295,10 @@ export class ProductService {
         const product = await tx.product.create({
           data: {
             name: data.name,
-            name_en: null,
+            name_en: translatedNameEn,
             sku: data.sku,
             description: data.description,
-            description_en: translatedDescriptionEn, // <-- Dimasukkan di sini
+            description_en: translatedDescriptionEn,
             basePrice: data.basePrice,
             foreignPrice:
               data.foreignPrice !== undefined && data.foreignPrice !== null
@@ -596,42 +611,85 @@ export class ProductService {
       }
     }
 
-    // Auto-translate ke bahasa Inggris jika nama/deskripsi diubah atau belum ada terjemahan (null)
+    // ===================================================
+    // ENGLISH PRODUCT TITLE & DESCRIPTION
+    // ===================================================
+
     let translatedNameEn: string | undefined = undefined;
     let translatedDescEn: string | undefined = undefined;
 
     const effectiveName = data.name !== undefined ? data.name : existing.name;
-    const isNameChanged =
-      data.name !== undefined && data.name !== existing.name;
-    const shouldTranslateName = isNameChanged || !existing.name_en;
 
-    if (shouldTranslateName && effectiveName) {
+    const hasEnglishTitleInput = data.name_en !== undefined;
+
+    const manualEnglishTitle =
+      typeof data.name_en === "string" ? data.name_en.trim() : "";
+
+    const existingEnglishTitle =
+      typeof existing.name_en === "string" ? existing.name_en.trim() : "";
+
+    if (hasEnglishTitleInput) {
+      if (manualEnglishTitle) {
+        // Admin mengisi English Title.
+        // Tidak melakukan translate.
+        translatedNameEn = manualEnglishTitle;
+      } else if (effectiveName?.trim()) {
+        // Admin secara eksplisit mengosongkan field.
+        // Gunakan translate otomatis.
+        const effectiveItemNameId =
+          data.itemNameId !== undefined ? data.itemNameId : existing.itemNameId;
+
+        const cachedItemName =
+          data.itemNameId === undefined ||
+          data.itemNameId === existing.itemNameId
+            ? existing.itemName?.name
+            : undefined;
+
+        const translated = await this.translateProductNameWithItemName(
+          effectiveName,
+          effectiveItemNameId,
+          cachedItemName,
+        );
+
+        if (translated) {
+          translatedNameEn = translated;
+        }
+      }
+    } else if (!existingEnglishTitle && effectiveName?.trim()) {
+      // Tidak ada input English Title dan
+      // database juga belum memiliki nama Inggris.
       const effectiveItemNameId =
         data.itemNameId !== undefined ? data.itemNameId : existing.itemNameId;
+
       const cachedItemName =
         data.itemNameId === undefined || data.itemNameId === existing.itemNameId
           ? existing.itemName?.name
           : undefined;
 
-      const resName = await this.translateProductNameWithItemName(
+      const translated = await this.translateProductNameWithItemName(
         effectiveName,
         effectiveItemNameId,
         cachedItemName,
       );
-      if (resName) {
-        translatedNameEn = resName;
+
+      if (translated) {
+        translatedNameEn = translated;
       }
     }
 
     const effectiveDesc =
       data.description !== undefined ? data.description : existing.description;
+
     const isDescChanged =
       data.description !== undefined &&
       data.description !== existing.description;
-    const shouldTranslateDesc = isDescChanged || !existing.description_en;
+
+    // Translate hanya ketika deskripsi berubah.
+    const shouldTranslateDesc = isDescChanged;
 
     if (shouldTranslateDesc && effectiveDesc) {
       const resDesc = await this.translateProductDescription(effectiveDesc);
+
       if (resDesc) {
         translatedDescEn = resDesc;
       }
@@ -645,17 +703,21 @@ export class ProductService {
           : existing.materialTypeId,
     };
 
-    // ✨ Jika nama diubah, ubah namanya dan set versi Inggris ke null
-    // (Bisa juga ditambahkan auto-translate jika kamu butuh ke depannya)
+    // ===================================================
+    // UPDATE PRODUCT NAME
+    // Prioritaskan English Title manual.
+    // Jika tidak tersedia, gunakan hasil auto-translate.
+    // ===================================================
+
     if (data.name !== undefined) {
       updateData.name = data.name;
     }
+
     if (translatedNameEn !== undefined) {
       updateData.name_en = translatedNameEn;
     }
-
     // ====================================================================
-    // ✨ UPDATE & TRANSLATE DESCRIPTION
+    //  UPDATE & TRANSLATE DESCRIPTION
     // ====================================================================
     if (data.description !== undefined) {
       updateData.description = data.description;

@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
   Min,
   ValidateNested,
 } from "class-validator";
@@ -144,6 +145,11 @@ export class CreateProductDTO {
   @IsNotEmpty()
   @IsString()
   name!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  name_en?: string;
 
   @IsNotEmpty()
   @IsString()
