@@ -15,6 +15,10 @@ export class UpdateProductCoreDTO {
 
   @IsOptional()
   @IsString()
+  name_en?: string;
+
+  @IsOptional()
+  @IsString()
   description?: string;
 
   @IsOptional()
