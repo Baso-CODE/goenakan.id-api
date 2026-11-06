@@ -6,32 +6,45 @@ import { PrismaService } from "../prisma/prisma.service";
 
 interface RecordCompletedRefundInput {
   invoiceId: number;
+
+  // Total dana yang benar-benar dikembalikan.
   amount: number;
+
+  // Bagian refund untuk produk, tidak termasuk ongkir/pajak.
+  productRefundAmount: number;
+
+  // ID unik dari penyedia pembayaran.
   providerReference: string;
+
+  // Waktu refund dikonfirmasi selesai.
   completedAt: Date;
 }
-
-type PurchasePayload = {
-  client_id?: string;
-  events?: Array<{
-    name: string;
-    params?: Record<string, unknown>;
-  }>;
-};
 
 @injectable()
 export class PaymentRefundService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Catat refund yang SUDAH dikonfirmasi selesai
-   * oleh penyedia pembayaran.
+   * Mencatat refund yang SUDAH dikonfirmasi COMPLETED.
+   *
+   * Tidak membuat event GA4 secara langsung.
+   * GA4 ditangani oleh GA4RefundReconciliationService.
    *
    * Jangan panggil method ini hanya karena
    * status order berubah menjadi CANCELLED.
    */
   async recordCompletedRefund(input: RecordCompletedRefundInput) {
-    const { invoiceId, amount, providerReference, completedAt } = input;
+    const {
+      invoiceId,
+      amount,
+      productRefundAmount,
+      providerReference,
+      completedAt,
+    } = input;
+
+    // =====================================
+    // 1. VALIDASI INPUT
+    // =====================================
 
     if (!Number.isSafeInteger(invoiceId) || invoiceId <= 0) {
       throw new ApiError("Invoice ID tidak valid", 400);
@@ -42,9 +55,17 @@ export class PaymentRefundService {
     }
 
     if (
-      !providerReference ||
+      !Number.isFinite(productRefundAmount) ||
+      productRefundAmount < 0 ||
+      productRefundAmount > amount
+    ) {
+      throw new ApiError("Nominal refund produk tidak valid", 400);
+    }
+
+    if (
+      typeof providerReference !== "string" ||
       !providerReference.trim() ||
-      providerReference.length > 191
+      providerReference.trim().length > 191
     ) {
       throw new ApiError("Referensi refund tidak valid", 400);
     }
@@ -59,11 +80,19 @@ export class PaymentRefundService {
 
     const reference = providerReference.trim();
 
+    const refundAmount = new Prisma.Decimal(amount);
+    const productAmount = new Prisma.Decimal(productRefundAmount);
+
+    // =====================================
+    // 2. TRANSAKSI DATABASE
+    // =====================================
+
     return this.prisma.$transaction(
       async (tx) => {
         // =====================================
-        // 1. IDEMPOTENCY CHECK
+        // 3. IDEMPOTENCY CHECK
         // =====================================
+
         const existing = await tx.paymentRefund.findUnique({
           where: {
             providerReference: reference,
@@ -71,10 +100,13 @@ export class PaymentRefundService {
         });
 
         if (existing) {
-          if (
-            existing.invoiceId !== invoiceId ||
-            !existing.amount.equals(amount)
-          ) {
+          const sameTransaction =
+            existing.invoiceId === invoiceId &&
+            existing.amount.equals(refundAmount) &&
+            existing.productRefundAmount !== null &&
+            existing.productRefundAmount.equals(productAmount);
+
+          if (!sameTransaction) {
             throw new ApiError(
               "Referensi refund sudah digunakan untuk transaksi berbeda",
               409,
@@ -92,20 +124,26 @@ export class PaymentRefundService {
         }
 
         // =====================================
-        // 2. AMBIL INVOICE DAN ORDER
+        // 4. AMBIL INVOICE
         // =====================================
+
         const invoice = await tx.invoice.findUnique({
-          where: { id: invoiceId },
+          where: {
+            id: invoiceId,
+          },
           include: {
             order: {
               include: {
                 purchaseChannel: {
-                  select: { slug: true },
+                  select: {
+                    slug: true,
+                  },
                 },
                 webOrder: {
                   select: {
                     id: true,
-                    attribution: true,
+                    subtotal: true,
+                    currencyCode: true,
                   },
                 },
               },
@@ -124,10 +162,12 @@ export class PaymentRefundService {
           );
         }
 
+        const order = invoice.order;
+
         if (
-          !invoice.order ||
-          invoice.order.purchaseChannel?.slug !== "website" ||
-          !invoice.order.webOrder
+          !order ||
+          order.purchaseChannel?.slug !== "website" ||
+          !order.webOrder
         ) {
           throw new ApiError(
             "Service ini hanya memproses refund transaksi website",
@@ -136,9 +176,10 @@ export class PaymentRefundService {
         }
 
         // =====================================
-        // 3. VALIDASI JUMLAH REFUND
+        // 5. VALIDASI REFUND PER INVOICE
         // =====================================
-        const previousRefunds = await tx.paymentRefund.findMany({
+
+        const invoiceRefunds = await tx.paymentRefund.findMany({
           where: {
             invoiceId,
             status: PaymentRefundStatus.COMPLETED,
@@ -148,26 +189,76 @@ export class PaymentRefundService {
           },
         });
 
-        const alreadyRefunded = previousRefunds.reduce(
+        const totalInvoiceRefunded = invoiceRefunds.reduce(
           (total, refund) => total.plus(refund.amount),
           new Prisma.Decimal(0),
         );
 
-        const refundAmount = new Prisma.Decimal(amount);
-
         if (
-          alreadyRefunded.plus(refundAmount).greaterThan(invoice.totalAmount)
+          totalInvoiceRefunded
+            .plus(refundAmount)
+            .greaterThan(invoice.totalAmount)
         ) {
           throw new ApiError("Total refund melebihi nilai invoice", 400);
         }
 
         // =====================================
-        // 4. SIMPAN REFUND COMPLETED
+        // 6. VALIDASI REFUND PRODUK PER ORDER
         // =====================================
+
+        const orderRefunds = await tx.paymentRefund.findMany({
+          where: {
+            invoice: {
+              orderId: order.id,
+            },
+            status: PaymentRefundStatus.COMPLETED,
+          },
+          select: {
+            productRefundAmount: true,
+          },
+        });
+
+        const hasUnknownAllocation = orderRefunds.some(
+          (refund) => refund.productRefundAmount === null,
+        );
+
+        if (hasUnknownAllocation) {
+          throw new ApiError(
+            "Terdapat refund lama tanpa alokasi produk. " +
+              "Lakukan rekonsiliasi data terlebih dahulu.",
+            409,
+          );
+        }
+
+        const alreadyRefundedProducts = orderRefunds.reduce(
+          (total, refund) => total.plus(refund.productRefundAmount ?? 0),
+          new Prisma.Decimal(0),
+        );
+
+        const orderProductSubtotal = new Prisma.Decimal(
+          order.webOrder.subtotal,
+        );
+
+        if (
+          alreadyRefundedProducts
+            .plus(productAmount)
+            .greaterThan(orderProductSubtotal)
+        ) {
+          throw new ApiError(
+            "Total refund produk melebihi subtotal website order",
+            400,
+          );
+        }
+
+        // =====================================
+        // 7. SIMPAN REFUND COMPLETED
+        // =====================================
+
         const refund = await tx.paymentRefund.create({
           data: {
             invoiceId,
             amount: refundAmount,
+            productRefundAmount: productAmount,
             status: PaymentRefundStatus.COMPLETED,
             providerReference: reference,
             completedAt,
@@ -175,84 +266,12 @@ export class PaymentRefundService {
         });
 
         // =====================================
-        // 5. AMBIL PURCHASE ASLI
+        // 8. SELESAI
         // =====================================
-        const originalPurchase = await tx.trackingOutbox.findUnique({
-          where: {
-            eventKey: `ga4:purchase:invoice:${invoiceId}`,
-          },
-          select: {
-            payload: true,
-            destination: true,
-            eventName: true,
-          },
-        });
 
-        if (
-          !originalPurchase ||
-          originalPurchase.destination !== "GA4" ||
-          originalPurchase.eventName !== "purchase"
-        ) {
-          // Refund tetap tercatat.
-          // Jangan membuat data GA4 tanpa purchase asli.
-          return refund;
-        }
-
-        const purchasePayload = originalPurchase.payload as PurchasePayload;
-
-        const clientId = purchasePayload.client_id;
-
-        const purchaseEvent = purchasePayload.events?.find(
-          (event) => event.name === "purchase",
-        );
-
-        const transactionId = purchaseEvent?.params?.transaction_id;
-
-        if (
-          typeof clientId !== "string" ||
-          !/^\d+\.\d+$/.test(clientId) ||
-          typeof transactionId !== "string" ||
-          !transactionId.trim()
-        ) {
-          return refund;
-        }
-
-        // =====================================
-        // 6. BUAT GA4 REFUND PAYLOAD
-        // =====================================
-        const refundPayload = {
-          client_id: clientId,
-          timestamp_micros: completedAt.getTime() * 1000,
-          events: [
-            {
-              name: "refund",
-              params: {
-                transaction_id: transactionId,
-                currency: invoice.order.currencyCode || "IDR",
-                value: refundAmount.toNumber(),
-              },
-            },
-          ],
-        };
-
-        // =====================================
-        // 7. SIMPAN OUTBOX SECARA ATOMIK
-        // =====================================
-        await tx.trackingOutbox.createMany({
-          data: [
-            {
-              eventKey: `ga4:refund:${refund.id}`,
-              eventName: "refund",
-              destination: "GA4",
-              payload: refundPayload as Prisma.InputJsonValue,
-              status: "PENDING",
-              retryCount: 0,
-              maxRetries: 5,
-              nextRetryAt: new Date(),
-            },
-          ],
-          skipDuplicates: true,
-        });
+        // Tidak membuat GA4 Tracking Outbox di sini.
+        // Proses tersebut dilakukan oleh
+        // GA4RefundReconciliationService.
 
         return refund;
       },

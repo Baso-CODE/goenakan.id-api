@@ -1,5 +1,7 @@
 import { Prisma } from "@prisma/client";
 
+import { getGA4CustomizationFields } from "./ga4-customization.helper";
+
 type GA4Attribution = {
   ga_client_id?: string | null;
   ga_session_id?: string | number | null;
@@ -11,6 +13,7 @@ type PurchaseItem = {
   productName: string;
   quantity: number;
   price: Prisma.Decimal | string | number;
+  customization?: Prisma.JsonValue | null;
 };
 
 type PurchaseInput = {
@@ -21,6 +24,7 @@ type PurchaseInput = {
   attribution: Prisma.JsonValue | null;
   items: PurchaseItem[];
   paidAt: Date;
+  isTestTransaction: boolean;
 };
 
 export function buildGA4Purchase(input: PurchaseInput) {
@@ -33,32 +37,62 @@ export function buildGA4Purchase(input: PurchaseInput) {
 
   const clientId = attribution?.ga_client_id;
 
-  // Jangan membuat client_id palsu.
+  // Tidak boleh membuat GA client ID palsu.
   if (typeof clientId !== "string" || !/^\d+\.\d+$/.test(clientId)) {
     return null;
   }
 
-  const items = input.items.map((item) => ({
-    item_id: item.variantId || item.productId,
-    item_name: item.productName,
-    quantity: item.quantity,
-    price: Number(item.price),
-  }));
+  // ==========================================
+  // BUILD PURCHASE ITEMS
+  // ==========================================
+
+  const items = input.items.map((item) => {
+    const customizationFields = getGA4CustomizationFields(item.customization);
+
+    return {
+      item_id: item.variantId || item.productId,
+      item_name: item.productName,
+      quantity: item.quantity,
+      price: Number(item.price),
+
+      ...customizationFields,
+    };
+  });
+
+  // ==========================================
+  // VALIDATE ITEMS
+  // ==========================================
 
   if (
     !items.length ||
     items.some(
       (item) =>
-        !item.item_id || !Number.isFinite(item.price) || item.quantity <= 0,
+        !item.item_id ||
+        !Number.isFinite(item.price) ||
+        item.price < 0 ||
+        !Number.isSafeInteger(item.quantity) ||
+        item.quantity <= 0,
     )
   ) {
     return null;
   }
 
+  const value = Number(input.amount);
+
+  if (!Number.isFinite(value) || value < 0) {
+    return null;
+  }
+
+  // ==========================================
+  // BUILD GA4 PURCHASE PARAMS
+  // ==========================================
+
   const params: Record<string, unknown> = {
-    transaction_id: input.orderNumber,
+    transaction_id: input.isTestTransaction
+      ? `TEST-${input.orderNumber}`
+      : input.orderNumber,
     currency: input.currency,
-    value: Number(input.amount),
+    value,
     items,
   };
 
@@ -75,6 +109,7 @@ export function buildGA4Purchase(input: PurchaseInput) {
   return {
     client_id: clientId,
     timestamp_micros: input.paidAt.getTime() * 1000,
+
     events: [
       {
         name: "purchase",

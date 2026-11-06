@@ -15,6 +15,7 @@ import { coreApi, snap } from "../../../lib/midtrans";
 import { ApiError } from "../../../utils/api-error";
 import { CounterService } from "../../../utils/counter.service";
 import { PrismaService } from "../../prisma/prisma.service";
+import { hasExistingGA4Purchase } from "../../tracking-outbox/ga4-purchase-idempotency.helper";
 import { buildGA4Purchase } from "../../tracking-outbox/ga4-purchase.helper";
 import { EmailService } from "../auth-client/email.service";
 import { CreateWebOrderDTO } from "./dto/web-order.dto";
@@ -775,27 +776,42 @@ export class WebOrderService {
           // GA4 PURCHASE — WEBSITE / MIDTRANS
           // =====================================================
 
-          const purchasePayload = buildGA4Purchase({
-            invoiceId: invoice.id,
+          const purchasePayload =
+            currencyCode === "IDR"
+              ? buildGA4Purchase({
+                  invoiceId: invoice.id,
+                  orderNumber: webOrder.orderNumber,
+
+                  amount: webOrder.subtotal,
+                  currency: "IDR",
+
+                  attribution: webOrder.attribution,
+                  paidAt,
+
+                  isTestTransaction:
+                    process.env.MIDTRANS_IS_PRODUCTION !== "true",
+
+                  items: webOrder.items.map((item) => ({
+                    productId: item.productId,
+                    variantId: item.variantId,
+                    productName: item.productName,
+                    quantity: item.quantity,
+                    price: item.price,
+                    customization: item.customization,
+                  })),
+                })
+              : null;
+
+          const purchaseAlreadyExists = await hasExistingGA4Purchase(tx, {
+            orderId: createdOrder.id,
             orderNumber: webOrder.orderNumber,
-            amount,
-            currency: currencyCode,
-            attribution: webOrder.attribution,
-            paidAt,
-            items: webOrder.items.map((item) => ({
-              productId: item.productId,
-              variantId: item.variantId,
-              productName: item.productName,
-              quantity: item.quantity,
-              price: item.price,
-            })),
           });
 
-          if (purchasePayload) {
+          if (purchasePayload && !purchaseAlreadyExists) {
             await tx.trackingOutbox.createMany({
               data: [
                 {
-                  eventKey: `ga4:purchase:invoice:${invoice.id}`,
+                  eventKey: `${webOrder.orderNumber}:purchase`,
                   eventName: "purchase",
                   destination: "GA4",
                   payload: purchasePayload as Prisma.InputJsonValue,

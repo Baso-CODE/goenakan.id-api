@@ -2610,9 +2610,14 @@ enum PaymentRefundStatus {
 }
 
 model PaymentRefund {
-  id                String              @id @default(uuid())
-  invoiceId         Int
-  amount            Decimal
+  id        String  @id @default(uuid())
+  invoiceId Int
+  amount    Decimal
+
+  // Nilai refund khusus produk, tanpa ongkir/pajak.
+  // Nullable untuk kompatibilitas dengan data lama.
+  productRefundAmount Decimal?
+
   status            PaymentRefundStatus @default(PENDING)
   providerReference String?             @unique
   completedAt       DateTime?
