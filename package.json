@@ -9,7 +9,11 @@
     "copy-files": "cpx src/modules/mail/templates/**/* dist/modules/mail/templates",
     "start": "node dist/index.js",
     "dev": "nodemon src/index.ts",
-    "prepare": "husky"
+    "prepare": "husky",
+    "tracking:validate": "ts-node src/modules/tracking-outbox/validate-ga4.ts",
+    "tracking:audit": "ts-node src/modules/tracking-outbox/audit-tracking.ts",
+    "tracking:worker": "node dist/modules/tracking-outbox/run-worker.js",
+    "tracking:worker:dev": "ts-node src/modules/tracking-outbox/run-worker.ts"
   },
   "keywords": [],
   "author": "Baso",

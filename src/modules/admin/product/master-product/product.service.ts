@@ -4552,6 +4552,25 @@ export class ProductService {
           }
         : null;
 
+      // ==========================================
+      // GTM / GA4 TRACKING PRICE - ORIGINAL IDR
+      // ==========================================
+
+      // Gunakan harga tier SEA dengan minimum quantity
+      // terkecil. Harga berasal langsung dari database IDR.
+
+      const productTiersTrackingIdr = product.priceTiers
+        .filter((tier) => !tier.freightMode || tier.freightMode === "SEA")
+        .sort((a, b) => a.minQuantity - b.minQuantity);
+
+      const firstProductTierIdr = productTiersTrackingIdr[0];
+
+      const basePriceTrackingIdr = Number(product.basePrice);
+
+      const trackingBasePriceIdr = firstProductTierIdr
+        ? Number(firstProductTierIdr.price)
+        : basePriceTrackingIdr;
+
       return {
         id: product.id,
         name: productName,
@@ -4560,7 +4579,7 @@ export class ProductService {
         categoryId: product.categoryId,
         itemCategoryEn: product.category?.name_en?.trim() || null,
         itemCategoryName: product.itemCategory?.name?.trim() || null,
-        trackingBasePriceIdr: Number(product.basePrice),
+        trackingBasePriceIdr,
         basePrice: convertedBasePrice,
         basePriceAir: convertedBasePriceAir,
         availableFreightModes: product.availableFreightModes || "SEA",

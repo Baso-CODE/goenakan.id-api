@@ -6,6 +6,7 @@ import { injectable } from "tsyringe";
 import { ApiError } from "../../../utils/api-error";
 import { PaginationService } from "../../pagination/pagination.service";
 import { PrismaService } from "../../prisma/prisma.service";
+import { hasExistingGA4Purchase } from "../../tracking-outbox/ga4-purchase-idempotency.helper";
 import { buildGA4Purchase } from "../../tracking-outbox/ga4-purchase.helper";
 import { OrderService } from "../order/order.service";
 import {
@@ -345,7 +346,22 @@ export class InvoiceService {
                 webOrder: {
                   select: {
                     id: true,
+                    orderNumber: true,
                     attribution: true,
+                    subtotal: true,
+                    currencyCode: true,
+
+                    // Ambil seluruh item website order.
+                    items: {
+                      select: {
+                        productId: true,
+                        variantId: true,
+                        productName: true,
+                        quantity: true,
+                        price: true,
+                        customization: true,
+                      },
+                    },
                   },
                 },
               },
@@ -389,6 +405,23 @@ export class InvoiceService {
         }
 
         // ==========================================
+        // GA4 - CHECK FIRST PAID INVOICE
+        // ==========================================
+
+        const previousPaidInvoice = await tx.invoice.findFirst({
+          where: {
+            orderId: invoice.orderId,
+            id: {
+              not: invoice.id,
+            },
+            status: InvoiceStatus.PAID,
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        // ==========================================
         // 4. UPDATE INVOICE MENJADI PAID
         // ==========================================
         const updated = await tx.invoice.updateMany({
@@ -423,50 +456,108 @@ export class InvoiceService {
           Boolean(order.webOrderId) &&
           Boolean(order.webOrder);
 
-        if (isWebsiteOrder && order?.webOrder) {
-          // ========================================
-          // 6. BANGUN GA4 PURCHASE
-          // ========================================
-          const purchasePayload = buildGA4Purchase({
-            invoiceId: invoice.id,
-            orderNumber: order.orderNumber || `invoice-${invoice.id}`,
-            amount: invoice.totalAmount,
-            currency: order.currencyCode,
-            attribution: order.webOrder.attribution,
-            paidAt: paidDate,
-            items: invoice.items.map((item) => ({
-              productId: item.productId,
-              variantId: item.variantId,
-              productName: item.product.name,
-              quantity: item.quantity,
-              price: item.price,
-            })),
-          });
+        if (isWebsiteOrder && order?.webOrder && !previousPaidInvoice) {
+          // ==========================================
+          // GA4 PURCHASE v1.7
+          // Website Order - First Paid Invoice
+          // ==========================================
 
-          // ========================================
-          // 7. SIMPAN GA4 TRACKING OUTBOX
-          // ========================================
-          if (purchasePayload) {
-            await tx.trackingOutbox.createMany({
-              data: [
-                {
-                  eventKey: `ga4:purchase:invoice:${invoice.id}`,
-                  eventName: "purchase",
-                  destination: "GA4",
-                  payload: purchasePayload as Prisma.InputJsonValue,
-                  status: "PENDING",
-                  retryCount: 0,
-                  maxRetries: 5,
-                  nextRetryAt: new Date(),
-                },
-              ],
-              skipDuplicates: true,
-            });
-          } else {
+          const trackingOrderNumber = order.webOrder.orderNumber.trim();
+
+          const isIdrOrder =
+            order.currencyCode === "IDR" &&
+            (order.webOrder.currencyCode ?? "IDR") === "IDR";
+
+          if (!trackingOrderNumber) {
             console.warn(
               `[GA4 PURCHASE SKIPPED] Invoice ${invoice.id}: ` +
-                "Attribution atau parameter purchase tidak valid.",
+                "Website order number tidak tersedia.",
             );
+          } else if (!isIdrOrder) {
+            console.warn(
+              `[GA4 PURCHASE SKIPPED] Invoice ${invoice.id}: ` +
+                "Currency website order belum didukung.",
+            );
+          } else {
+            // ==========================================
+            // 1. IDEMPOTENCY CHECK
+            // ==========================================
+
+            const purchaseAlreadyExists = await hasExistingGA4Purchase(tx, {
+              orderId: order.id,
+              orderNumber: trackingOrderNumber,
+            });
+
+            if (purchaseAlreadyExists) {
+              console.info(
+                `[GA4 PURCHASE SKIPPED] Order ${trackingOrderNumber}: ` +
+                  "Purchase sudah pernah dibuat.",
+              );
+            } else {
+              // ==========================================
+              // 2. BUILD PURCHASE PAYLOAD
+              // ==========================================
+
+              const purchasePayload = buildGA4Purchase({
+                invoiceId: invoice.id,
+
+                // Identitas transaksi dari website order.
+                orderNumber: trackingOrderNumber,
+
+                // Nilai seluruh barang, bukan nilai DP/cicilan.
+                amount: order.webOrder.subtotal,
+
+                currency: "IDR",
+
+                attribution: order.webOrder.attribution,
+
+                paidAt: paidDate,
+
+                // Admin invoice manual yang benar-benar transaksi nyata.
+                isTestTransaction: false,
+
+                // Seluruh item dari website order.
+                items: order.webOrder.items.map((item) => ({
+                  productId: item.productId,
+                  variantId: item.variantId,
+                  productName: item.productName,
+                  quantity: item.quantity,
+                  price: item.price,
+                  customization: item.customization,
+                })),
+              });
+
+              // ==========================================
+              // 3. INSERT GA4 OUTBOX
+              // ==========================================
+
+              if (purchasePayload) {
+                const inserted = await tx.trackingOutbox.createMany({
+                  data: [
+                    {
+                      eventKey: `${trackingOrderNumber}:purchase`,
+                      eventName: "purchase",
+                      destination: "GA4",
+                      payload: purchasePayload as Prisma.InputJsonValue,
+                      status: "PENDING",
+                      retryCount: 0,
+                      maxRetries: 5,
+                      nextRetryAt: new Date(),
+                    },
+                  ],
+                  skipDuplicates: true,
+                });
+
+                if (inserted.count === 1) {
+                  console.info(`[GA4 PURCHASE CREATED] ${trackingOrderNumber}`);
+                }
+              } else {
+                console.warn(
+                  `[GA4 PURCHASE SKIPPED] Order ${trackingOrderNumber}: ` +
+                    "Attribution atau parameter GA4 tidak valid.",
+                );
+              }
+            }
           }
         }
 
