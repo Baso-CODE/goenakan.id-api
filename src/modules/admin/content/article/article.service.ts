@@ -906,6 +906,7 @@ export class ArticleService {
           id: true,
           title_id: true,
           title_en: true,
+          slug: true, // Tambahkan slug untuk auto-generate CTA
         },
         orderBy: {
           createdAt: "desc",
