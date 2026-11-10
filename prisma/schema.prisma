@@ -649,12 +649,12 @@ model AttributeType {
 model Attribute {
   id        String   @id @default(uuid())
   name      String
+  name_en   String?
   slug      String   @unique
   position  Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Join to AttributeType via name
   type     String        @default("TEXT")
   attrType AttributeType @relation(fields: [type], references: [name], onDelete: Restrict)
 
@@ -674,6 +674,7 @@ model Attribute {
 model AttributeValue {
   id          String    @id @default(uuid())
   value       String    @db.Text
+  value_en    String?   @db.Text
   position    Int       @default(0)
   attributeId String
   attribute   Attribute @relation("AttributeToValues", fields: [attributeId], references: [id], onDelete: Cascade)
@@ -1984,28 +1985,64 @@ model BestPriceGuarantee {
 }
 
 model HeroSlide {
-  id    String @id @default(uuid())
-  title String
+  id String @id @default(uuid())
 
-  // Gambar Utama (Desktop)
+  // ==========================================
+  // BILINGUAL CONTENT
+  // ==========================================
+
+  // Judul
+  titleId String  @map("title")
+  titleEn String?
+
+  // Alt Text untuk SEO dan Accessibility
+  altTextId String? @map("altText") @db.Text
+  altTextEn String? @db.Text
+
+  // CTA Text
+  ctaTextId String? @map("ctaText")
+  ctaTextEn String?
+
+  // ==========================================
+  // DESKTOP IMAGE
+  // ==========================================
+
   imageUrl      String
   imagePublicId String
 
-  // Gambar Versi Mobile (Wajib ada untuk responsivitas HP)
+  // ==========================================
+  // MOBILE IMAGE
+  // ==========================================
+
   imageMobileUrl      String
   imageMobilePublicId String
 
-  // Gambar Versi Tablet (Opsional / Boleh kosong/null)
+  // ==========================================
+  // TABLET IMAGE (OPTIONAL)
+  // ==========================================
+
   imageTabletUrl      String?
   imageTabletPublicId String?
 
-  altText      String?  @db.Text
-  ctaText      String?
-  ctaLink      String?
-  displayOrder Int      @default(0)
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  // ==========================================
+  // CTA LINK (UNIVERSAL)
+  // ==========================================
+
+  ctaLink String?
+
+  // ==========================================
+  // DISPLAY SETTINGS
+  // ==========================================
+
+  displayOrder Int     @default(0)
+  isActive     Boolean @default(true)
+
+  // ==========================================
+  // TIMESTAMPS
+  // ==========================================
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("hero_slides")
 }

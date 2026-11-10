@@ -1,7 +1,7 @@
-import { translate } from "@vitalets/google-translate-api";
 import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
 import { ApiError } from "../../../../utils/api-error";
+import { translateWithDeepL } from "../../../../utils/deepl-translate";
 import { SlugService } from "../../../../utils/genereateSlug";
 import { CloudinaryService } from "../../../cloudinary/cloudinary.service";
 import { PaginationService } from "../../../pagination/pagination.service";
@@ -80,10 +80,10 @@ export class ProductService {
     }
 
     // ==========================================
-    // PRODUCT ENGLISH TITLE
+    // PRODUCT ENGLISH TITLE - DEEPL
     // Prioritas:
-    // 1. English Title manual
-    // 2. Automatic translation
+    // 1. Input manual
+    // 2. DeepL API
     // ==========================================
 
     let translatedNameEn: string | null = null;
@@ -92,17 +92,15 @@ export class ProductService {
       typeof data.name_en === "string" ? data.name_en.trim() : "";
 
     if (manualEnglishTitle) {
-      // Admin mengisi English Title.
-      // Tidak perlu memanggil Google Translate.
       translatedNameEn = manualEnglishTitle;
     } else if (data.name?.trim()) {
-      // English Title kosong.
-      // Gunakan translasi otomatis yang sudah ada.
-      translatedNameEn = await this.translateProductNameWithItemName(
-        data.name,
-        data.itemNameId,
-        itemNameString,
-      );
+      try {
+        translatedNameEn = await translateWithDeepL(data.name.trim());
+      } catch (error) {
+        console.error("❌ DeepL gagal menerjemahkan nama produk:", error);
+
+        translatedNameEn = null;
+      }
     }
 
     // if (data.description) {
@@ -152,16 +150,21 @@ export class ProductService {
       });
     }
 
-    // ============ TRANSLATE DESCRIPTION ============
-    // Kita lakukan terjemahan di luar transaksi database agar lebih aman dan cepat
+    // ==========================================
+    // PRODUCT DESCRIPTION - DEEPL
+    // ==========================================
+
     let translatedDescriptionEn: string | null = null;
-    if (data.description) {
+
+    if (data.description?.trim()) {
       try {
-        const res = await translate(data.description, { to: "en" });
-        translatedDescriptionEn = res.text;
+        translatedDescriptionEn = await translateWithDeepL(
+          data.description,
+          true,
+        );
       } catch (error) {
-        console.error("Gagal menerjemahkan deskripsi produk:", error);
-        // Jika gagal, biarkan menjadi null agar proses pembuatan produk tetap berjalan
+        console.error("❌ DeepL gagal menerjemahkan deskripsi produk:", error);
+
         translatedDescriptionEn = null;
       }
     }
@@ -615,36 +618,48 @@ export class ProductService {
     // ENGLISH PRODUCT TITLE & DESCRIPTION
     // ===================================================
 
-    let translatedNameEn: string | undefined = undefined;
-    let translatedDescEn: string | undefined = undefined;
+    // ===================================================
+    // ENGLISH PRODUCT TITLE - SMART DEEPL TRANSLATION
+    // ===================================================
+
+    let translatedNameEn: string | null | undefined = undefined;
+    let translatedDescEn: string | null | undefined = undefined;
 
     const effectiveName = data.name !== undefined ? data.name : existing.name;
+
+    const nameChanged = data.name !== undefined && data.name !== existing.name;
 
     const hasEnglishTitleInput = data.name_en !== undefined;
 
     const manualEnglishTitle =
       typeof data.name_en === "string" ? data.name_en.trim() : "";
 
-    const existingEnglishTitle =
-      typeof existing.name_en === "string" ? existing.name_en.trim() : "";
+    const existingEnglishTitle = existing.name_en?.trim() || "";
 
-    if (hasEnglishTitleInput) {
-      if (manualEnglishTitle) {
-        // Admin mengisi English Title.
-        // Tidak melakukan translate.
-        translatedNameEn = manualEnglishTitle;
-      } else if (effectiveName?.trim()) {
-        // Admin secara eksplisit mengosongkan field.
-        // Gunakan translate otomatis.
-        const effectiveItemNameId =
-          data.itemNameId !== undefined ? data.itemNameId : existing.itemNameId;
+    const effectiveItemNameId =
+      data.itemNameId !== undefined ? data.itemNameId : existing.itemNameId;
 
-        const cachedItemName =
-          data.itemNameId === undefined ||
-          data.itemNameId === existing.itemNameId
-            ? existing.itemName?.name
-            : undefined;
+    const cachedItemName =
+      data.itemNameId === undefined || data.itemNameId === existing.itemNameId
+        ? existing.itemName?.name
+        : undefined;
 
+    // Jika admin benar-benar mengubah nama Inggris,
+    // gunakan nilai manual.
+    const englishTitleManuallyChanged =
+      Boolean(manualEnglishTitle) &&
+      manualEnglishTitle !== existingEnglishTitle;
+
+    if (englishTitleManuallyChanged) {
+      translatedNameEn = manualEnglishTitle;
+    } else {
+      const shouldTranslate =
+        Boolean(effectiveName?.trim()) &&
+        (nameChanged ||
+          (hasEnglishTitleInput && !manualEnglishTitle) ||
+          !existingEnglishTitle);
+
+      if (shouldTranslate) {
         const translated = await this.translateProductNameWithItemName(
           effectiveName,
           effectiveItemNameId,
@@ -655,27 +670,11 @@ export class ProductService {
           translatedNameEn = translated;
         }
       }
-    } else if (!existingEnglishTitle && effectiveName?.trim()) {
-      // Tidak ada input English Title dan
-      // database juga belum memiliki nama Inggris.
-      const effectiveItemNameId =
-        data.itemNameId !== undefined ? data.itemNameId : existing.itemNameId;
-
-      const cachedItemName =
-        data.itemNameId === undefined || data.itemNameId === existing.itemNameId
-          ? existing.itemName?.name
-          : undefined;
-
-      const translated = await this.translateProductNameWithItemName(
-        effectiveName,
-        effectiveItemNameId,
-        cachedItemName,
-      );
-
-      if (translated) {
-        translatedNameEn = translated;
-      }
     }
+
+    // ===================================================
+    // PRODUCT DESCRIPTION - DEEPL TRANSLATION
+    // ===================================================
 
     const effectiveDesc =
       data.description !== undefined ? data.description : existing.description;
@@ -684,14 +683,19 @@ export class ProductService {
       data.description !== undefined &&
       data.description !== existing.description;
 
-    // Translate hanya ketika deskripsi berubah.
-    const shouldTranslateDesc = isDescChanged;
+    // Jika deskripsi Indonesia berubah.
+    if (isDescChanged) {
+      if (!effectiveDesc?.trim()) {
+        // Jika deskripsi dikosongkan,
+        // kosongkan juga terjemahan Inggris.
+        translatedDescEn = null;
+      } else {
+        const translated =
+          await this.translateProductDescription(effectiveDesc);
 
-    if (shouldTranslateDesc && effectiveDesc) {
-      const resDesc = await this.translateProductDescription(effectiveDesc);
-
-      if (resDesc) {
-        translatedDescEn = resDesc;
+        if (translated) {
+          translatedDescEn = translated;
+        }
       }
     }
 
@@ -2489,7 +2493,9 @@ export class ProductService {
     };
   }
 
-  // === UPDATE PRODUCT ATTRIBUTES (CREATE/DELETE) ===
+  // ====================================================================
+  // UPDATE PRODUCT ATTRIBUTES - SAFE TRANSACTION
+  // ====================================================================
   async updateProductAttributes(dto: UpdateProductAttributesDTO) {
     const {
       productId,
@@ -2503,81 +2509,114 @@ export class ProductService {
       orderedAttributeValueIds,
     } = dto;
 
-    // 1. Delete all existing attribute associations for this product
-    await this.prisma.productAttributeValue.deleteMany({
-      where: { productId },
+    // =====================================================
+    // 1. VALIDATE INPUT
+    // =====================================================
+
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true },
     });
 
-    // 2. Re-create all attribute associations with price modifiers
-    if (attributeValueIds.length > 0) {
-      const attributeValues = await this.prisma.attributeValue.findMany({
-        where: { id: { in: attributeValueIds } },
-        select: { id: true, attributeId: true },
-      });
-
-      const insertData = attributeValues.map((av) => {
-        const modifier =
-          priceModifiers[av.id] !== undefined
-            ? Number(priceModifiers[av.id])
-            : 0;
-        const weightVal =
-          weights[av.id] !== undefined && weights[av.id] !== null
-            ? Number(weights[av.id])
-            : null;
-        const widthVal =
-          widths[av.id] !== undefined && widths[av.id] !== null
-            ? Number(widths[av.id])
-            : null;
-        const heightVal =
-          heights[av.id] !== undefined && heights[av.id] !== null
-            ? Number(heights[av.id])
-            : null;
-        const lengthVal =
-          lengths[av.id] !== undefined && lengths[av.id] !== null
-            ? Number(lengths[av.id])
-            : null;
-
-        return {
-          productId,
-          attributeValueId: av.id,
-          attributeId: av.attributeId,
-          priceModifier: modifier,
-          weight: weightVal,
-          width: widthVal,
-          height: heightVal,
-          length: lengthVal,
-        };
-      });
-
-      await this.prisma.productAttributeValue.createMany({
-        data: insertData,
-        skipDuplicates: true,
-      });
+    if (!product) {
+      throw new ApiError("Product not found", 404);
     }
 
-    // 3. Update position of attributes based on order in payload
-    if (orderedAttributeIds && orderedAttributeIds.length > 0) {
-      for (let i = 0; i < orderedAttributeIds.length; i++) {
-        const attrId = orderedAttributeIds[i];
-        await this.prisma.attribute.updateMany({
-          where: { id: attrId },
-          data: { position: i },
+    const uniqueValueIds = [...new Set(attributeValueIds)];
+
+    const attributeValues =
+      uniqueValueIds.length > 0
+        ? await this.prisma.attributeValue.findMany({
+            where: {
+              id: { in: uniqueValueIds },
+            },
+            select: {
+              id: true,
+              attributeId: true,
+            },
+          })
+        : [];
+
+    if (attributeValues.length !== uniqueValueIds.length) {
+      throw new ApiError("One or more attribute values were not found", 400);
+    }
+
+    // =====================================================
+    // 2. PREPARE RELATION DATA
+    // =====================================================
+
+    const insertData = attributeValues.map((av) => ({
+      productId,
+      attributeValueId: av.id,
+      attributeId: av.attributeId,
+
+      priceModifier:
+        priceModifiers[av.id] !== undefined ? Number(priceModifiers[av.id]) : 0,
+
+      weight: weights[av.id] != null ? Number(weights[av.id]) : null,
+
+      width: widths[av.id] != null ? Number(widths[av.id]) : null,
+
+      height: heights[av.id] != null ? Number(heights[av.id]) : null,
+
+      length: lengths[av.id] != null ? Number(lengths[av.id]) : null,
+    }));
+
+    // =====================================================
+    // 3. DATABASE TRANSACTION
+    // =====================================================
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        // Delete existing relations
+        await tx.productAttributeValue.deleteMany({
+          where: { productId },
         });
-      }
-    }
 
-    // 4. Update position of attribute values based on order in payload
-    if (orderedAttributeValueIds && orderedAttributeValueIds.length > 0) {
-      for (let i = 0; i < orderedAttributeValueIds.length; i++) {
-        const valId = orderedAttributeValueIds[i];
-        await this.prisma.attributeValue.updateMany({
-          where: { id: valId },
-          data: { position: i },
-        });
-      }
-    }
+        // Recreate relations
+        if (insertData.length > 0) {
+          await tx.productAttributeValue.createMany({
+            data: insertData,
+            skipDuplicates: true,
+          });
+        }
 
-    return { message: "Product attributes updated successfully." };
+        // Update attribute positions
+        if (orderedAttributeIds?.length) {
+          for (let i = 0; i < orderedAttributeIds.length; i++) {
+            await tx.attribute.updateMany({
+              where: {
+                id: orderedAttributeIds[i],
+              },
+              data: {
+                position: i,
+              },
+            });
+          }
+        }
+
+        // Update attribute value positions
+        if (orderedAttributeValueIds?.length) {
+          for (let i = 0; i < orderedAttributeValueIds.length; i++) {
+            await tx.attributeValue.updateMany({
+              where: {
+                id: orderedAttributeValueIds[i],
+              },
+              data: {
+                position: i,
+              },
+            });
+          }
+        }
+      },
+      {
+        timeout: 30000,
+      },
+    );
+
+    return {
+      message: "Product attributes updated successfully.",
+    };
   }
 
   // === UPDATE VARIANT IMAGES (CREATE/UPDATE/DELETE) ===
@@ -3399,55 +3438,88 @@ export class ProductService {
     return updatedVideo;
   }
 
-  // === UPSERT PRODUCT SEO (AUTO TRANSLATE BILINGUAL) ===
+  // ====================================================================
+  // UPSERT PRODUCT SEO - SMART BILINGUAL TRANSLATION WITH DEEPL
+  // ====================================================================
   async upsertProductSEO(productId: string, data: ProductSeoDTO) {
-    // 1. Validasi: Pastikan Produknya Ada
+    // =====================================================
+    // 1. VALIDATE PRODUCT
+    // =====================================================
+
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
+      select: { id: true },
     });
 
     if (!product) {
       throw new ApiError(`Product with ID ${productId} not found`, 404);
     }
 
-    // 2. Ambil data SEO lama untuk membandingkan apakah ada perubahan
+    // =====================================================
+    // 2. GET EXISTING SEO
+    // =====================================================
+
     const existingSeo = await this.prisma.productSEO.findUnique({
       where: { productId },
     });
 
-    // 3. Fungsi pembantu untuk menerjemahkan otomatis secara cerdas
+    // =====================================================
+    // 3. SMART TRANSLATION HELPER
+    // =====================================================
+
     const getEnValue = async (
-      newIdText?: string,
-      newEnText?: string,
+      newIdText?: string | null,
+      newEnText?: string | null,
       oldIdText?: string | null,
       oldEnText?: string | null,
-    ) => {
-      // Jika admin sudah mengisi manual versi Inggris, utamakan inputan admin
-      if (newEnText && newEnText.trim() !== "") {
-        return newEnText;
+    ): Promise<string | null> => {
+      const manualEn = newEnText?.trim();
+
+      // Prioritaskan input Inggris manual.
+      if (manualEn) {
+        return manualEn;
       }
 
-      // Jika teks Indonesia diisi DAN (teksnya berbeda dengan yang lama ATAU data baru)
-      if (newIdText && newIdText !== oldIdText) {
-        try {
-          const res = await translate(newIdText, { to: "en" });
-          return res.text;
-        } catch (error) {
-          console.error(
-            "Gagal menerjemahkan teks, memakai teks asli sebagai fallback:",
-            error,
-          );
-          return newIdText; // Fallback ke teks Indonesia jika API error
-        }
+      // Jika teks Indonesia tidak dikirim, pertahankan EN lama.
+      if (newIdText === undefined) {
+        return oldEnText ?? null;
       }
 
-      // Jika teks Indonesia tidak berubah dan admin tidak mengisi teks Inggris baru,
-      // kita pertahankan teks Inggris yang sudah ada di database sebelumnya.
-      return oldEnText || undefined;
+      const currentId = newIdText?.trim() ?? "";
+      const previousId = oldIdText?.trim() ?? "";
+
+      // Jika teks Indonesia dikosongkan, jangan gunakan
+      // terjemahan lama yang mungkin tidak lagi relevan.
+      if (!currentId) {
+        return newEnText === undefined ? (oldEnText ?? null) : null;
+      }
+
+      const sourceChanged = currentId !== previousId;
+
+      // Auto-translate jika ID berubah, atau EN belum tersedia.
+      const shouldTranslate = sourceChanged || !oldEnText?.trim();
+
+      if (!shouldTranslate) {
+        return oldEnText ?? null;
+      }
+
+      try {
+        const translated = await translateWithDeepL(currentId);
+
+        return translated.trim() || oldEnText || null;
+      } catch (error) {
+        console.error("❌ DeepL Product SEO translation failed:", error);
+
+        // Tidak menyalin teks Indonesia ke field Inggris.
+        // Nilai lama tetap dipertahankan.
+        return oldEnText ?? null;
+      }
     };
 
-    // 4. Proses semua terjemahan secara paralel (bersamaan) agar lebih cepat
-    // Kita tidak menerjemahkan canonicalUrl dan structuredData karena itu berupa URL dan JSON
+    // =====================================================
+    // 4. TRANSLATE SEO FIELDS IN PARALLEL
+    // =====================================================
+
     const [
       metaTitleEn,
       metaDescriptionEn,
@@ -3487,14 +3559,17 @@ export class ProductService {
       ),
     ]);
 
-    // 5. Simpan ke database menggunakan Upsert
+    // =====================================================
+    // 5. UPSERT SEO
+    // =====================================================
+
     const seoData = await this.prisma.productSEO.upsert({
-      where: {
-        productId: productId,
-      },
+      where: { productId },
+
       create: {
-        productId: productId,
-        // Data Bahasa Indonesia
+        productId,
+
+        // Indonesian
         metaTitleId: data.metaTitleId,
         metaDescriptionId: data.metaDescriptionId,
         keywordsId: data.keywordsId,
@@ -3503,39 +3578,61 @@ export class ProductService {
         ogDescriptionId: data.ogDescriptionId,
         structuredDataId: data.structuredDataId,
 
-        // Data Bahasa Inggris (Hasil Translate atau Input Manual)
-        metaTitleEn: metaTitleEn,
-        metaDescriptionEn: metaDescriptionEn,
-        keywordsEn: keywordsEn,
+        // English
+        metaTitleEn,
+        metaDescriptionEn,
+        keywordsEn,
         canonicalUrlEn: data.canonicalUrlEn,
-        ogTitleEn: ogTitleEn,
-        ogDescriptionEn: ogDescriptionEn,
+        ogTitleEn,
+        ogDescriptionEn,
         structuredDataEn: data.structuredDataEn,
 
-        // Data Universal
+        // Universal
         ogImage: data.ogImage,
       },
+
       update: {
-        // Data Bahasa Indonesia
-        metaTitleId: data.metaTitleId,
-        metaDescriptionId: data.metaDescriptionId,
-        keywordsId: data.keywordsId,
-        canonicalUrlId: data.canonicalUrlId,
-        ogTitleId: data.ogTitleId,
-        ogDescriptionId: data.ogDescriptionId,
-        structuredDataId: data.structuredDataId,
+        // Indonesian
+        ...(data.metaTitleId !== undefined && {
+          metaTitleId: data.metaTitleId,
+        }),
+        ...(data.metaDescriptionId !== undefined && {
+          metaDescriptionId: data.metaDescriptionId,
+        }),
+        ...(data.keywordsId !== undefined && {
+          keywordsId: data.keywordsId,
+        }),
+        ...(data.canonicalUrlId !== undefined && {
+          canonicalUrlId: data.canonicalUrlId,
+        }),
+        ...(data.ogTitleId !== undefined && {
+          ogTitleId: data.ogTitleId,
+        }),
+        ...(data.ogDescriptionId !== undefined && {
+          ogDescriptionId: data.ogDescriptionId,
+        }),
+        ...(data.structuredDataId !== undefined && {
+          structuredDataId: data.structuredDataId,
+        }),
 
-        // Data Bahasa Inggris (Hasil Translate atau Input Manual)
-        metaTitleEn: metaTitleEn,
-        metaDescriptionEn: metaDescriptionEn,
-        keywordsEn: keywordsEn,
-        canonicalUrlEn: data.canonicalUrlEn,
-        ogTitleEn: ogTitleEn,
-        ogDescriptionEn: ogDescriptionEn,
-        structuredDataEn: data.structuredDataEn,
+        // English
+        metaTitleEn,
+        metaDescriptionEn,
+        keywordsEn,
+        ogTitleEn,
+        ogDescriptionEn,
 
-        // Data Universal
-        ogImage: data.ogImage,
+        ...(data.canonicalUrlEn !== undefined && {
+          canonicalUrlEn: data.canonicalUrlEn,
+        }),
+        ...(data.structuredDataEn !== undefined && {
+          structuredDataEn: data.structuredDataEn,
+        }),
+
+        // Universal
+        ...(data.ogImage !== undefined && {
+          ogImage: data.ogImage,
+        }),
       },
     });
 
@@ -4515,55 +4612,46 @@ export class ProductService {
           label: "1+ pcs",
         });
       }
-      const attributeValuesFormatted = await Promise.all(
-        product.attributeValues.map(async (av) => {
-          let attributeName = av.attribute?.name || "";
-          let attributeValue = av.attributeValue?.value || "";
-          if (lang === "en") {
-            try {
-              const [nameTranslated, valueTranslated] = await Promise.all([
-                attributeName
-                  ? translate(attributeName, { to: "en" }).then(
-                      (res) => res.text,
-                    )
-                  : Promise.resolve(attributeName),
-                attributeValue
-                  ? translate(attributeValue, { to: "en" }).then(
-                      (res) => res.text,
-                    )
-                  : Promise.resolve(attributeValue),
-              ]);
-              attributeName = nameTranslated;
-              attributeValue = valueTranslated;
-            } catch (error) {
-              console.error(
-                `Failed to translate attribute (${av.attributeId}):`,
-                error,
-              );
-            }
-          }
-          return {
-            id: av.id,
-            attributeId: av.attributeId,
-            attributeValueId: av.attributeValueId,
-            priceModifier: av.priceModifier
-              ? parseFloat(
-                  (Number(av.priceModifier) * conversionRate).toFixed(2),
-                )
-              : 0,
-            weight: av.weight ? Number(av.weight) : null,
-            width: av.width ? Number(av.width) : null,
-            height: av.height ? Number(av.height) : null,
-            length: av.length ? Number(av.length) : null,
-            value: attributeValue,
-            attributeName: attributeName,
-            attributeType: av.attribute?.type || "TEXT",
-            attributePosition: av.attribute?.position ?? 0,
-            valuePosition: av.attributeValue?.position ?? 0,
-            parentValueId: av.attribute?.parentValueId || null,
-          };
-        }),
-      );
+      // =====================================================
+      // PRODUCT ATTRIBUTES - DATABASE TRANSLATION
+      // =====================================================
+
+      const attributeValuesFormatted = product.attributeValues.map((av) => {
+        const attributeName =
+          lang === "en"
+            ? av.attribute?.name_en?.trim() || av.attribute?.name || ""
+            : av.attribute?.name || "";
+
+        const attributeValue =
+          lang === "en"
+            ? av.attributeValue?.value_en?.trim() ||
+              av.attributeValue?.value ||
+              ""
+            : av.attributeValue?.value || "";
+
+        return {
+          id: av.id,
+          attributeId: av.attributeId,
+          attributeValueId: av.attributeValueId,
+
+          priceModifier: av.priceModifier
+            ? parseFloat((Number(av.priceModifier) * conversionRate).toFixed(2))
+            : 0,
+
+          weight: av.weight ? Number(av.weight) : null,
+          width: av.width ? Number(av.width) : null,
+          height: av.height ? Number(av.height) : null,
+          length: av.length ? Number(av.length) : null,
+
+          value: attributeValue,
+          attributeName,
+
+          attributeType: av.attribute?.type || "TEXT",
+          attributePosition: av.attribute?.position ?? 0,
+          valuePosition: av.attributeValue?.position ?? 0,
+          parentValueId: av.attribute?.parentValueId || null,
+        };
+      });
       const attributeValuesSorted = attributeValuesFormatted
         .sort((a, b) =>
           a.attributePosition !== b.attributePosition
@@ -4890,37 +4978,52 @@ export class ProductService {
   }
 
   /**
-   * Helper untuk menerjemahkan nama produk ke bahasa Inggris:
-   * Menjaga Item Name (brand/series prefix) tetap utuh apa adanya,
-   * dan hanya menerjemahkan deskripsi produknya (suffix).
+   * Translate product name to English using DeepL.
+   *
+   * Mempertahankan Item Name sebagai prefix,
+   * dan hanya menerjemahkan bagian suffix produk.
+   *
+   * Prioritas:
+   * 1. Pertahankan Item Name apa adanya.
+   * 2. Translate suffix menggunakan DeepL.
+   * 3. Jika DeepL gagal, return null.
    */
   public async translateProductNameWithItemName(
     productName: string,
     itemNameId?: string | null,
     cachedItemName?: string | null,
   ): Promise<string | null> {
-    if (!productName || !productName.trim()) return null;
+    if (!productName?.trim()) return null;
 
     let prefix = "";
     let textToTranslate = productName.trim();
 
     try {
+      // =====================================================
+      // 1. GET ITEM NAME
+      // =====================================================
+
       let itemNameString = cachedItemName?.trim() || "";
+
       if (!itemNameString && itemNameId) {
         const itemData = await this.prisma.itemName.findUnique({
           where: { id: itemNameId },
           select: { name: true },
         });
-        if (itemData?.name) {
-          itemNameString = itemData.name.trim();
-        }
+
+        itemNameString = itemData?.name?.trim() || "";
       }
+
+      // =====================================================
+      // 2. DETECT AND PRESERVE PREFIX
+      // =====================================================
 
       if (itemNameString) {
         const escapedItem = itemNameString.replace(
           /[.*+?^${}()|[\]\\\/]/g,
           "\\$&",
         );
+
         const regex = new RegExp(
           `^${escapedItem}(?:\\s*[-–:]?\\s+|\\s*$)`,
           "i",
@@ -4928,42 +5031,62 @@ export class ProductService {
 
         if (regex.test(textToTranslate)) {
           prefix = itemNameString;
+
           textToTranslate = textToTranslate.replace(regex, "").trim();
         }
       }
 
-      if (textToTranslate) {
-        const res = await translate(textToTranslate, { to: "en" });
-        const translatedSuffix = res.text?.trim() || textToTranslate;
-        return prefix ? `${prefix} ${translatedSuffix}` : translatedSuffix;
+      // =====================================================
+      // 3. TRANSLATE SUFFIX WITH DEEPL
+      // =====================================================
+
+      if (!textToTranslate) {
+        return prefix || productName.trim();
       }
 
-      return prefix || productName;
+      const translatedSuffix = await translateWithDeepL(textToTranslate);
+
+      if (!translatedSuffix?.trim()) {
+        return null;
+      }
+
+      // =====================================================
+      // 4. COMBINE PREFIX + TRANSLATED SUFFIX
+      // =====================================================
+
+      return prefix
+        ? `${prefix} ${translatedSuffix.trim()}`
+        : translatedSuffix.trim();
     } catch (error) {
-      console.warn("⚠️ Gagal melakukan auto-translate nama produk:", error);
+      console.warn("⚠️ DeepL gagal menerjemahkan nama produk:", error);
+
       return null;
     }
   }
 
   /**
-   * Helper untuk menerjemahkan deskripsi produk ke bahasa Inggris
+   * Translate product description to English using DeepL.
+   *
+   * Mendukung deskripsi HTML dari rich-text editor.
    */
   public async translateProductDescription(
     description?: string | null,
   ): Promise<string | null> {
-    if (!description || !description.trim()) return null;
+    if (!description?.trim()) return null;
+
     try {
-      const res = await translate(description, { to: "en" });
-      return res.text?.trim() || null;
-    } catch (error) {
-      console.warn(
-        "⚠️ Gagal melakukan auto-translate deskripsi produk:",
-        error,
+      const translated = await translateWithDeepL(
+        description,
+        true, // HTML mode untuk rich-text content
       );
+
+      return translated?.trim() || null;
+    } catch (error) {
+      console.warn("⚠️ DeepL gagal menerjemahkan deskripsi produk:", error);
+
       return null;
     }
   }
-
   private injectLegacyMockupArea(product: any) {
     if (!product) return product;
 

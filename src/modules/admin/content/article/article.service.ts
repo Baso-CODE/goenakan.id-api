@@ -1,7 +1,7 @@
-import { translate } from "@vitalets/google-translate-api";
 import { injectable } from "tsyringe";
 
 import { ApiError } from "../../../../utils/api-error";
+import { translateWithDeepL } from "../../../../utils/deepl-translate";
 import { SlugService } from "../../../../utils/genereateSlug";
 import { CloudinaryService } from "../../../cloudinary/cloudinary.service";
 import { PaginationService } from "../../../pagination/pagination.service";
@@ -37,6 +37,7 @@ export class ArticleService {
       throw new ApiError("Failed to upload image to Cloudinary", 500);
     }
   }
+
   async createArticle(
     data: CreateArticleDTO,
     authorId: string,
@@ -53,34 +54,56 @@ export class ArticleService {
       throw new ApiError("Article with this title/slug already exists", 400);
     }
 
-    let title_en = data.title_en;
-    let content_en = data.content_en;
-    let focusKeywords_en = data.focusKeywords_en;
+    // =====================================================
+    // 1. TRANSLATION - DEEPL API
+    // =====================================================
+
+    // Prioritaskan input bahasa Inggris manual dari admin.
+    let title_en = data.title_en?.trim() || undefined;
+    let content_en = data.content_en?.trim() || undefined;
+    let focusKeywords_en = data.focusKeywords_en?.trim() || undefined;
 
     if (data.autoTranslate) {
-      try {
-        if (!title_en) {
-          const resTitle = await translate(data.title, { to: "en" });
-          title_en = resTitle.text;
+      // Translate judul
+      if (!title_en && data.title?.trim()) {
+        try {
+          title_en = await translateWithDeepL(data.title.trim());
+        } catch (error) {
+          console.error("❌ DeepL failed to translate article title:", error);
         }
+      }
 
-        if (!content_en) {
-          const resContent = await translate(data.content, { to: "en" });
-          content_en = resContent.text;
+      // Translate konten HTML dari Tiptap
+      if (!content_en && data.content?.trim()) {
+        try {
+          content_en = await translateWithDeepL(
+            data.content,
+            true, // Aktifkan HTML translation
+          );
+        } catch (error) {
+          console.error("❌ DeepL failed to translate article content:", error);
         }
+      }
 
-        if (data.focusKeywords_id && !focusKeywords_en) {
-          const resFocusKeywords = await translate(data.focusKeywords_id, {
-            to: "en",
-          });
-          focusKeywords_en = resFocusKeywords.text;
+      // Translate focus keywords
+      if (!focusKeywords_en && data.focusKeywords_id?.trim()) {
+        try {
+          focusKeywords_en = await translateWithDeepL(
+            data.focusKeywords_id.trim(),
+          );
+        } catch (error) {
+          console.error("❌ DeepL failed to translate focus keywords:", error);
         }
-      } catch (error) {
-        console.error("Auto-translate failed:", error);
       }
     }
 
-    const hasTranslation = !!(title_en && content_en);
+    // Artikel dinyatakan diterjemahkan jika judul dan
+    // konten bahasa Inggris sama-sama tersedia.
+    const hasTranslation = Boolean(title_en && content_en);
+
+    // =====================================================
+    // 2. UPLOAD COVER IMAGE DESKTOP
+    // =====================================================
 
     let coverImageUrl = data.coverImage;
     let coverImagePublicId = data.coverImageId;
@@ -106,6 +129,7 @@ export class ArticleService {
         coverImagePublicId = uploadResult.public_id;
       } catch (error: any) {
         console.error("🔥 CLOUDINARY ERROR", JSON.stringify(error, null, 2));
+
         throw new ApiError(
           "Failed to upload new cover image to Cloudinary",
           500,
@@ -116,6 +140,10 @@ export class ArticleService {
     if (!coverImageUrl) {
       throw new ApiError("Cover image desktop is required", 400);
     }
+
+    // =====================================================
+    // 3. UPLOAD COVER IMAGE MOBILE
+    // =====================================================
 
     let coverImageMobileUrl = data.coverImageMobile;
     let coverImageMobilePublicId = data.coverImageMobileId;
@@ -145,6 +173,7 @@ export class ArticleService {
         coverImageMobilePublicId = uploadResultMobile.public_id;
       } catch (error: any) {
         console.error("🔥 CLOUDINARY ERROR", JSON.stringify(error, null, 2));
+
         throw new ApiError(
           "Failed to upload new mobile cover image to Cloudinary",
           500,
@@ -152,11 +181,21 @@ export class ArticleService {
       }
     }
 
+    // =====================================================
+    // 4. PREPARE RELATIONS
+    // =====================================================
+
     const productIds = [...new Set((data.productIds ?? []).filter(Boolean))];
+
     const tagIds = [...new Set((data.tagIds ?? []).filter(Boolean))];
+
+    // =====================================================
+    // 5. DATABASE TRANSACTION
+    // =====================================================
 
     try {
       const newArticle = await this.prisma.$transaction(async (tx) => {
+        // Validasi seluruh Tag ID
         if (tagIds.length > 0) {
           const existingTags = await tx.tag.findMany({
             where: {
@@ -167,6 +206,7 @@ export class ArticleService {
 
           if (existingTags.length !== tagIds.length) {
             const existingTagIds = new Set(existingTags.map((tag) => tag.id));
+
             const invalidTagIds = tagIds.filter(
               (tagId) => !existingTagIds.has(tagId),
             );
@@ -178,22 +218,34 @@ export class ArticleService {
           }
         }
 
+        // Create Article
         const article = await tx.article.create({
           data: {
+            // Indonesian
             title_id: data.title,
             content_id: data.content,
             focusKeywords_id: data.focusKeywords_id,
+
+            // English - DeepL atau input manual
             title_en,
             content_en,
             focusKeywords_en,
             isTranslated: hasTranslation,
+
+            // General
             slug,
             source: data.source,
+
+            // Cover Desktop
             coverImage: coverImageUrl,
             coverImageId: coverImagePublicId,
             coverImageAlt: data.coverImageAlt,
+
+            // Cover Mobile
             coverImageMobile: coverImageMobileUrl,
             coverImageMobileId: coverImageMobilePublicId,
+
+            // Author & Publication
             authorName: data.authorName,
             published: data.published ?? false,
             publishedAt: data.published
@@ -201,13 +253,18 @@ export class ArticleService {
                 ? new Date(data.publishedAt)
                 : new Date()
               : null,
+
             categoryId: data.categoryId,
             authorId,
+
+            // Tags
             ...(tagIds.length > 0 && {
               tags: {
                 connect: tagIds.map((id) => ({ id })),
               },
             }),
+
+            // SEO Metadata
             ...(data.seo && {
               seo: {
                 create: {
@@ -226,6 +283,7 @@ export class ArticleService {
           },
         });
 
+        // Related Products
         if (productIds.length > 0) {
           await tx.articleProduct.createMany({
             data: productIds.map((productId) => ({
@@ -270,107 +328,140 @@ export class ArticleService {
 
     const { productIds, tagIds } = data;
 
+    // =====================================================
+    // 1. VALIDATE ARTICLE SLUG
+    // =====================================================
+
     let newSlug = existing.slug;
 
-    if (data.title) {
+    if (data.title !== undefined && data.title !== existing.title_id) {
       newSlug = this.slug.create(data.title);
 
-      if (data.title !== existing.title_id) {
-        const duplicate = await this.prisma.article.findFirst({
-          where: {
-            slug: newSlug,
-            id: { not: id },
-          },
-        });
+      const duplicate = await this.prisma.article.findFirst({
+        where: {
+          slug: newSlug,
+          id: { not: id },
+        },
+      });
 
-        if (duplicate) {
-          throw new ApiError(
-            "Article with this title/slug already exists",
-            400,
-          );
-        }
+      if (duplicate) {
+        throw new ApiError("Article with this title/slug already exists", 400);
       }
     }
 
-    let title_en = existing.title_en;
-    let content_en = existing.content_en;
-    let focusKeywords_en = existing.focusKeywords_en;
+    // =====================================================
+    // 2. TRANSLATION - DEEPL API
+    // =====================================================
 
-    if (
-      data.autoTranslate &&
-      (data.title || data.content || data.focusKeywords_id)
-    ) {
-      try {
-        if (data.title) {
-          if (data.title_en) {
-            title_en = data.title_en;
-          } else {
-            const resTitle = await translate(data.title, { to: "en" });
-            title_en = resTitle.text;
-          }
-        }
+    const translateField = async (
+      currentValue: string | null,
+      manualValue: string | undefined,
+      sourceText: string | undefined,
+      sourceChanged: boolean,
+      isHtml: boolean,
+      fieldName: string,
+    ): Promise<string | null> => {
+      const manualText = manualValue?.trim();
 
-        if (data.content) {
-          if (data.content_en) {
-            content_en = data.content_en;
-          } else {
-            const resContent = await translate(data.content, { to: "en" });
-            content_en = resContent.text;
-          }
-        }
-
-        if (data.focusKeywords_id) {
-          if (data.focusKeywords_en) {
-            focusKeywords_en = data.focusKeywords_en;
-          } else {
-            const resFocusKeywords = await translate(data.focusKeywords_id, {
-              to: "en",
-            });
-            focusKeywords_en = resFocusKeywords.text;
-          }
-        }
-      } catch (error) {
-        console.error("Auto-translate failed during update:", error);
-
-        if (data.title_en) title_en = data.title_en;
-        if (data.content_en) content_en = data.content_en;
-        if (data.focusKeywords_en) {
-          focusKeywords_en = data.focusKeywords_en;
-        }
-      }
-    } else {
-      if (data.title_en !== undefined) {
-        title_en = data.title_en;
+      // Input Inggris manual selalu diprioritaskan.
+      if (manualText) {
+        return manualText;
       }
 
-      if (data.content_en !== undefined) {
-        content_en = data.content_en;
+      // Terjemahkan jika autoTranslate aktif dan:
+      // - teks Indonesia berubah; atau
+      // - field Inggris dikirim dalam keadaan kosong.
+      const shouldTranslate =
+        data.autoTranslate === true &&
+        Boolean(sourceText?.trim()) &&
+        (sourceChanged || manualValue !== undefined);
+
+      if (shouldTranslate && sourceText) {
+        try {
+          return await translateWithDeepL(sourceText, isHtml);
+        } catch (error) {
+          console.error(`❌ DeepL failed to translate ${fieldName}:`, error);
+
+          // Jangan hilangkan nilai sebelumnya jika API gagal.
+          return currentValue;
+        }
       }
 
-      if (data.focusKeywords_en !== undefined) {
-        focusKeywords_en = data.focusKeywords_en;
+      // Jika field Inggris sengaja dikosongkan dan
+      // autoTranslate tidak dijalankan, kosongkan nilainya.
+      if (manualValue !== undefined) {
+        return manualValue.trim();
       }
-    }
 
-    const hasTranslation = !!(title_en && content_en);
+      // Tidak ada perubahan: pertahankan data lama.
+      return currentValue;
+    };
+
+    const title_en = await translateField(
+      existing.title_en,
+      data.title_en,
+      data.title ?? existing.title_id,
+      data.title !== undefined && data.title !== existing.title_id,
+      false,
+      "article title",
+    );
+
+    const content_en = await translateField(
+      existing.content_en,
+      data.content_en,
+      data.content ?? existing.content_id,
+      data.content !== undefined && data.content !== existing.content_id,
+      true, // Konten Tiptap berbentuk HTML.
+      "article content",
+    );
+
+    const focusKeywords_en = await translateField(
+      existing.focusKeywords_en,
+      data.focusKeywords_en,
+      data.focusKeywords_id ?? existing.focusKeywords_id ?? "",
+      data.focusKeywords_id !== undefined &&
+        data.focusKeywords_id !== existing.focusKeywords_id,
+      false,
+      "focus keywords",
+    );
+
+    const hasTranslation = Boolean(title_en?.trim() && content_en?.trim());
+
+    // =====================================================
+    // 3. UPLOAD COVER IMAGES - CLOUDINARY
+    // =====================================================
 
     let coverImageUrl = existing.coverImage;
     let coverImagePublicId = existing.coverImageId;
 
-    if (coverFile) {
-      if (existing.coverImageId) {
-        try {
-          await this.cloudinary.delete(existing.coverImageId);
-        } catch (error) {
-          console.warn("Failed to delete old desktop cover image:", error);
-        }
-      }
+    let coverImageMobileUrl = existing.coverImageMobile;
+    let coverImageMobilePublicId = existing.coverImageMobileId;
 
-      try {
+    // Catat ID gambar baru agar bisa dibersihkan
+    // jika proses upload atau database gagal.
+    const newlyUploadedIds: string[] = [];
+
+    const cleanupNewUploads = async () => {
+      await Promise.allSettled(
+        newlyUploadedIds.map(async (publicId) => {
+          try {
+            await this.cloudinary.delete(publicId);
+          } catch (error) {
+            console.error(
+              "Failed to clean up newly uploaded image:",
+              publicId,
+              error,
+            );
+          }
+        }),
+      );
+    };
+
+    try {
+      // Desktop cover
+      if (coverFile) {
         if (!coverFile.buffer) {
-          throw new Error(
-            "File buffer kosong. Pastikan config Multer menggunakan memoryStorage().",
-          );
+          throw new ApiError("Desktop cover file buffer is empty", 400);
         }
 
         const uploadResult = await this.cloudinary.upload(coverFile, {
@@ -380,31 +471,14 @@ export class ArticleService {
 
         coverImageUrl = uploadResult.secure_url;
         coverImagePublicId = uploadResult.public_id;
-      } catch (error) {
-        console.error("🔥 ERROR UPLOAD CLOUDINARY (DESKTOP):", error);
 
-        throw new ApiError(
-          "Failed to upload new cover image to Cloudinary",
-          500,
-        );
-      }
-    }
-
-    let coverImageMobileUrl = existing.coverImageMobile;
-    let coverImageMobilePublicId = existing.coverImageMobileId;
-
-    if (coverMobileFile) {
-      if (existing.coverImageMobileId) {
-        try {
-          await this.cloudinary.delete(existing.coverImageMobileId);
-        } catch (error) {
-          console.warn("Failed to delete old mobile cover image:", error);
-        }
+        newlyUploadedIds.push(uploadResult.public_id);
       }
 
-      try {
+      // Mobile cover
+      if (coverMobileFile) {
         if (!coverMobileFile.buffer) {
-          throw new Error("File buffer kosong.");
+          throw new ApiError("Mobile cover file buffer is empty", 400);
         }
 
         const uploadResultMobile = await this.cloudinary.upload(
@@ -417,15 +491,27 @@ export class ArticleService {
 
         coverImageMobileUrl = uploadResultMobile.secure_url;
         coverImageMobilePublicId = uploadResultMobile.public_id;
-      } catch (error) {
-        console.error("🔥 ERROR UPLOAD CLOUDINARY (MOBILE):", error);
 
-        throw new ApiError(
-          "Failed to upload new mobile cover image to Cloudinary",
-          500,
-        );
+        newlyUploadedIds.push(uploadResultMobile.public_id);
       }
+    } catch (error) {
+      await cleanupNewUploads();
+
+      console.error("🔥 CLOUDINARY UPLOAD ERROR:", error);
+
+      if (error instanceof ApiError) {
+        throw error;
+      }
+
+      throw new ApiError(
+        "Failed to upload article cover image to Cloudinary",
+        500,
+      );
     }
+
+    // =====================================================
+    // 4. NORMALIZE RELATIONS
+    // =====================================================
 
     const normalizedProductIds =
       productIds !== undefined
@@ -435,8 +521,15 @@ export class ArticleService {
     const normalizedTagIds =
       tagIds !== undefined ? [...new Set(tagIds.filter(Boolean))] : undefined;
 
+    // =====================================================
+    // 5. DATABASE TRANSACTION
+    // =====================================================
+
+    let updated: { id: string };
+
     try {
-      const updated = await this.prisma.$transaction(async (tx) => {
+      updated = await this.prisma.$transaction(async (tx) => {
+        // Validate tag IDs
         if (normalizedTagIds !== undefined && normalizedTagIds.length > 0) {
           const existingTags = await tx.tag.findMany({
             where: {
@@ -460,6 +553,7 @@ export class ArticleService {
         }
 
         const updateData: any = {
+          // Indonesian
           ...(data.title !== undefined && {
             title_id: data.title,
           }),
@@ -469,27 +563,44 @@ export class ArticleService {
           ...(data.focusKeywords_id !== undefined && {
             focusKeywords_id: data.focusKeywords_id,
           }),
+
+          // English - manual / DeepL
           title_en,
           content_en,
           focusKeywords_en,
           isTranslated: hasTranslation,
+
+          // Slug
           slug: newSlug,
+
+          // Source
           ...(data.source !== undefined && {
             source: data.source,
           }),
+
+          // Desktop cover
           coverImage: coverImageUrl,
           coverImageId: coverImagePublicId,
+
           ...(data.coverImageAlt !== undefined && {
             coverImageAlt: data.coverImageAlt,
           }),
+
+          // Mobile cover
           coverImageMobile: coverImageMobileUrl,
           coverImageMobileId: coverImageMobilePublicId,
+
+          // Author
           ...(data.authorName !== undefined && {
             authorName: data.authorName,
           }),
+
+          // Category
           ...(data.categoryId !== undefined && {
             categoryId: data.categoryId,
           }),
+
+          // Tags
           ...(normalizedTagIds !== undefined && {
             tags: {
               set: normalizedTagIds.map((tagId) => ({
@@ -498,6 +609,10 @@ export class ArticleService {
             },
           }),
         };
+
+        // =====================================================
+        // PUBLICATION STATUS
+        // =====================================================
 
         if (data.published !== undefined) {
           updateData.published = data.published;
@@ -514,6 +629,10 @@ export class ArticleService {
         } else if (data.publishedAt) {
           updateData.publishedAt = new Date(data.publishedAt);
         }
+
+        // =====================================================
+        // SEO METADATA
+        // =====================================================
 
         if (data.seo) {
           updateData.seo = {
@@ -544,10 +663,18 @@ export class ArticleService {
           };
         }
 
+        // =====================================================
+        // UPDATE ARTICLE
+        // =====================================================
+
         const article = await tx.article.update({
           where: { id },
           data: updateData,
         });
+
+        // =====================================================
+        // RELATED PRODUCTS
+        // =====================================================
 
         if (normalizedProductIds !== undefined) {
           await tx.articleProduct.deleteMany({
@@ -567,9 +694,11 @@ export class ArticleService {
 
         return article;
       });
-
-      return this.getArticleById(updated.id);
     } catch (error) {
+      // Jika DB gagal, hapus gambar yang baru diunggah.
+      // Gambar lama masih aman karena belum dihapus.
+      await cleanupNewUploads();
+
       console.error("🔥 ERROR UPDATING ARTICLE:", error);
 
       if (error instanceof ApiError) {
@@ -581,6 +710,51 @@ export class ArticleService {
         500,
       );
     }
+
+    // =====================================================
+    // 6. DELETE OLD CLOUDINARY IMAGES AFTER DB SUCCESS
+    // =====================================================
+
+    const oldImageIdsToDelete: string[] = [];
+
+    if (
+      coverFile &&
+      existing.coverImageId &&
+      existing.coverImageId !== coverImagePublicId
+    ) {
+      oldImageIdsToDelete.push(existing.coverImageId);
+    }
+
+    if (
+      coverMobileFile &&
+      existing.coverImageMobileId &&
+      existing.coverImageMobileId !== coverImageMobilePublicId
+    ) {
+      oldImageIdsToDelete.push(existing.coverImageMobileId);
+    }
+
+    // Cleanup best-effort, tidak membatalkan update artikel.
+    if (oldImageIdsToDelete.length > 0) {
+      await Promise.allSettled(
+        oldImageIdsToDelete.map(async (publicId) => {
+          try {
+            await this.cloudinary.delete(publicId);
+          } catch (error) {
+            console.warn(
+              "Failed to delete old Cloudinary image:",
+              publicId,
+              error,
+            );
+          }
+        }),
+      );
+    }
+
+    // =====================================================
+    // 7. RETURN UPDATED ARTICLE
+    // =====================================================
+
+    return this.getArticleById(updated.id);
   }
 
   // === GET RELEVANT ARTICLES (BERDASARKAN KATEGORI) ===

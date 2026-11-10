@@ -1,6 +1,6 @@
-import { translate } from "@vitalets/google-translate-api";
 import { injectable } from "tsyringe";
 import { ApiError } from "../../../../utils/api-error";
+import { translateWithDeepL } from "../../../../utils/deepl-translate";
 import { SlugService } from "../../../../utils/genereateSlug";
 import { CloudinaryService } from "../../../cloudinary/cloudinary.service";
 import { PaginationService } from "../../../pagination/pagination.service";
@@ -65,54 +65,90 @@ export class EventCategoryService {
   }
 
   // ====================================================================
-  // CREATE EVENT CATEGORY (Dengan Auto-Translate jika EN kosong)
+  // CREATE EVENT CATEGORY - DEEPL AUTO TRANSLATE
   // ====================================================================
   async createEventCategory(
     data: CreateEventCategoryDTO,
     file: Express.Multer.File,
   ) {
-    if (!file) throw new ApiError("Event category image is required", 400);
+    // =====================================================
+    // 1. VALIDATION & SLUG
+    // =====================================================
 
-    // Slug dibuat berdasarkan title_id utama
-    const slug = this.slug.create(data.title_id);
-    let uploadResult;
-
-    // --- 1. PROSES AUTO-TRANSLATE JIKA TITLE_EN KOSONG ---
-    let finalTitleEn = data.title_en;
-
-    try {
-      if (!finalTitleEn && data.title_id) {
-        const resTitle = await translate(data.title_id, { to: "en" });
-        finalTitleEn = resTitle.text;
-      }
-    } catch (transError) {
-      console.warn(
-        "⚠️ Warning: Auto-translate event category gagal:",
-        transError,
-      );
+    if (!file) {
+      throw new ApiError("Event category image is required", 400);
     }
 
-    // --- 2. UPLOAD KE CLOUDINARY ---
+    const slug = this.slug.create(data.title_id);
+
+    // =====================================================
+    // 2. AUTO TRANSLATE USING DEEPL
+    // =====================================================
+
+    let finalTitleEn: string | null = data.title_en?.trim() || null;
+
+    // Input manual EN selalu diprioritaskan.
+    // DeepL hanya dipanggil jika EN kosong.
+    if (!finalTitleEn && data.title_id?.trim()) {
+      try {
+        const translated = await translateWithDeepL(data.title_id.trim());
+
+        finalTitleEn = translated?.trim() || null;
+      } catch (error) {
+        console.warn(
+          "⚠️ DeepL create event category translation failed:",
+          error,
+        );
+      }
+    }
+
+    // =====================================================
+    // 3. UPLOAD IMAGE TO CLOUDINARY
+    // =====================================================
+
+    let uploadResult: {
+      secure_url: string;
+      public_id: string;
+    };
+
     try {
+      if (!file.buffer) {
+        throw new ApiError(
+          "File buffer kosong. Pastikan Multer menggunakan memoryStorage().",
+          400,
+        );
+      }
+
       uploadResult = await this.cloudinary.upload(file, {
         folder: "event_categories",
       });
-    } catch (error: any) {
+    } catch (error) {
       console.error("🔥 CLOUDINARY UPLOAD ERROR:", error);
-      throw new ApiError(`Gagal upload gambar: ${error.message}`, 500);
+
+      if (error instanceof ApiError) {
+        throw error;
+      }
+
+      throw new ApiError("Gagal mengunggah gambar kategori event.", 500);
     }
 
-    // --- 3. INSERT KE DATABASE ---
+    // =====================================================
+    // 4. CREATE DATABASE RECORD
+    // =====================================================
+
     try {
       const newCategory = await this.prisma.eventCategory.create({
         data: {
           title_id: data.title_id,
-          title_en: finalTitleEn || null, // Menggunakan hasil terjemahan otomatis atau input manual
+          title_en: finalTitleEn,
           slug,
+
           orderCount:
             data.orderCount !== undefined ? Number(data.orderCount) : 0,
+
           displayOrder:
             data.displayOrder !== undefined ? Number(data.displayOrder) : 0,
+
           isActive:
             data.isActive !== undefined
               ? String(data.isActive) === "true"
@@ -125,8 +161,15 @@ export class EventCategoryService {
 
       return newCategory;
     } catch (error: any) {
-      if (uploadResult?.public_id) {
-        await this.cloudinary.delete(uploadResult.public_id).catch(() => null);
+      // Jika database gagal, hapus gambar yang baru
+      // diunggah agar tidak menjadi orphan file.
+      try {
+        await this.cloudinary.delete(uploadResult.public_id);
+      } catch (cleanupError) {
+        console.warn(
+          "⚠️ Failed to cleanup event category image:",
+          cleanupError,
+        );
       }
 
       console.error("🔥 DATABASE INSERT ERROR:", error);
@@ -146,101 +189,179 @@ export class EventCategoryService {
   }
 
   // ====================================================================
-  // 4. UPDATE EVENT CATEGORY (Dengan Smart Auto-Translate)
+  // UPDATE EVENT CATEGORY - SMART DEEPL AUTO TRANSLATE
   // ====================================================================
   async updateEventCategory(
     id: string,
     data: UpdateEventCategoryDTO,
     file?: Express.Multer.File,
   ) {
+    // =====================================================
+    // 1. GET EXISTING CATEGORY
+    // =====================================================
+
     const existing = await this.getEventCategoryById(id);
+
+    if (!existing) {
+      throw new ApiError("Event category not found", 404);
+    }
+
+    // =====================================================
+    // 2. PREPARE TITLE & SLUG
+    // =====================================================
+
+    // =====================================================
+    // 2. PREPARE TITLE & SLUG
+    // =====================================================
+
+    const activeTitleId = (data.title_id ?? existing.title_id ?? "").trim();
+
+    // Pastikan title_id tidak kosong
+    if (!activeTitleId) {
+      throw new ApiError("Judul kategori event tidak boleh kosong", 400);
+    }
+
+    const titleIdChanged =
+      data.title_id !== undefined && activeTitleId !== existing.title_id;
+
+    const slug = titleIdChanged
+      ? this.slug.create(activeTitleId)
+      : existing.slug;
+    // =====================================================
+    // 3. SMART DEEPL AUTO TRANSLATION
+    // =====================================================
+
+    let finalTitleEn: string | null = existing.title_en ?? null;
+
+    const existingEnglishTitle = existing.title_en?.trim() || "";
+
+    const providedEnglishTitle = data.title_en?.trim();
+
+    // Jika admin mengirim teks Inggris baru yang
+    // berbeda dari database, prioritaskan nilai manual.
+    const englishTitleManuallyChanged =
+      providedEnglishTitle !== undefined &&
+      providedEnglishTitle.length > 0 &&
+      providedEnglishTitle !== existingEnglishTitle;
+
+    if (englishTitleManuallyChanged) {
+      finalTitleEn = providedEnglishTitle;
+    } else {
+      // Terjemahkan apabila:
+      // 1. Judul Indonesia berubah
+      // 2. Field Inggris sengaja dikosongkan
+      // 3. Nilai Inggris belum tersedia dan judul
+      //    Indonesia dikirim untuk diperbarui
+      const shouldTranslate =
+        Boolean(activeTitleId?.trim()) &&
+        (titleIdChanged ||
+          (data.title_en !== undefined && !providedEnglishTitle) ||
+          (data.title_id !== undefined && !existingEnglishTitle));
+
+      if (shouldTranslate) {
+        try {
+          const translated = await translateWithDeepL(activeTitleId.trim());
+
+          if (translated?.trim()) {
+            finalTitleEn = translated.trim();
+          }
+        } catch (error) {
+          console.warn(
+            "⚠️ DeepL update event category translation failed:",
+            error,
+          );
+
+          // Pertahankan nilai Inggris lama.
+          finalTitleEn = existing.title_en ?? null;
+        }
+      }
+    }
+
+    // =====================================================
+    // 4. PREPARE IMAGE
+    // =====================================================
 
     let imageUrl = existing.image;
     let imageId = existing.imageId;
 
-    // --- JIKA ADA FILE BARU ---
+    let newImagePublicId: string | null = null;
+
     if (file) {
       try {
-        if (existing.imageId) {
-          await this.cloudinary.delete(existing.imageId).catch(() => null);
+        if (!file.buffer) {
+          throw new ApiError(
+            "File buffer kosong. Pastikan Multer menggunakan memoryStorage().",
+            400,
+          );
         }
 
+        // Jangan hapus gambar lama dahulu.
         const uploadResult = await this.cloudinary.upload(file, {
           folder: "event_categories",
         });
+
         imageUrl = uploadResult.secure_url;
         imageId = uploadResult.public_id;
-      } catch (error: any) {
+        newImagePublicId = uploadResult.public_id;
+      } catch (error) {
         console.error("🔥 CLOUDINARY UPDATE ERROR:", error);
-        throw new ApiError(`Gagal memperbarui gambar: ${error.message}`, 500);
+
+        if (error instanceof ApiError) {
+          throw error;
+        }
+
+        throw new ApiError("Gagal memperbarui gambar kategori event.", 500);
       }
     }
 
-    // --- 1. PROSES SMART AUTO-TRANSLATE UNTUK UPDATE ---
-    let finalTitleEn = data.title_en;
+    // =====================================================
+    // 5. UPDATE DATABASE
+    // =====================================================
+
+    let updatedCategory;
 
     try {
-      const activeTitleId =
-        data.title_id !== undefined ? data.title_id : existing.title_id;
-
-      // Cek apakah title_id mengalami perubahan dari data lama di database
-      const titleIdChanged =
-        data.title_id !== undefined && data.title_id !== existing.title_id;
-
-      // Terjemahan ulang akan dipicu jika:
-      // - title_en kosong/tidak ada
-      // - ATAU title_id diubah DAN title_en masih bernilai sama dengan data lama (artinya user tidak mengubah terjemahan Inggris secara manual)
-      const shouldTranslate =
-        !finalTitleEn ||
-        (titleIdChanged &&
-          (finalTitleEn === existing.title_en || !finalTitleEn));
-
-      if (shouldTranslate && activeTitleId) {
-        const resTitle = await translate(activeTitleId, { to: "en" });
-        finalTitleEn = resTitle.text;
-      }
-    } catch (transError) {
-      console.warn(
-        "⚠️ Warning: Auto-translate update event category gagal:",
-        transError,
-      );
-    }
-
-    // --- 2. UPDATE DATABASE ---
-    try {
-      const slug =
-        data.title_id && data.title_id !== existing.title_id
-          ? this.slug.create(data.title_id)
-          : existing.slug;
-
-      const updatedCategory = await this.prisma.eventCategory.update({
+      updatedCategory = await this.prisma.eventCategory.update({
         where: { id },
         data: {
-          title_id:
-            data.title_id !== undefined ? data.title_id : existing.title_id,
-          title_en:
-            finalTitleEn !== undefined ? finalTitleEn : existing.title_en,
+          title_id: activeTitleId,
+          title_en: finalTitleEn,
           slug,
+
           orderCount:
             data.orderCount !== undefined
               ? Number(data.orderCount)
               : existing.orderCount,
-          image: imageUrl,
-          imageId: imageId,
+
           displayOrder:
             data.displayOrder !== undefined
               ? Number(data.displayOrder)
               : existing.displayOrder,
+
           isActive:
             data.isActive !== undefined
               ? String(data.isActive) === "true"
               : existing.isActive,
+
+          image: imageUrl,
+          imageId,
         },
       });
-
-      return updatedCategory;
     } catch (error: any) {
       console.error("🔥 DATABASE UPDATE ERROR:", error);
+
+      // Database gagal, bersihkan gambar baru.
+      // Gambar lama tetap dipertahankan.
+      if (newImagePublicId) {
+        try {
+          await this.cloudinary.delete(newImagePublicId);
+        } catch (cleanupError) {
+          console.warn(
+            "⚠️ Failed to cleanup new event category image:",
+            cleanupError,
+          );
+        }
+      }
 
       if (error.code === "P2002") {
         throw new ApiError("Kategori event tersebut sudah ada.", 400);
@@ -251,7 +372,28 @@ export class EventCategoryService {
         500,
       );
     }
+
+    // =====================================================
+    // 6. DELETE OLD IMAGE AFTER DATABASE SUCCESS
+    // =====================================================
+
+    if (
+      newImagePublicId &&
+      existing.imageId &&
+      existing.imageId !== newImagePublicId
+    ) {
+      try {
+        await this.cloudinary.delete(existing.imageId);
+      } catch (error) {
+        // Cleanup gambar lama tidak boleh membatalkan
+        // update database yang sudah berhasil.
+        console.warn("⚠️ Failed to delete old event category image:", error);
+      }
+    }
+
+    return updatedCategory;
   }
+
   // ====================================================================
   // 5. DELETE EVENT CATEGORY
   // ====================================================================

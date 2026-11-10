@@ -7,9 +7,20 @@ import { HeroService, HeroSlideFiles } from "./hero.service";
 export class HeroController {
   constructor(private readonly heroService: HeroService) {}
 
+  // ====================================================================
+  // GET ALL PUBLIC HERO SLIDES - LOCALE SUPPORT
+  // ====================================================================
   getAllPublic = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await this.heroService.getAllSlides(true);
+      const locale =
+        typeof req.query.locale === "string"
+          ? req.query.locale.toLowerCase()
+          : "id";
+
+      const selectedLocale = locale === "en" ? "en" : "id";
+
+      const result = await this.heroService.getAllSlides(true, selectedLocale);
+
       res.status(200).json(result);
     } catch (error) {
       next(error);

@@ -2,6 +2,7 @@ import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
 
 import { ApiError } from "../../../../utils/api-error";
+import { translateWithDeepL } from "../../../../utils/deepl-translate";
 import { SlugService } from "../../../../utils/genereateSlug";
 import { PaginationService } from "../../../pagination/pagination.service";
 import { PrismaService } from "../../../prisma/prisma.service";
@@ -20,6 +21,70 @@ export class AttributeService {
     private readonly pagination: PaginationService,
     private readonly slug: SlugService,
   ) {}
+
+  // =====================================================
+  // PREPARE DEEPL TRANSLATION BEFORE TRANSACTION
+  // =====================================================
+  private async prepareAttributeTranslations(data: any): Promise<any> {
+    const result = { ...data };
+
+    // 1. Translate nama atribut
+    const manualNameEn = data.name_en?.trim();
+
+    if (manualNameEn) {
+      result.name_en = manualNameEn;
+    } else if (data.name?.trim()) {
+      try {
+        result.name_en =
+          (await translateWithDeepL(data.name.trim())).trim() || null;
+      } catch (error) {
+        console.warn("Gagal menerjemahkan nama atribut:", data.name, error);
+        result.name_en = null;
+      }
+    }
+
+    // 2. Translate seluruh nilai atribut
+    if (Array.isArray(data.values)) {
+      result.values = [];
+
+      for (const value of data.values) {
+        const translatedValue = { ...value };
+
+        const manualValueEn = value.value_en?.trim();
+
+        if (manualValueEn) {
+          translatedValue.value_en = manualValueEn;
+        } else if (value.value?.trim()) {
+          try {
+            translatedValue.value_en =
+              (await translateWithDeepL(value.value.trim())).trim() || null;
+          } catch (error) {
+            console.warn(
+              "Gagal menerjemahkan nilai atribut:",
+              value.value,
+              error,
+            );
+            translatedValue.value_en = null;
+          }
+        }
+
+        // 3. Translate subattribute secara rekursif
+        if (Array.isArray(value.subAttributes)) {
+          translatedValue.subAttributes = [];
+
+          for (const subAttr of value.subAttributes) {
+            translatedValue.subAttributes.push(
+              await this.prepareAttributeTranslations(subAttr),
+            );
+          }
+        }
+
+        result.values.push(translatedValue);
+      }
+    }
+
+    return result;
+  }
 
   // === GET ALL ATTRIBUTES (WITH PAGINATION + SEARCH) ===
   async getAllAttributes(query: {
@@ -88,23 +153,35 @@ export class AttributeService {
     }
   }
 
-  // === CREATE ATTRIBUTE (WITH VALUES & NESTED HIERARCHY RECURSIVELY) ===
+  // ====================================================================
+  // CREATE ATTRIBUTE - DEEPL AUTO TRANSLATE + NESTED HIERARCHY
+  // ====================================================================
   async createAttribute(data: CreateAttributeDTO) {
-    return await this.prisma.$transaction(
+    // Translate seluruh struktur sebelum transaksi Prisma dimulai.
+    const translatedData = await this.prepareAttributeTranslations(data);
+
+    return this.prisma.$transaction(
       async (tx) => {
-        return await this.createAttributeRecursive(data, null, tx);
+        return this.createAttributeRecursive(translatedData, null, tx);
       },
       {
         timeout: 30000,
-      }
+      },
     );
   }
 
+  // ====================================================================
+  // CREATE ATTRIBUTE RECURSIVELY - SAVE ENGLISH FIELDS
+  // ====================================================================
   private async createAttributeRecursive(
     data: any,
     parentValueId: string | null,
     tx: any,
   ): Promise<any> {
+    // =====================================================
+    // 1. GENERATE ATTRIBUTE SLUG
+    // =====================================================
+
     let generatedSlug = this.slug.create(data.name);
 
     if (data.productId) {
@@ -112,57 +189,87 @@ export class AttributeService {
         where: { id: data.productId },
         select: { slug: true },
       });
+
       if (product) {
         generatedSlug = `${generatedSlug}-${product.slug}`;
       }
     }
 
-    // Check duplicate slug with counter safeguard
-    let slugExists = true;
+    // =====================================================
+    // 2. ENSURE UNIQUE SLUG
+    // =====================================================
+
     let finalSlug = generatedSlug;
     let counter = 0;
-    while (slugExists) {
-      const existing = await tx.attribute.findUnique({
+
+    while (
+      await tx.attribute.findUnique({
         where: { slug: finalSlug },
-      });
-      if (existing) {
-        counter++;
-        finalSlug = `${generatedSlug}-${counter}`;
-      } else {
-        slugExists = false;
-      }
+        select: { id: true },
+      })
+    ) {
+      counter++;
+      finalSlug = `${generatedSlug}-${counter}`;
     }
+
+    // =====================================================
+    // 3. CREATE ATTRIBUTE - ID & EN
+    // =====================================================
 
     const attribute = await tx.attribute.create({
       data: {
         name: data.name,
+        name_en: data.name_en?.trim() || null,
+
         slug: finalSlug,
         productId: data.productId || null,
         type: data.type || "TEXT",
         parentValueId: parentValueId || null,
+
+        ...(data.position !== undefined && {
+          position: data.position,
+        }),
       },
     });
 
-    if (data.values && data.values.length > 0) {
+    // =====================================================
+    // 4. CREATE ATTRIBUTE VALUES - ID & EN
+    // =====================================================
+
+    if (Array.isArray(data.values) && data.values.length > 0) {
       for (let index = 0; index < data.values.length; index++) {
-        const v = data.values[index];
+        const value = data.values[index];
+
         const attrVal = await tx.attributeValue.create({
           data: {
-            value: v.value,
-            position: v.position ?? index,
+            value: value.value,
+            value_en: value.value_en?.trim() || null,
+
+            position: value.position ?? index,
             attributeId: attribute.id,
           },
         });
 
-        if (v.subAttributes && v.subAttributes.length > 0) {
-          for (const subAttr of v.subAttributes) {
+        // =================================================
+        // 5. CREATE NESTED SUBATTRIBUTES RECURSIVELY
+        // =================================================
+
+        if (
+          Array.isArray(value.subAttributes) &&
+          value.subAttributes.length > 0
+        ) {
+          for (const subAttr of value.subAttributes) {
             await this.createAttributeRecursive(subAttr, attrVal.id, tx);
           }
         }
       }
     }
 
-    return await tx.attribute.findUnique({
+    // =====================================================
+    // 6. RETURN CREATED ATTRIBUTE
+    // =====================================================
+
+    return tx.attribute.findUnique({
       where: { id: attribute.id },
       include: {
         values: {
@@ -183,7 +290,6 @@ export class AttributeService {
       },
     });
   }
-
   // === CLONE ATTRIBUTE ===
   async cloneAttribute(sourceId: string, targetProductId: string) {
     const source = await this.prisma.attribute.findUnique({
@@ -311,18 +417,32 @@ export class AttributeService {
     };
   }
 
-  // === UPDATE ATTRIBUTE (RECURSIVE LOGIC) ===
+  // UPDATE ATTRIBUTE - DEEPL + RECURSIVE
+  // =====================================================
+
   async updateAttribute(id: string, data: UpdateAttributeDTO) {
-    return await this.prisma.$transaction(
+    // Terjemahkan seluruh atribut, values,
+    // dan subattributes sebelum membuka transaksi.
+    const preparedData = await this.prepareUpdateAttributeTranslations(
+      data,
+      id,
+    );
+
+    return this.prisma.$transaction(
       async (tx) => {
-        await this.updateAttributeRecursive(id, data, tx);
-        return await this.getAttributeByIdRecursive(id, tx);
+        await this.updateAttributeRecursive(id, preparedData, tx);
+
+        return this.getAttributeByIdRecursive(id, tx);
       },
       {
         timeout: 30000,
-      }
+      },
     );
   }
+
+  // =====================================================
+  // UPDATE ATTRIBUTE RECURSIVELY
+  // =====================================================
 
   private async updateAttributeRecursive(id: string, data: any, tx: any) {
     const existing = await tx.attribute.findUnique({
@@ -334,25 +454,44 @@ export class AttributeService {
       throw new ApiError("Attribute not found", 404);
     }
 
+    // =====================================================
+    // 1. PREPARE SLUG
+    // =====================================================
+
+    const nameChanged = data.name !== undefined && data.name !== existing.name;
+
     const newSlug =
-      data.name && data.name !== existing.name
-        ? this.slug.create(data.name)
-        : existing.slug;
+      nameChanged && data.name ? this.slug.create(data.name) : existing.slug;
 
     if (newSlug !== existing.slug) {
       const duplicateSlug = await tx.attribute.findUnique({
         where: { slug: newSlug },
       });
-      if (duplicateSlug) throw new ApiError("Slug already exists", 400);
+
+      if (duplicateSlug && duplicateSlug.id !== id) {
+        throw new ApiError("Slug already exists", 400);
+      }
     }
+
+    // =====================================================
+    // 2. UPDATE ATTRIBUTE
+    // =====================================================
 
     await tx.attribute.update({
       where: { id },
       data: {
         name: data.name ?? existing.name,
+
+        ...(data.name_en !== undefined && {
+          name_en: data.name_en,
+        }),
+
         slug: newSlug,
+
         position: data.position ?? existing.position,
+
         type: data.type ?? existing.type,
+
         parentValueId:
           data.parentValueId !== undefined
             ? data.parentValueId || null
@@ -360,32 +499,54 @@ export class AttributeService {
       },
     });
 
-    if (data.values && data.values.length > 0) {
+    // =====================================================
+    // 3. PROCESS ATTRIBUTE VALUES
+    // =====================================================
+
+    if (Array.isArray(data.values)) {
       for (const val of data.values) {
-        // DELETE VALUE
+        // ===============================================
+        // DELETE EXISTING VALUE
+        // ===============================================
+
         if (val.deleted && val.id) {
           await this.deleteAttributeValueRelationsRecursive(val.id, tx);
+
           await tx.attributeValue.delete({
             where: { id: val.id },
           });
+
           continue;
         }
 
-        // UPDATE VALUE
+        // ===============================================
+        // UPDATE EXISTING VALUE
+        // ===============================================
+
         if (val.id && !val.deleted) {
           await tx.attributeValue.update({
             where: { id: val.id },
             data: {
-              value: val.value,
-              position: val.position,
+              ...(val.value !== undefined && {
+                value: val.value,
+              }),
+
+              ...(val.value_en !== undefined && {
+                value_en: val.value_en,
+              }),
+
+              ...(val.position !== undefined && {
+                position: val.position,
+              }),
             },
           });
 
-          if (val.subAttributes) {
+          // Process subattributes
+          if (Array.isArray(val.subAttributes)) {
             for (const subAttr of val.subAttributes) {
               if (subAttr.deleted && subAttr.id) {
-                // Delete attribute relation and then the attribute
                 await this.deleteAttributeRelationsRecursive(subAttr.id, tx);
+
                 await tx.attribute.delete({
                   where: { id: subAttr.id },
                 });
@@ -396,20 +557,29 @@ export class AttributeService {
               }
             }
           }
+
           continue;
         }
 
+        // ===============================================
         // CREATE NEW VALUE
+        // ===============================================
+
         if (!val.id && !val.deleted) {
           const newVal = await tx.attributeValue.create({
             data: {
               value: val.value,
+
+              value_en: val.value_en?.trim() || null,
+
               attributeId: id,
-              position: val.position,
+
+              position: val.position ?? 0,
             },
           });
 
-          if (val.subAttributes) {
+          // Create nested attributes
+          if (Array.isArray(val.subAttributes)) {
             for (const subAttr of val.subAttributes) {
               if (!subAttr.deleted) {
                 await this.createAttributeRecursive(subAttr, newVal.id, tx);
@@ -661,5 +831,179 @@ export class AttributeService {
 
     const buffer = await workbook.xlsx.writeBuffer();
     return buffer as unknown as Buffer;
+  }
+
+  // =====================================================
+  // SMART ENGLISH TRANSLATION - ATTRIBUTE UPDATE
+  // =====================================================
+
+  private async resolveAttributeEnglish(
+    source: string | null | undefined,
+    incomingEn: string | null | undefined,
+    existingSource: string | null | undefined,
+    existingEn: string | null | undefined,
+    sourceProvided: boolean,
+  ): Promise<string | null | undefined> {
+    const currentSource = source?.trim() || "";
+    const oldSource = existingSource?.trim() || "";
+    const oldEn = existingEn?.trim() || "";
+
+    const manualEn = incomingEn?.trim() || "";
+
+    // Jika EN baru benar-benar berbeda dari nilai lama,
+    // prioritaskan input manual.
+    if (manualEn && manualEn !== oldEn) {
+      return manualEn;
+    }
+
+    // Teks Indonesia tidak berubah dan field Inggris
+    // tidak dikirim: tidak perlu mengubah data.
+    if (!sourceProvided && incomingEn === undefined) {
+      return undefined;
+    }
+
+    const sourceChanged = sourceProvided && currentSource !== oldSource;
+
+    // Jika sumber dikosongkan, kosongkan EN juga.
+    if (!currentSource) {
+      return sourceChanged || incomingEn !== undefined ? null : undefined;
+    }
+
+    const shouldTranslate =
+      sourceChanged ||
+      (incomingEn !== undefined && !manualEn) ||
+      (sourceProvided && !oldEn);
+
+    if (!shouldTranslate) {
+      return undefined;
+    }
+
+    try {
+      const translated = await translateWithDeepL(currentSource);
+
+      if (!translated?.trim()) {
+        throw new Error("DeepL returned empty translation");
+      }
+
+      return translated.trim();
+    } catch (error) {
+      console.warn("⚠️ Failed to translate attribute:", currentSource, error);
+
+      // Jika teks ID berubah, jangan memakai EN lama
+      // yang sudah tidak sesuai dengan sumber baru.
+      return sourceChanged ? null : oldEn || null;
+    }
+  }
+
+  // =====================================================
+  // PREPARE RECURSIVE TRANSLATION BEFORE TRANSACTION
+  // =====================================================
+
+  private async prepareUpdateAttributeTranslations(
+    data: any,
+    attributeId?: string,
+  ): Promise<any> {
+    if (data.deleted) {
+      return { ...data };
+    }
+
+    const existingAttribute = attributeId
+      ? await this.prisma.attribute.findUnique({
+          where: { id: attributeId },
+          select: {
+            name: true,
+            name_en: true,
+          },
+        })
+      : null;
+
+    if (attributeId && !existingAttribute) {
+      throw new ApiError("Attribute not found", 404);
+    }
+
+    const result = { ...data };
+
+    const effectiveName =
+      data.name !== undefined ? data.name : existingAttribute?.name;
+
+    const translatedName = await this.resolveAttributeEnglish(
+      effectiveName,
+      data.name_en,
+      existingAttribute?.name,
+      existingAttribute?.name_en,
+      data.name !== undefined || !attributeId,
+    );
+
+    if (translatedName !== undefined) {
+      result.name_en = translatedName;
+    }
+
+    if (Array.isArray(data.values)) {
+      result.values = [];
+
+      for (const val of data.values) {
+        if (val.deleted) {
+          result.values.push({ ...val });
+          continue;
+        }
+
+        const existingValue = val.id
+          ? await this.prisma.attributeValue.findUnique({
+              where: { id: val.id },
+              select: {
+                value: true,
+                value_en: true,
+              },
+            })
+          : null;
+
+        if (val.id && !existingValue) {
+          throw new ApiError(`Attribute value ${val.id} not found`, 404);
+        }
+
+        const preparedValue = { ...val };
+
+        const effectiveValue =
+          val.value !== undefined ? val.value : existingValue?.value;
+
+        const translatedValue = await this.resolveAttributeEnglish(
+          effectiveValue,
+          val.value_en,
+          existingValue?.value,
+          existingValue?.value_en,
+          val.value !== undefined || !val.id,
+        );
+
+        if (translatedValue !== undefined) {
+          preparedValue.value_en = translatedValue;
+        }
+
+        if (Array.isArray(val.subAttributes)) {
+          preparedValue.subAttributes = [];
+
+          for (const subAttr of val.subAttributes) {
+            if (subAttr.deleted) {
+              preparedValue.subAttributes.push({
+                ...subAttr,
+              });
+
+              continue;
+            }
+
+            const preparedSubAttribute =
+              await this.prepareUpdateAttributeTranslations(
+                subAttr,
+                subAttr.id,
+              );
+
+            preparedValue.subAttributes.push(preparedSubAttribute);
+          }
+        }
+
+        result.values.push(preparedValue);
+      }
+    }
+
+    return result;
   }
 }

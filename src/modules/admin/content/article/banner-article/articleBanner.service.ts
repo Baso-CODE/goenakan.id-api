@@ -1,7 +1,7 @@
-import { translate } from "@vitalets/google-translate-api";
 import { injectable } from "tsyringe";
 
 import { ApiError } from "../../../../../utils/api-error";
+import { translateWithDeepL } from "../../../../../utils/deepl-translate";
 import { PaginationService } from "../../../../pagination/pagination.service";
 import { PrismaService } from "../../../../prisma/prisma.service";
 import {
@@ -16,43 +16,38 @@ export class ArticleBannerService {
     private readonly pagination: PaginationService,
   ) {}
 
+  // =====================================================
+  // TRANSLATE BUTTON TEXT WITH DEEPL
+  // =====================================================
+
   private async translateText(text: string): Promise<string> {
     const value = text.trim();
 
     if (!value) {
-      throw new ApiError("Teks tidak boleh kosong", 400);
+      throw new ApiError("Teks tombol tidak boleh kosong", 400);
     }
 
-    const maxAttempts = 3;
+    try {
+      const translated = await translateWithDeepL(value);
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        const response = await translate(value, {
-          from: "id",
-          to: "en",
-        });
-
-        if (!response.text?.trim()) {
-          throw new Error("Google Translate returned empty result");
-        }
-
-        return response.text.trim();
-      } catch (error) {
-        console.error(`Translation attempt ${attempt} failed:`, error);
-
-        if (attempt === maxAttempts) {
-          throw new ApiError(
-            "Gagal menerjemahkan teks Indonesia ke Inggris",
-            502,
-          );
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, attempt * 750));
+      if (!translated?.trim()) {
+        throw new Error("DeepL returned an empty translation");
       }
-    }
 
-    throw new ApiError("Gagal menerjemahkan teks", 502);
+      return translated.trim();
+    } catch (error) {
+      console.error("❌ DeepL banner translation failed:", error);
+
+      throw new ApiError(
+        "Gagal menerjemahkan teks tombol menggunakan DeepL",
+        502,
+      );
+    }
   }
+
+  // =====================================================
+  // CREATE ARTICLE BANNER
+  // =====================================================
 
   async createBanner(data: CreateArticleBannerDTO) {
     const articleExists = await this.prisma.article.findUnique({
@@ -76,7 +71,7 @@ export class ArticleBannerService {
           articleId: data.articleId,
           backgroundColor: data.backgroundColor,
 
-          buttonTextId: data.buttonTextId,
+          buttonTextId: data.buttonTextId.trim(),
           buttonTextEn,
 
           ctaLink: data.ctaLink,
@@ -86,7 +81,7 @@ export class ArticleBannerService {
 
       return this.getBannerById(banner.id);
     } catch (error) {
-      console.error("ERROR CREATING BANNER:", error);
+      console.error("🔥 ERROR CREATING ARTICLE BANNER:", error);
 
       if (error instanceof ApiError) {
         throw error;
@@ -96,17 +91,20 @@ export class ArticleBannerService {
     }
   }
 
+  // =====================================================
+  // UPDATE ARTICLE BANNER
+  // =====================================================
+
   async updateBanner(id: string, data: UpdateArticleBannerDTO) {
     const existing = await this.prisma.articleBanner.findUnique({
-      where: {
-        id,
-      },
+      where: { id },
     });
 
     if (!existing) {
       throw new ApiError("Banner not found", 404);
     }
 
+    // Validasi artikel tujuan jika diganti
     if (data.articleId !== undefined && data.articleId !== existing.articleId) {
       const articleExists = await this.prisma.article.findUnique({
         where: {
@@ -122,17 +120,35 @@ export class ArticleBannerService {
       }
     }
 
+    // =====================================================
+    // TRANSLATE ONLY WHEN BUTTON TEXT CHANGES
+    // =====================================================
+
     let buttonTextEn = existing.buttonTextEn;
 
-    if (data.buttonTextId !== undefined) {
-      buttonTextEn = await this.translateText(data.buttonTextId);
+    const newButtonTextId = data.buttonTextId?.trim();
+    const existingButtonTextId = existing.buttonTextId?.trim() ?? "";
+
+    const buttonTextChanged =
+      newButtonTextId !== undefined && newButtonTextId !== existingButtonTextId;
+
+    if (buttonTextChanged) {
+      if (!newButtonTextId) {
+        throw new ApiError(
+          "Teks tombol bahasa Indonesia tidak boleh kosong",
+          400,
+        );
+      }
+
+      buttonTextEn = await this.translateText(newButtonTextId);
     }
+    // =====================================================
+    // UPDATE DATABASE
+    // =====================================================
 
     try {
       const updated = await this.prisma.articleBanner.update({
-        where: {
-          id,
-        },
+        where: { id },
         data: {
           ...(data.articleId !== undefined && {
             articleId: data.articleId,
@@ -142,8 +158,12 @@ export class ArticleBannerService {
             backgroundColor: data.backgroundColor,
           }),
 
-          ...(data.buttonTextId !== undefined && {
-            buttonTextId: data.buttonTextId,
+          ...(buttonTextChanged && {
+            buttonTextId: newButtonTextId,
+            buttonTextEn,
+          }),
+
+          ...(buttonTextChanged && {
             buttonTextEn,
           }),
 
@@ -159,7 +179,7 @@ export class ArticleBannerService {
 
       return this.getBannerById(updated.id);
     } catch (error) {
-      console.error("ERROR UPDATING BANNER:", error);
+      console.error("🔥 ERROR UPDATING ARTICLE BANNER:", error);
 
       if (error instanceof ApiError) {
         throw error;

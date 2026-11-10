@@ -1,7 +1,7 @@
-import { translate } from "@vitalets/google-translate-api";
 import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
 import { ApiError } from "../../../../utils/api-error";
+import { translateWithDeepL } from "../../../../utils/deepl-translate";
 import { SlugService } from "../../../../utils/genereateSlug";
 import { CloudinaryService } from "../../../cloudinary/cloudinary.service";
 import { PaginationService } from "../../../pagination/pagination.service";
@@ -80,42 +80,90 @@ export class ProductCategoryService {
     }
   }
 
-  // === CREATE CATEGORY DENGAN UPLOAD IMAGE & AUTO-TRANSLATE ===
+  // ====================================================================
+  // CREATE CATEGORY - DEEPL AUTO TRANSLATE + CLOUDINARY
+  // ====================================================================
   async createCategory(
     data: CreateProductCategoryDTO,
     file?: Express.Multer.File,
   ) {
+    // =====================================================
+    // 1. GENERATE UNIQUE SLUG
+    // =====================================================
+
     const baseSlug = this.slug.create(data.name_id);
+
     let finalSlug = baseSlug;
-    let slugExists = await this.prisma.productCategory.findUnique({
-      where: { slug: finalSlug },
-    });
     let slugCounter = 1;
-    while (slugExists) {
-      finalSlug = `${baseSlug}-${slugCounter}`;
-      slugExists = await this.prisma.productCategory.findUnique({
+
+    while (
+      await this.prisma.productCategory.findUnique({
         where: { slug: finalSlug },
-      });
-      slugCounter++;
+        select: { id: true },
+      })
+    ) {
+      finalSlug = `${baseSlug}-${slugCounter++}`;
     }
+
+    // =====================================================
+    // 2. GENERATE UNIQUE CATEGORY CODE
+    // =====================================================
 
     const prefix = data.name_id.substring(0, 3).toUpperCase();
-    let generatedCode = prefix;
 
-    let codeExists = await this.prisma.productCategory.findUnique({
-      where: { code: generatedCode },
-    });
+    let generatedCode = prefix;
     let counter = 1;
-    while (codeExists) {
-      generatedCode = `${prefix}${counter}`;
-      codeExists = await this.prisma.productCategory.findUnique({
+
+    while (
+      await this.prisma.productCategory.findUnique({
         where: { code: generatedCode },
-      });
-      counter++;
+        select: { id: true },
+      })
+    ) {
+      generatedCode = `${prefix}${counter++}`;
     }
+
+    // =====================================================
+    // 3. DEEPL AUTO TRANSLATION
+    // =====================================================
+
+    let finalNameEn: string | null = data.name_en?.trim() || null;
+
+    let finalDescEn: string | null = data.description_en?.trim() || null;
+
+    // Translate nama kategori jika EN kosong
+    if (!finalNameEn && data.name_id?.trim()) {
+      try {
+        const translated = await translateWithDeepL(data.name_id.trim());
+
+        finalNameEn = translated?.trim() || null;
+      } catch (error) {
+        console.warn("⚠️ DeepL category name translation failed:", error);
+      }
+    }
+
+    // Translate deskripsi kategori jika EN kosong
+    if (!finalDescEn && data.description_id?.trim()) {
+      try {
+        const translated = await translateWithDeepL(data.description_id);
+
+        finalDescEn = translated?.trim() || null;
+      } catch (error) {
+        console.warn(
+          "⚠️ DeepL category description translation failed:",
+          error,
+        );
+      }
+    }
+
+    // =====================================================
+    // 4. CLOUDINARY IMAGE UPLOAD
+    // =====================================================
 
     let imageUrl = data.image;
     let imageId = data.imageId;
+
+    let newImagePublicId: string | null = null;
 
     if (file) {
       try {
@@ -123,10 +171,13 @@ export class ProductCategoryService {
           folder: "products/categories",
           resource_type: "image",
         });
+
         imageUrl = uploadResult.secure_url;
         imageId = uploadResult.public_id;
+        newImagePublicId = uploadResult.public_id;
       } catch (error) {
         console.error("🔥 CLOUDINARY UPLOAD ERROR:", error);
+
         throw new ApiError(
           "Failed to upload category image to Cloudinary",
           500,
@@ -134,44 +185,26 @@ export class ProductCategoryService {
       }
     }
 
-    // ✨ --- PROSES AUTO-TRANSLATE JIKA EN KOSONG ---
-    let finalNameEn = data.name_en;
-    let finalDescEn = data.description_en;
+    // =====================================================
+    // 5. CREATE CATEGORY
+    // =====================================================
 
-    try {
-      // Terjemahkan nama kategori jika kosong
-      if (!finalNameEn && data.name_id) {
-        const resName = await translate(data.name_id, { to: "en" });
-        finalNameEn = resName.text;
-      }
-
-      // Terjemahkan deskripsi kategori jika ada versi ID tapi EN kosong
-      if (!finalDescEn && data.description_id) {
-        const resDesc = await translate(data.description_id, { to: "en" });
-        finalDescEn = resDesc.text;
-      }
-    } catch (transError) {
-      console.warn(
-        "⚠️ Warning: Auto-translate kategori produk gagal:",
-        transError,
-      );
-    }
-
-    // 4. Simpan ke Database
     try {
       const category = await this.prisma.productCategory.create({
         data: {
           slug: finalSlug,
-          code: generatedCode, // Menyimpan kode otomatis
-          image: imageUrl,
-          imageId: imageId,
+          code: generatedCode,
 
+          image: imageUrl,
+          imageId,
+
+          // Indonesian
           name_id: data.name_id,
           description_id: data.description_id,
 
-          // ✨ Menggunakan hasil terjemahan atau input asli
-          name_en: finalNameEn || null,
-          description_en: finalDescEn || null,
+          // English - manual or DeepL
+          name_en: finalNameEn,
+          description_en: finalDescEn,
 
           isActive:
             data.isActive !== undefined
@@ -184,14 +217,26 @@ export class ProductCategoryService {
 
       return category;
     } catch (error: any) {
-      console.error("🔥 DATABASE ERROR:", error);
-      // Cek jika terjadi error duplikasi code (P2002 di Prisma)
-      if (error.code === "P2002") {
-        throw new ApiError(
-          `Category code "${generatedCode}" is already taken.`,
-          400,
-        );
+      // Hapus gambar yang baru di-upload apabila
+      // penyimpanan database gagal.
+      if (newImagePublicId) {
+        try {
+          await this.cloudinary.delete(newImagePublicId);
+        } catch (cleanupError) {
+          console.warn("⚠️ Failed to cleanup category image:", cleanupError);
+        }
       }
+
+      console.error("🔥 CREATE CATEGORY DATABASE ERROR:", error);
+
+      if (error instanceof ApiError) {
+        throw error;
+      }
+
+      if (error.code === "P2002") {
+        throw new ApiError("Category slug or code already exists.", 400);
+      }
+
       throw new ApiError("Failed to create product category in database", 500);
     }
   }
@@ -205,134 +250,174 @@ export class ProductCategoryService {
     return category;
   }
 
-  // === UPDATE CATEGORY DENGAN IMAGE REPLACEMENT, CODE UPDATE & SMART AUTO-TRANSLATE ===
+  // ====================================================================
+  // UPDATE CATEGORY - SMART DEEPL + SAFE IMAGE REPLACEMENT
+  // ====================================================================
   async updateCategory(
     id: string,
     data: Partial<UpdateProductCategoryDTO>,
     file?: Express.Multer.File,
   ) {
-    // 1. Cek keberadaan kategori
+    // =====================================================
+    // 1. GET EXISTING CATEGORY
+    // =====================================================
+
     const existing = await this.prisma.productCategory.findUnique({
       where: { id },
     });
 
-    if (!existing) throw new ApiError("Category not found", 404);
+    if (!existing) {
+      throw new ApiError("Category not found", 404);
+    }
+
+    // =====================================================
+    // 2. GENERATE SLUG & CATEGORY CODE
+    // =====================================================
 
     let finalSlug = existing.slug;
     let generatedCode = existing.code;
 
-    // --- UPDATE SLUG & CODE JIKA NAMA BERUBAH ---
-    if (data.name_id && data.name_id !== existing.name_id) {
+    const nameIdChanged =
+      data.name_id !== undefined && data.name_id !== existing.name_id;
+
+    if (nameIdChanged && data.name_id) {
       const baseSlug = this.slug.create(data.name_id);
+
       finalSlug = baseSlug;
-      let slugExists = await this.prisma.productCategory.findFirst({
-        where: { slug: finalSlug, id: { not: id } },
-      });
+
       let slugCounter = 1;
-      while (slugExists) {
-        finalSlug = `${baseSlug}-${slugCounter}`;
-        slugExists = await this.prisma.productCategory.findFirst({
-          where: { slug: finalSlug, id: { not: id } },
-        });
-        slugCounter++;
+
+      while (
+        await this.prisma.productCategory.findFirst({
+          where: {
+            slug: finalSlug,
+            id: { not: id },
+          },
+          select: { id: true },
+        })
+      ) {
+        finalSlug = `${baseSlug}-${slugCounter++}`;
       }
 
       const prefix = data.name_id.substring(0, 3).toUpperCase();
+
       generatedCode = prefix;
-      let codeExists = await this.prisma.productCategory.findFirst({
-        where: { code: generatedCode, id: { not: id } },
-      });
+
       let counter = 1;
-      while (codeExists) {
-        generatedCode = `${prefix}${counter}`;
-        codeExists = await this.prisma.productCategory.findFirst({
-          where: { code: generatedCode, id: { not: id } },
-        });
-        counter++;
+
+      while (
+        await this.prisma.productCategory.findFirst({
+          where: {
+            code: generatedCode,
+            id: { not: id },
+          },
+          select: { id: true },
+        })
+      ) {
+        generatedCode = `${prefix}${counter++}`;
       }
     }
 
-    let imageUrl = data.image;
-    let imageId = data.imageId;
+    // =====================================================
+    // 3. SMART DEEPL TRANSLATION
+    // =====================================================
 
-    // --- JIKA ADA FILE BARU ---
-    if (file) {
-      try {
-        if (existing.imageId) {
-          await this.cloudinary.delete(existing.imageId).catch((err) => {
-            console.warn(
-              `⚠️ Gagal menghapus gambar lama ${existing.imageId}:`,
-              err,
-            );
-          });
+    const effectiveNameId =
+      data.name_id !== undefined ? data.name_id : existing.name_id;
+
+    const effectiveDescId =
+      data.description_id !== undefined
+        ? data.description_id
+        : existing.description_id;
+
+    const descIdChanged =
+      data.description_id !== undefined &&
+      data.description_id !== existing.description_id;
+
+    // Helper untuk memprioritaskan input manual,
+    // melakukan auto-translate bila diperlukan,
+    // dan mempertahankan data lama jika DeepL gagal.
+    const resolveEnglishValue = async (
+      sourceText: string | null | undefined,
+      manualEnglish: string | null | undefined,
+      existingEnglish: string | null | undefined,
+      sourceChanged: boolean,
+      fieldName: string,
+    ): Promise<string | null> => {
+      const currentEn = existingEnglish?.trim() || null;
+      const manualEn = manualEnglish?.trim() || "";
+
+      // Jika admin memasukkan EN baru yang berbeda,
+      // gunakan nilai manual.
+      if (manualEn && manualEn !== currentEn) {
+        return manualEn;
+      }
+
+      // Jika sumber Indonesia dikosongkan,
+      // kosongkan versi EN kecuali ada input manual baru.
+      if (!sourceText?.trim()) {
+        if (sourceChanged) {
+          return null;
         }
 
-        const uploadResult = await this.cloudinary.upload(file, {
-          folder: "products/categories",
-          resource_type: "image",
-        });
-        imageUrl = uploadResult.secure_url;
-        imageId = uploadResult.public_id;
+        if (manualEnglish !== undefined) {
+          return manualEn || null;
+        }
+
+        return currentEn;
+      }
+
+      // Translate ketika:
+      // 1. Teks Indonesia berubah.
+      // 2. Admin mengosongkan field Inggris.
+      // 3. Versi Inggris belum ada dan field terkait dikirim.
+      const shouldTranslate =
+        sourceChanged ||
+        (manualEnglish !== undefined && !manualEn) ||
+        (manualEnglish !== undefined && !currentEn);
+
+      if (!shouldTranslate) {
+        return currentEn;
+      }
+
+      try {
+        const translated = await translateWithDeepL(sourceText);
+
+        return translated?.trim() || currentEn;
       } catch (error) {
-        throw new ApiError("Failed to update image on Cloudinary", 500);
+        console.warn(`⚠️ DeepL ${fieldName} translation failed:`, error);
+
+        return currentEn;
       }
-    }
+    };
 
-    // ✨ --- PROSES SMART AUTO-TRANSLATE UNTUK UPDATE ---
-    let finalNameEn = data.name_en;
-    let finalDescEn = data.description_en;
+    const [finalNameEn, finalDescEn] = await Promise.all([
+      resolveEnglishValue(
+        effectiveNameId,
+        data.name_en,
+        existing.name_en,
+        nameIdChanged,
+        "category name",
+      ),
+      resolveEnglishValue(
+        effectiveDescId,
+        data.description_en,
+        existing.description_en,
+        descIdChanged,
+        "category description",
+      ),
+    ]);
 
-    try {
-      // 1. Logika untuk Nama Kategori (name_id)
-      const activeNameId =
-        data.name_id !== undefined ? data.name_id : existing.name_id;
+    // =====================================================
+    // 4. LOCK CATEGORY ACTIVE STATUS
+    // =====================================================
 
-      const nameIdChanged =
-        data.name_id !== undefined && data.name_id !== existing.name_id;
-
-      const shouldTranslateName =
-        !finalNameEn ||
-        (nameIdChanged && (finalNameEn === existing.name_en || !finalNameEn));
-
-      if (shouldTranslateName && activeNameId) {
-        const resName = await translate(activeNameId, { to: "en" });
-        finalNameEn = resName.text;
-      }
-
-      // 2. Logika untuk Deskripsi Kategori (description_id)
-      const activeDescId =
-        data.description_id !== undefined
-          ? data.description_id
-          : existing.description_id;
-
-      const descIdChanged =
-        data.description_id !== undefined &&
-        data.description_id !== existing.description_id;
-
-      const shouldTranslateDesc =
-        (!finalDescEn && activeDescId) ||
-        (descIdChanged &&
-          activeDescId &&
-          (finalDescEn === existing.description_en || !finalDescEn));
-
-      if (shouldTranslateDesc && activeDescId) {
-        const resDesc = await translate(activeDescId, { to: "en" });
-        finalDescEn = resDesc.text;
-      }
-    } catch (transError) {
-      console.warn(
-        "⚠️ Warning: Auto-translate saat update kategori produk gagal:",
-        transError,
-      );
-    }
-
-    // --- LOCK ACTIVE STATUS ---
-    // Jangan izinkan menonaktifkan kategori jika masih ada produk aktif yang menggunakannya
     if (data.isActive !== undefined) {
       const targetActive =
         typeof data.isActive === "string"
           ? data.isActive === "true"
           : Boolean(data.isActive);
+
       if (!targetActive && existing.isActive) {
         const activeProductsCount = await this.prisma.product.count({
           where: {
@@ -340,6 +425,7 @@ export class ProductCategoryService {
             isActive: true,
           },
         });
+
         if (activeProductsCount > 0) {
           throw new ApiError(
             `Tidak dapat menonaktifkan kategori ini karena masih digunakan oleh ${activeProductsCount} produk aktif. Nonaktifkan atau ubah kategori produk-produk tersebut terlebih dahulu.`,
@@ -349,48 +435,118 @@ export class ProductCategoryService {
       }
     }
 
-    // --- 4. UPDATE DATABASE ---
+    // =====================================================
+    // 5. PREPARE IMAGE
+    // =====================================================
+
+    // Gunakan gambar existing sebagai default.
+    let imageUrl = data.image !== undefined ? data.image : existing.image;
+
+    let imageId = data.imageId !== undefined ? data.imageId : existing.imageId;
+
+    let newImagePublicId: string | null = null;
+
+    if (file) {
+      try {
+        const uploadResult = await this.cloudinary.upload(file, {
+          folder: "products/categories",
+          resource_type: "image",
+        });
+
+        imageUrl = uploadResult.secure_url;
+        imageId = uploadResult.public_id;
+
+        newImagePublicId = uploadResult.public_id;
+      } catch (error) {
+        console.error("🔥 CLOUDINARY UPDATE ERROR:", error);
+
+        throw new ApiError("Failed to update image on Cloudinary", 500);
+      }
+    }
+
+    // =====================================================
+    // 6. UPDATE DATABASE
+    // =====================================================
+
+    let updated;
+
     try {
-      const updated = await this.prisma.productCategory.update({
+      updated = await this.prisma.productCategory.update({
         where: { id },
+
         data: {
           slug: finalSlug,
-          code: generatedCode, // Update kode jika nama berubah
-          image: imageUrl,
-          imageId: imageId,
+          code: generatedCode,
 
+          // Image
+          image: imageUrl,
+          imageId,
+
+          // Indonesian
           name_id: data.name_id !== undefined ? data.name_id : existing.name_id,
-          // ✨ Gunakan hasil auto-translate untuk name_en
-          name_en: finalNameEn !== undefined ? finalNameEn : existing.name_en,
 
           description_id:
             data.description_id !== undefined
               ? data.description_id
               : existing.description_id,
-          // ✨ Gunakan hasil auto-translate untuk description_en
-          description_en:
-            finalDescEn !== undefined ? finalDescEn : existing.description_en,
 
-          ...(data.isActive !== undefined
-            ? {
-                isActive:
-                  typeof data.isActive === "string"
-                    ? data.isActive === "true"
-                    : Boolean(data.isActive),
-              }
-            : {}),
+          // English - manual or DeepL
+          name_en: finalNameEn,
+          description_en: finalDescEn,
+
+          // Active status
+          ...(data.isActive !== undefined && {
+            isActive:
+              typeof data.isActive === "string"
+                ? data.isActive === "true"
+                : Boolean(data.isActive),
+          }),
         },
       });
-
-      return updated;
     } catch (error: any) {
-      if (error instanceof ApiError) throw error;
-      console.error("🔥 DATABASE UPDATE ERROR:", error);
-      if (error.code === "P2002") {
-        throw new ApiError(`Category code already exists.`, 400);
+      // Jika DB gagal, hapus gambar baru.
+      // Gambar lama masih aman.
+      if (newImagePublicId) {
+        try {
+          await this.cloudinary.delete(newImagePublicId);
+        } catch (cleanupError) {
+          console.warn(
+            "⚠️ Failed to cleanup new category image:",
+            cleanupError,
+          );
+        }
       }
+
+      console.error("🔥 DATABASE UPDATE ERROR:", error);
+
+      if (error instanceof ApiError) {
+        throw error;
+      }
+
+      if (error.code === "P2002") {
+        throw new ApiError("Category slug or code already exists.", 400);
+      }
+
       throw new ApiError("Failed to update product category in database", 500);
     }
+
+    // =====================================================
+    // 7. CLEANUP OLD IMAGE AFTER DB SUCCESS
+    // =====================================================
+
+    if (
+      newImagePublicId &&
+      existing.imageId &&
+      existing.imageId !== newImagePublicId
+    ) {
+      try {
+        await this.cloudinary.delete(existing.imageId);
+      } catch (error) {
+        console.warn("⚠️ Failed to delete old category image:", error);
+      }
+    }
+
+    return updated;
   }
 
   // === SOFT DELETE CATEGORY ===
