@@ -1,6 +1,6 @@
-import { translate } from "@vitalets/google-translate-api";
 import { injectable } from "tsyringe";
 import { ApiError } from "../../../../utils/api-error";
+import { translateWithDeepL } from "../../../../utils/deepl-translate";
 import { SlugService } from "../../../../utils/genereateSlug";
 import { CloudinaryService } from "../../../cloudinary/cloudinary.service";
 import { PaginationService } from "../../../pagination/pagination.service";
@@ -70,72 +70,118 @@ export class PortfolioService {
   }
 
   // ====================================================================
-  // 3. CREATE PORTFOLIO (Dengan Auto-Translate jika EN kosong)
+  // 3. CREATE PORTFOLIO - DEEPL AUTO TRANSLATION
   // ====================================================================
   async createPortfolio(data: CreatePortfolioDTO, file: Express.Multer.File) {
-    if (!file) throw new ApiError("Portfolio image is required", 400);
-
-    const slug = this.slug.create(data.title_id);
-    let uploadResult;
-
-    // --- 1. PROSES AUTO-TRANSLATE JIKA TITLE_EN / DESCRIPTION_EN KOSONG ---
-    let finalTitleEn = data.title_en;
-    let finalDescEn = data.description_en;
-
-    try {
-      // Jika title_en tidak diisi, terjemahkan title_id ke bahasa Inggris (en)
-      if (!finalTitleEn && data.title_id) {
-        const resTitle = await translate(data.title_id, { to: "en" });
-        finalTitleEn = resTitle.text;
-      }
-
-      // Jika description_en tidak diisi tapi deskripsi ID ada, terjemahkan ke bahasa Inggris (en)
-      if (!finalDescEn && data.description) {
-        const resDesc = await translate(data.description, { to: "en" });
-        finalDescEn = resDesc.text;
-      }
-    } catch (transError) {
-      console.warn(
-        "⚠️ Warning: Auto-translate gagal, menggunakan nilai kosong:",
-        transError,
-      );
+    if (!file) {
+      throw new ApiError("Portfolio image is required", 400);
     }
 
-    // --- 2. UPLOAD KE CLOUDINARY ---
+    const slug = this.slug.create(data.title_id);
+
+    // =====================================================
+    // 1. DEEPL TRANSLATION
+    // =====================================================
+
+    let finalTitleEn = data.title_en?.trim() || null;
+    let finalDescEn = data.description_en?.trim() || null;
+
+    // Translate title jika EN belum diisi
+    if (!finalTitleEn && data.title_id?.trim()) {
+      try {
+        finalTitleEn = await translateWithDeepL(data.title_id.trim());
+      } catch (error) {
+        console.error("❌ DeepL portfolio title translation failed:", error);
+      }
+    }
+
+    // Translate description jika EN belum diisi
+    if (!finalDescEn && data.description?.trim()) {
+      try {
+        finalDescEn = await translateWithDeepL(data.description.trim());
+      } catch (error) {
+        console.error(
+          "❌ DeepL portfolio description translation failed:",
+          error,
+        );
+      }
+    }
+
+    // =====================================================
+    // 2. CLOUDINARY UPLOAD
+    // =====================================================
+
+    let uploadResult: {
+      secure_url: string;
+      public_id: string;
+    };
+
     try {
+      if (!file.buffer) {
+        throw new ApiError(
+          "File buffer kosong. Pastikan Multer menggunakan memoryStorage().",
+          400,
+        );
+      }
+
       uploadResult = await this.cloudinary.upload(file, {
         folder: "portfolios",
       });
-    } catch (error: any) {
+    } catch (error) {
       console.error("🔥 CLOUDINARY UPLOAD ERROR:", error);
-      throw new ApiError(`Gagal upload gambar: ${error.message}`, 500);
+
+      if (error instanceof ApiError) {
+        throw error;
+      }
+
+      throw new ApiError(
+        "Gagal mengunggah gambar portfolio ke Cloudinary.",
+        500,
+      );
     }
 
-    // --- 3. INSERT KE DATABASE ---
+    // =====================================================
+    // 3. DATABASE INSERT
+    // =====================================================
+
     try {
       const newPortfolio = await this.prisma.portfolio.create({
         data: {
           title_id: data.title_id,
-          title_en: finalTitleEn || null, // Menggunakan hasil terjemahan otomatis atau input manual
+          title_en: finalTitleEn,
           slug,
+
           clientName: data.clientName,
+
           description: data.description || null,
-          description_en: finalDescEn || null, // Menggunakan hasil terjemahan otomatis atau input manual
+          description_en: finalDescEn,
+
           image: uploadResult.secure_url,
           imageId: uploadResult.public_id,
-          displayOrder: Number(data.displayOrder || 0),
-          isActive: data.isActive ? String(data.isActive) === "true" : true,
+
+          displayOrder: Number(data.displayOrder ?? 0),
+
+          isActive:
+            data.isActive !== undefined
+              ? String(data.isActive) === "true"
+              : true,
+
           orderQuantity:
             data.orderQuantity !== undefined ? Number(data.orderQuantity) : 0,
+
           projectDate: data.projectDate ? new Date(data.projectDate) : null,
+
           eventCategoryId: data.eventCategoryId || null,
         },
       });
 
       return newPortfolio;
     } catch (error: any) {
-      if (uploadResult?.public_id) {
-        await this.cloudinary.delete(uploadResult.public_id).catch(() => null);
+      // Jika database gagal, bersihkan gambar baru.
+      try {
+        await this.cloudinary.delete(uploadResult.public_id);
+      } catch (cleanupError) {
+        console.warn("⚠️ Failed to cleanup portfolio image:", cleanupError);
       }
 
       console.error("🔥 DATABASE INSERT ERROR:", error);
@@ -153,8 +199,9 @@ export class PortfolioService {
       );
     }
   }
+
   // ====================================================================
-  // 4. UPDATE PORTFOLIO (Dengan Smart Auto-Translate untuk Title & Description)
+  // 4. UPDATE PORTFOLIO - SMART DEEPL AUTO TRANSLATION
   // ====================================================================
   async updatePortfolio(
     id: string,
@@ -163,118 +210,181 @@ export class PortfolioService {
   ) {
     const existing = await this.getPortfolioById(id);
 
+    // =====================================================
+    // 1. PREPARE CURRENT DATA
+    // =====================================================
+
+    const activeTitleId = (data.title_id ?? existing.title_id ?? "").trim();
+
+    if (!activeTitleId) {
+      throw new ApiError("Judul portfolio tidak boleh kosong", 400);
+    }
+
+    const activeDescription =
+      data.description !== undefined ? data.description : existing.description;
+
+    const titleIdChanged =
+      data.title_id !== undefined &&
+      activeTitleId !== (existing.title_id ?? "").trim();
+
+    const descriptionChanged =
+      data.description !== undefined &&
+      data.description !== existing.description;
+
+    let finalTitleEn = existing.title_en;
+    let finalDescEn = existing.description_en;
+
+    // =====================================================
+    // 2. SMART DEEPL TRANSLATION - TITLE
+    // =====================================================
+
+    const providedTitleEn = data.title_en?.trim();
+
+    const titleManualChanged =
+      providedTitleEn !== undefined &&
+      providedTitleEn.length > 0 &&
+      providedTitleEn !== existing.title_en;
+
+    if (titleManualChanged) {
+      // Prioritaskan input bahasa Inggris manual.
+      finalTitleEn = providedTitleEn;
+    } else {
+      const shouldTranslateTitle =
+        titleIdChanged ||
+        (data.title_en !== undefined && !providedTitleEn) ||
+        !existing.title_en?.trim();
+
+      // Validasi langsung sebelum pemanggilan DeepL.
+      if (shouldTranslateTitle && activeTitleId?.trim()) {
+        try {
+          finalTitleEn = await translateWithDeepL(activeTitleId.trim());
+        } catch (error) {
+          console.error("❌ DeepL portfolio title translation failed:", error);
+
+          // Pertahankan terjemahan sebelumnya.
+          finalTitleEn = existing.title_en;
+        }
+      }
+    }
+
+    // DESCRIPTION
+    const providedDescEn = data.description_en?.trim();
+
+    const descriptionManualChanged =
+      providedDescEn !== undefined &&
+      providedDescEn.length > 0 &&
+      providedDescEn !== existing.description_en;
+
+    if (descriptionManualChanged) {
+      finalDescEn = providedDescEn;
+    } else {
+      const shouldTranslateDescription =
+        Boolean(activeDescription?.trim()) &&
+        (descriptionChanged ||
+          (data.description_en !== undefined && !providedDescEn) ||
+          !existing.description_en?.trim());
+
+      if (shouldTranslateDescription && activeDescription) {
+        try {
+          finalDescEn = await translateWithDeepL(activeDescription.trim());
+        } catch (error) {
+          console.error(
+            "❌ DeepL portfolio description translation failed:",
+            error,
+          );
+
+          finalDescEn = existing.description_en;
+        }
+      }
+    }
+
+    // =====================================================
+    // 3. CLOUDINARY UPLOAD
+    // =====================================================
+
     let imageUrl = existing.image;
     let imageId = existing.imageId;
 
-    // --- JIKA ADA FILE BARU ---
+    let newImagePublicId: string | null = null;
+
     if (file) {
       try {
-        if (existing.imageId) {
-          await this.cloudinary.delete(existing.imageId).catch(() => null);
+        if (!file.buffer) {
+          throw new ApiError(
+            "File buffer kosong. Pastikan Multer menggunakan memoryStorage().",
+            400,
+          );
         }
 
+        // Upload gambar baru terlebih dahulu.
         const uploadResult = await this.cloudinary.upload(file, {
           folder: "portfolios",
         });
+
         imageUrl = uploadResult.secure_url;
         imageId = uploadResult.public_id;
-      } catch (error: any) {
+
+        newImagePublicId = uploadResult.public_id;
+      } catch (error) {
         console.error("🔥 CLOUDINARY UPDATE ERROR:", error);
-        throw new ApiError(`Gagal memperbarui gambar: ${error.message}`, 500);
+
+        if (error instanceof ApiError) {
+          throw error;
+        }
+
+        throw new ApiError("Gagal memperbarui gambar portfolio.", 500);
       }
     }
 
-    // --- PROSES SMART AUTO-TRANSLATE UNTUK UPDATE ---
-    let finalTitleEn = data.title_en;
-    let finalDescEn = data.description_en;
+    // =====================================================
+    // 4. UPDATE DATABASE
+    // =====================================================
 
     try {
-      // 1. Logika untuk Title (Judul)
-      const activeTitleId =
-        data.title_id !== undefined ? data.title_id : existing.title_id;
-
-      const titleIdChanged =
-        data.title_id !== undefined && data.title_id !== existing.title_id;
-
-      const shouldTranslateTitle =
-        !finalTitleEn ||
-        (titleIdChanged &&
-          (finalTitleEn === existing.title_en || !finalTitleEn));
-
-      if (shouldTranslateTitle && activeTitleId) {
-        const resTitle = await translate(activeTitleId, { to: "en" });
-        finalTitleEn = resTitle.text;
-      }
-
-      // 2. Logika untuk Description (Deskripsi)
-      const activeDesc =
-        data.description !== undefined
-          ? data.description
-          : existing.description;
-
-      const descChanged =
-        data.description !== undefined &&
-        data.description !== existing.description;
-
-      const shouldTranslateDesc =
-        (!finalDescEn && activeDesc) ||
-        (descChanged &&
-          activeDesc &&
-          (finalDescEn === existing.description_en || !finalDescEn));
-
-      if (shouldTranslateDesc && activeDesc) {
-        const resDesc = await translate(activeDesc, { to: "en" });
-        finalDescEn = resDesc.text;
-      }
-    } catch (transError) {
-      console.warn(
-        "⚠️ Warning: Auto-translate saat update portfolio gagal:",
-        transError,
-      );
-    }
-
-    // --- UPDATE DATABASE ---
-    try {
-      const slug =
-        data.title_id && data.title_id !== existing.title_id
-          ? this.slug.create(data.title_id)
-          : existing.slug;
+      const slug = titleIdChanged
+        ? this.slug.create(activeTitleId)
+        : existing.slug;
 
       const updatedPortfolio = await this.prisma.portfolio.update({
         where: { id },
         data: {
-          title_id:
-            data.title_id !== undefined ? data.title_id : existing.title_id,
-          title_en:
-            finalTitleEn !== undefined ? finalTitleEn : existing.title_en,
+          title_id: activeTitleId,
+          title_en: finalTitleEn,
           slug,
+
           clientName:
             data.clientName !== undefined
               ? data.clientName
               : existing.clientName,
-          description:
-            data.description !== undefined
-              ? data.description
-              : existing.description,
-          description_en:
-            finalDescEn !== undefined ? finalDescEn : existing.description_en,
+
+          description: activeDescription,
+          description_en: finalDescEn,
+
           image: imageUrl,
-          imageId: imageId,
+          imageId,
+
           displayOrder:
             data.displayOrder !== undefined
               ? Number(data.displayOrder)
               : existing.displayOrder,
+
           isActive:
             data.isActive !== undefined
               ? String(data.isActive) === "true"
               : existing.isActive,
+
           orderQuantity:
             data.orderQuantity !== undefined
               ? Number(data.orderQuantity)
               : existing.orderQuantity,
-          projectDate: data.projectDate
-            ? new Date(data.projectDate)
-            : existing.projectDate,
+
+          projectDate:
+            data.projectDate !== undefined
+              ? data.projectDate
+                ? new Date(data.projectDate)
+                : null
+              : existing.projectDate,
+
           eventCategoryId:
             data.eventCategoryId !== undefined
               ? data.eventCategoryId || null
@@ -282,8 +392,41 @@ export class PortfolioService {
         },
       });
 
+      // =====================================================
+      // 5. CLEANUP OLD IMAGE AFTER DATABASE SUCCESS
+      // =====================================================
+
+      if (
+        newImagePublicId &&
+        existing.imageId &&
+        existing.imageId !== newImagePublicId
+      ) {
+        try {
+          await this.cloudinary.delete(existing.imageId);
+        } catch (error) {
+          // Database sudah berhasil diperbarui.
+          // Jangan gagalkan update hanya karena cleanup gagal.
+          console.warn("⚠️ Failed to delete old portfolio image:", error);
+        }
+      }
+
       return updatedPortfolio;
     } catch (error: any) {
+      // =====================================================
+      // 6. ROLLBACK NEW IMAGE ON DATABASE FAILURE
+      // =====================================================
+
+      if (newImagePublicId) {
+        try {
+          await this.cloudinary.delete(newImagePublicId);
+        } catch (cleanupError) {
+          console.warn(
+            "⚠️ Failed to cleanup new portfolio image:",
+            cleanupError,
+          );
+        }
+      }
+
       console.error("🔥 DATABASE UPDATE ERROR:", error);
 
       if (error.code === "P2002") {

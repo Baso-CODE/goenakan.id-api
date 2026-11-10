@@ -7,5 +7,9 @@ export class UpdateAttributeValueDTO {
 
   @IsOptional()
   @IsString()
+  value_en?: string;
+
+  @IsOptional()
+  @IsString()
   attributeId?: string;
 }

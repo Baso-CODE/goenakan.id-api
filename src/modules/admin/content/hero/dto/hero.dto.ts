@@ -8,62 +8,99 @@ import {
   Min,
 } from "class-validator";
 
+const parseBoolean = (value: unknown) => {
+  if (value === true || value === "true") return true;
+  if (value === false || value === "false") return false;
+  return value;
+};
+
+// =====================================================
+// CREATE HERO SLIDE DTO
+// =====================================================
+
 export class CreateHeroSlideDTO {
+  @IsString()
   @IsNotEmpty()
-  @IsString()
-  title!: string;
-
-  // Hapus @IsNotEmpty imageUrl karena ini ditangani via File Upload
+  titleId!: string;
 
   @IsOptional()
   @IsString()
-  altText?: string;
+  titleEn?: string;
 
   @IsOptional()
   @IsString()
-  ctaText?: string;
+  altTextId?: string;
+
+  @IsOptional()
+  @IsString()
+  altTextEn?: string;
+
+  @IsOptional()
+  @IsString()
+  ctaTextId?: string;
+
+  @IsOptional()
+  @IsString()
+  ctaTextEn?: string;
 
   @IsOptional()
   @IsString()
   ctaLink?: string;
 
   @IsOptional()
+  @Transform(({ value }) => (value === "" ? undefined : Number(value)))
   @IsInt()
   @Min(0)
-  @Transform(({ value }) => Number(value))
   displayOrder?: number;
 
   @IsOptional()
+  @Transform(({ value }) => parseBoolean(value))
   @IsBoolean()
-  @Transform(({ value }) => value === "true" || value === true)
   isActive?: boolean;
 }
+
+// =====================================================
+// UPDATE HERO SLIDE DTO
+// =====================================================
 
 export class UpdateHeroSlideDTO {
   @IsOptional()
   @IsString()
-  title?: string;
+  @IsNotEmpty()
+  titleId?: string;
 
   @IsOptional()
   @IsString()
-  altText?: string;
+  titleEn?: string;
 
   @IsOptional()
   @IsString()
-  ctaText?: string;
+  altTextId?: string;
+
+  @IsOptional()
+  @IsString()
+  altTextEn?: string;
+
+  @IsOptional()
+  @IsString()
+  ctaTextId?: string;
+
+  @IsOptional()
+  @IsString()
+  ctaTextEn?: string;
 
   @IsOptional()
   @IsString()
   ctaLink?: string;
 
   @IsOptional()
+  @Transform(({ value }) => (value === "" ? undefined : Number(value)))
   @IsInt()
   @Min(0)
-  @Transform(({ value }) => Number(value))
   displayOrder?: number;
 
   @IsOptional()
+  @Transform(({ value }) => parseBoolean(value))
   @IsBoolean()
-  @Transform(({ value }) => value === "true" || value === true)
   isActive?: boolean;
 }

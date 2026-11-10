@@ -27,8 +27,6 @@ export class ArticleController {
   // 1. CREATE ARTICLE
   // =========================================================================
   createArticle = async (req: Request, res: Response, next: NextFunction) => {
-    console.log("========== CREATE ARTICLE ==========");
-
     try {
       const data: CreateArticleDTO = req.body;
 
