@@ -4444,8 +4444,18 @@ export class ProductService {
             : "-";
         const attributes = v.attributeValues
           .map((av) => ({
-            name: av.attributeValue.attribute?.name || "",
-            value: av.attributeValue.value || "",
+            name:
+              lang === "en"
+                ? av.attributeValue.attribute?.name_en?.trim() ||
+                  av.attributeValue.attribute?.name ||
+                  ""
+                : av.attributeValue.attribute?.name || "",
+            value:
+              lang === "en"
+                ? av.attributeValue.value_en?.trim() ||
+                  av.attributeValue.value ||
+                  ""
+                : av.attributeValue.value || "",
             attributeValueId: av.attributeValueId,
             attributePosition: av.attributeValue.attribute?.position ?? 0,
             valuePosition: av.attributeValue.position ?? 0,
