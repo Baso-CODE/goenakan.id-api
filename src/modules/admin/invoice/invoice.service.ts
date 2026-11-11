@@ -78,9 +78,24 @@ export class InvoiceService {
             },
           },
         });
-        if (!order) throw new ApiError("Order tidak ditemukan", 404);
-        if (order.products.length === 0)
+        if (!order) {
+          throw new ApiError("Order tidak ditemukan", 404);
+        }
+
+        // =====================================================
+        // PREVENT INVOICE CREATION FOR CANCELLED ORDER
+        // =====================================================
+
+        if (order.status === "CANCELLED") {
+          throw new ApiError(
+            "Tidak dapat membuat Invoice karena Sales Order sudah dibatalkan.",
+            409,
+          );
+        }
+
+        if (order.products.length === 0) {
           throw new ApiError("Order belum mempunyai produk", 400);
+        }
 
         const previousInvoices = order.invoices;
         if (
@@ -383,8 +398,20 @@ export class InvoiceService {
         }
 
         // ==========================================
-        // 3. VALIDASI STATUS INVOICE
+        // VALIDASI ORDER SEBELUM PEMBAYARAN
         // ==========================================
+
+        if (invoice.order?.status === "CANCELLED") {
+          throw new ApiError(
+            "Invoice tidak dapat dibayar karena Sales Order sudah dibatalkan.",
+            409,
+          );
+        }
+
+        // ==========================================
+        // VALIDASI STATUS INVOICE
+        // ==========================================
+
         if (invoice.status === InvoiceStatus.PAID) {
           throw new ApiError("Invoice sudah dibayar", 400);
         }
@@ -588,6 +615,63 @@ export class InvoiceService {
     }
 
     return result;
+  }
+
+  async deleteInvoice(id: number) {
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      throw new ApiError("ID invoice tidak valid", 400);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const invoice = await tx.invoice.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          status: true,
+          _count: {
+            select: {
+              refunds: true,
+            },
+          },
+        },
+      });
+
+      if (!invoice) {
+        throw new ApiError("Invoice tidak ditemukan", 404);
+      }
+
+      if (invoice.status === InvoiceStatus.PAID) {
+        throw new ApiError(
+          "Invoice yang sudah dibayar tidak dapat dihapus",
+          400,
+        );
+      }
+      if (invoice._count.refunds > 0) {
+        throw new ApiError(
+          "Invoice memiliki riwayat refund dan tidak dapat dihapus.",
+          409,
+        );
+      }
+
+      await tx.invoiceItem.deleteMany({
+        where: { invoiceId: id },
+      });
+
+      await tx.invoiceNote.deleteMany({
+        where: { invoiceId: id },
+      });
+
+      await tx.invoice.delete({
+        where: { id },
+      });
+
+      return {
+        id: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        message: "Invoice berhasil dihapus",
+      };
+    });
   }
 
   async getAllInvoices(query: {
@@ -918,52 +1002,6 @@ export class InvoiceService {
       return {
         date: format(date, "dd MMM"),
         revenue: revenueByDay.get(day) || 0,
-      };
-    });
-  }
-
-  async deleteInvoice(id: number) {
-    if (!Number.isSafeInteger(id) || id <= 0) {
-      throw new ApiError("ID invoice tidak valid", 400);
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      const invoice = await tx.invoice.findUnique({
-        where: { id },
-        select: {
-          id: true,
-          invoiceNumber: true,
-          status: true,
-        },
-      });
-
-      if (!invoice) {
-        throw new ApiError("Invoice tidak ditemukan", 404);
-      }
-
-      if (invoice.status === InvoiceStatus.PAID) {
-        throw new ApiError(
-          "Invoice yang sudah dibayar tidak dapat dihapus",
-          400,
-        );
-      }
-
-      await tx.invoiceItem.deleteMany({
-        where: { invoiceId: id },
-      });
-
-      await tx.invoiceNote.deleteMany({
-        where: { invoiceId: id },
-      });
-
-      await tx.invoice.delete({
-        where: { id },
-      });
-
-      return {
-        id: invoice.id,
-        invoiceNumber: invoice.invoiceNumber,
-        message: "Invoice berhasil dihapus",
       };
     });
   }
