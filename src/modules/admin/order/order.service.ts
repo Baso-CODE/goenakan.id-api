@@ -1,6 +1,7 @@
 import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
 
+import { InvoiceStatus, Prisma } from "@prisma/client";
 import { getErrorMessage } from "../../../middleware/getErrorMessage";
 import { ApiError } from "../../../utils/api-error";
 import { CounterService } from "../../../utils/counter.service";
@@ -2215,72 +2216,172 @@ export class OrderService {
   }
 
   // ====================================================================
-  // METHOD: CANCEL ORDER & DELETE FILE FROM CLOUD & DATABASE
+  // CANCEL SALES ORDER - SAFE INVOICE & PAYMENT VALIDATION
   // ====================================================================
+
   async cancelOrder(id: string, userId?: string) {
-    // 1. Cek apakah order dengan ID tersebut ada beserta data PO client-nya
-    const existingOrder = await this.prisma.order.findUnique({
-      where: { id },
-      include: { clientPurchaseOrder: true },
-    });
+    return this.prisma.$transaction(
+      async (tx) => {
+        // =====================================================
+        // 1. GET ORDER + RELATED FINANCIAL DATA
+        // =====================================================
 
-    if (!existingOrder) {
-      throw new ApiError(`Order dengan ID ${id} tidak ditemukan`, 404);
-    }
+        const order = await tx.order.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            orderNumber: true,
+            status: true,
+            salesCategory: true,
 
-    // 2. Validasi status order
-    if (existingOrder.status === "COMPLETED") {
-      throw new ApiError(
-        "Order yang sudah selesai (COMPLETED) tidak dapat dibatalkan",
-        400,
-      );
-    }
+            invoices: {
+              select: {
+                id: true,
+                invoiceNumber: true,
+                status: true,
+              },
+            },
 
-    if (existingOrder.status === "CANCELLED") {
-      throw new ApiError("Order ini sudah dibatalkan sebelumnya", 400);
-    }
-
-    // 3. Ambil data file PO jika ada untuk dihapus fisiknya dari Cloudinary
-    const poFile = existingOrder.clientPurchaseOrder;
-
-    // 4. Jalankan transaksi database dan hapus file fisik
-    const result = await this.prisma.$transaction(async (tx) => {
-      // A. Hapus record ClientPurchaseOrder dari database jika ada
-      if (poFile) {
-        await tx.clientPurchaseOrder.delete({
-          where: { orderId: id },
+            _count: {
+              select: {
+                cashflows: true,
+                cashflowSummary: true,
+                productionTrackers: true,
+                shipments: true,
+              },
+            },
+          },
         });
-      }
 
-      // B. Update status order menjadi CANCELLED
-      const updatedOrder = await tx.order.update({
-        where: { id },
-        data: {
-          status: "CANCELLED",
-          updatedById: userId || null,
-        },
-      });
+        if (!order) {
+          throw new ApiError(`Order dengan ID ${id} tidak ditemukan`, 404);
+        }
 
-      return updatedOrder;
-    });
+        // =====================================================
+        // 2. VALIDATE ORDER
+        // =====================================================
 
-    // 5. Hapus file fisik dari Cloudinary di luar transaksi database
-    // (Agar jika penghapusan cloud gagal, transaksi database utama tetap aman)
-    if (poFile && poFile.fileUrl) {
-      try {
-        // Memanggil fungsi remove/delete dari CloudinaryService
-        await this.cloudinary.remove(poFile.fileUrl);
-      } catch (cloudinaryError) {
-        console.error(
-          "⚠️ Gagal menghapus file fisik dari Cloudinary:",
-          cloudinaryError,
+        if (order.salesCategory !== "SALES") {
+          throw new ApiError(
+            "Hanya Sales Order yang dapat dibatalkan melalui fitur ini",
+            400,
+          );
+        }
+
+        if (order.status === "COMPLETED") {
+          throw new ApiError(
+            "Order yang sudah selesai tidak dapat dibatalkan",
+            400,
+          );
+        }
+
+        if (order.status === "CANCELLED") {
+          throw new ApiError("Sales Order sudah dibatalkan sebelumnya", 409);
+        }
+
+        // =====================================================
+        // 3. CHECK PAID INVOICES
+        // =====================================================
+
+        const paidInvoices = order.invoices.filter(
+          (invoice) => invoice.status === InvoiceStatus.PAID,
         );
-        // Proses tetap dilanjutkan karena status order sudah resmi dibatalkan
-      }
-    }
 
-    return result;
+        if (paidInvoices.length > 0) {
+          const invoiceNumbers = paidInvoices
+            .map((invoice) => invoice.invoiceNumber ?? `#${invoice.id}`)
+            .join(", ");
+
+          throw new ApiError(
+            `Sales Order tidak dapat langsung dibatalkan karena Invoice ${invoiceNumbers} sudah PAID. Periksa pembayaran dan proses refund terlebih dahulu.`,
+            409,
+          );
+        }
+
+        // =====================================================
+        // 4. CHECK FINANCIAL & OPERATIONAL RELATIONS
+        // =====================================================
+
+        if (order._count.cashflows > 0 || order._count.cashflowSummary > 0) {
+          throw new ApiError(
+            "Sales Order memiliki data Cashflow atau laporan keuangan. Pembatalan memerlukan pemeriksaan keuangan terlebih dahulu.",
+            409,
+          );
+        }
+
+        if (order._count.productionTrackers > 0 || order._count.shipments > 0) {
+          throw new ApiError(
+            "Sales Order sudah memiliki proses produksi atau pengiriman. Selesaikan pembatalan operasional terlebih dahulu.",
+            409,
+          );
+        }
+
+        // =====================================================
+        // 5. CANCEL NON-PAID INVOICES
+        // =====================================================
+
+        const cancelledInvoices = await tx.invoice.updateMany({
+          where: {
+            orderId: id,
+            status: {
+              in: [
+                InvoiceStatus.DRAFT,
+                InvoiceStatus.UNPAID,
+                InvoiceStatus.OVERDUE,
+              ],
+            },
+          },
+          data: {
+            status: InvoiceStatus.CANCELLED,
+          },
+        });
+
+        // =====================================================
+        // 6. UPDATE ORDER STATUS
+        // =====================================================
+
+        const updated = await tx.order.updateMany({
+          where: {
+            id,
+            status: {
+              notIn: ["COMPLETED", "CANCELLED"],
+            },
+            salesCategory: "SALES",
+          },
+          data: {
+            status: "CANCELLED",
+            updatedById: userId ?? null,
+          },
+        });
+
+        if (updated.count !== 1) {
+          throw new ApiError(
+            "Status Sales Order telah berubah. Muat ulang halaman.",
+            409,
+          );
+        }
+
+        // =====================================================
+        // 7. GET UPDATED ORDER
+        // =====================================================
+
+        const updatedOrder = await tx.order.findUniqueOrThrow({
+          where: { id },
+        });
+
+        return {
+          message: "Sales Order berhasil dibatalkan",
+          data: updatedOrder,
+          cancelledInvoices: cancelledInvoices.count,
+        };
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        timeout: 30000,
+      },
+    );
   }
+
   // ====================================================================
   // METHOD: CEK & HAPUS FILE PO CLIENT (SUPPORT CICILAN & GARANSI)
   // ====================================================================
