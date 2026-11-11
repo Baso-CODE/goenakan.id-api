@@ -593,7 +593,7 @@ export class ProductService {
 
     const { tagIds, ...productCore } = data;
 
-    const slug = data.name ? this.slug.create(data.name) : existing.slug;
+    const slug = existing.slug;
 
     const or: any[] = [{ slug }];
     if (data.sku) or.push({ sku: data.sku });
