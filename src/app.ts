@@ -68,6 +68,8 @@ import { PolicyRouter } from "./modules/admin/content/policy/policy.router";
 import { PortfolioRouter } from "./modules/admin/content/portfolio/portfolio.router";
 import { AppSettingRouter } from "./modules/admin/content/setting/setting.router";
 import { SuccessStoryRouter } from "./modules/admin/content/success-story/successStory.router";
+import { AdminNotificationRouter } from "./modules/admin/notifications/notification.router";
+import { ProductUrlApprovalRouter } from "./modules/admin/product/product-url-approval/product-url-approval.router";
 import { SampleHistoryRouter } from "./modules/admin/sampleHistory/sampleHistory.router";
 import { SeoSitemapRouter } from "./modules/seo/seo-sitemap.router";
 import { UploadRouter } from "./modules/upload/upload.router";
@@ -182,6 +184,10 @@ export default class App {
     const sucessStoryRouter = container.resolve(SuccessStoryRouter);
     const uploadRouter = container.resolve(UploadRouter);
     const seoSitemapRouter = container.resolve(SeoSitemapRouter);
+    const productUrlApprovalRouter = container.resolve(
+      ProductUrlApprovalRouter,
+    );
+    const adminNotificationRouter = container.resolve(AdminNotificationRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -264,6 +270,11 @@ export default class App {
     this.app.use("/sample-history", sampleHistoryRouter.getRouter());
     this.app.use("/success-story", sucessStoryRouter.getRouter());
     this.app.use("/uploads", uploadRouter.getRouter());
+    this.app.use(
+      "/product-url-approvals",
+      productUrlApprovalRouter.getRouter(),
+    );
+    this.app.use("/admin-notifications", adminNotificationRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);
