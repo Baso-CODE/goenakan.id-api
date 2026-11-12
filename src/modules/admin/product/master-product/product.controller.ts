@@ -645,7 +645,7 @@ export class ProductController {
     }
   };
 
-  // === GET RELATED PRODUCTS ===
+  // === GET RELATED PRODUCTS (PUBLIC) ===
   getRelatedProducts = async (
     req: Request,
     res: Response,
@@ -653,7 +653,28 @@ export class ProductController {
   ) => {
     try {
       const { slug } = req.params;
-      const related = await this.productService.getRelatedProducts(slug);
+      const { country, lang } = req.query;
+
+      const countryCode =
+        typeof country === "string" ? country.trim().toUpperCase() : "ID";
+
+      const language =
+        typeof lang === "string" ? lang.trim().toLowerCase() : "id";
+
+      let targetCurrency = "IDR";
+
+      if (countryCode !== "ID") {
+        const autoCurrency =
+          countryToCurrency[countryCode as keyof typeof countryToCurrency];
+
+        targetCurrency = autoCurrency || "USD";
+      }
+
+      const related = await this.productService.getRelatedProducts(
+        String(slug),
+        targetCurrency,
+        language,
+      );
 
       res.status(200).json({
         success: true,

@@ -4860,64 +4860,181 @@ export class ProductService {
     }
   }
 
-  // === GET RELATED PRODUCTS (PUBLIC) ===
-  async getRelatedProducts(slug: string) {
+  // === GET RELATED PRODUCTS (PUBLIC, MULTI-CURRENCY) ===
+  async getRelatedProducts(
+    slug: string,
+    targetCurrency: string = "IDR",
+    lang: string = "id",
+  ) {
     try {
+      const requestedCurrency = targetCurrency?.trim().toUpperCase() || "IDR";
+
+      const requestedLang = lang?.trim().toLowerCase() || "id";
+
+      // ==========================================
+      // 1. GET TARGET PRODUCT
+      // ==========================================
       const targetProduct = await this.prisma.product.findUnique({
         where: { slug },
-        select: { id: true, categoryId: true },
+        select: {
+          id: true,
+          categoryId: true,
+        },
       });
 
       if (!targetProduct) {
-        throw new Error("Product not found");
+        throw new ApiError("Product not found", 404);
       }
 
-      // 2. Ambil produk lain di kategori yang sama dan berstatus AKTIF
-      const relatedRaw = await this.prisma.product.findMany({
-        where: {
-          categoryId: targetProduct.categoryId,
-          id: { not: targetProduct.id },
-          isActive: true, // ✨ PERUBAHAN: Hanya ambil produk yang statusnya aktif
-        },
-        take: 10,
-        orderBy: { createdAt: "desc" },
-        include: {
-          images: {
-            take: 1,
-            orderBy: { isFeatured: "desc" },
+      // ==========================================
+      // 2. GET RELATED PRODUCTS & APP SETTINGS
+      // ==========================================
+      const [relatedRaw, appSetting] = await Promise.all([
+        this.prisma.product.findMany({
+          where: {
+            categoryId: targetProduct.categoryId,
+            id: { not: targetProduct.id },
+            isActive: true,
+            category: { isActive: true },
           },
-          priceTiers: {
-            orderBy: { minQuantity: "asc" },
+          take: 10,
+          orderBy: { createdAt: "desc" },
+          include: {
+            images: {
+              take: 1,
+              orderBy: [{ isFeatured: "desc" }, { sortOrder: "asc" }],
+            },
+            priceTiers: {
+              orderBy: {
+                minQuantity: "asc",
+              },
+            },
           },
-        },
-      });
+        }),
+        this.prisma.appSetting.findFirst(),
+      ]);
 
-      // 3. Mapping data agar sesuai dengan format frontend (Product Type)
-      const formattedRelated = relatedRaw.map((p) => {
-        let bulkPrice = Number(p.basePrice);
-        if (p.priceTiers && p.priceTiers.length > 0) {
-          const cheapestTier = [...p.priceTiers].sort(
+      const globalAdjuster = Number(
+        appSetting?.globalForeignPriceAdjuster ?? 0,
+      );
+
+      // ==========================================
+      // 3. CONVERT CURRENCY
+      // ==========================================
+      let conversionRate = 1;
+      let finalCurrency = "IDR";
+
+      if (requestedCurrency !== "IDR" && relatedRaw.length > 0) {
+        try {
+          const conversionResult =
+            await this.currencyConversion.convertCurrency({
+              fromCurrency: "IDR",
+              toCurrency: requestedCurrency,
+              amount: 1,
+            });
+
+          if (
+            !Number.isFinite(conversionResult.rate) ||
+            conversionResult.rate <= 0
+          ) {
+            throw new Error("Invalid currency conversion rate");
+          }
+
+          conversionRate = conversionResult.rate;
+          finalCurrency = requestedCurrency;
+        } catch (error) {
+          console.error("[RelatedProducts] Currency conversion failed:", error);
+
+          conversionRate = 1;
+          finalCurrency = "IDR";
+        }
+      }
+
+      const isForeignTransaction = finalCurrency !== "IDR";
+
+      // ==========================================
+      // 4. FORMAT RELATED PRODUCTS
+      // ==========================================
+      const formattedRelated = relatedRaw.map((product) => {
+        const basePriceValue = Number(product.basePrice);
+
+        let calculatedRegularPrice = basePriceValue;
+        let calculatedBulkPrice = basePriceValue;
+        let minOrder = 1;
+
+        // Mengikuti aturan Best Seller:
+        // gunakan tier dengan harga paling rendah.
+        if (product.priceTiers && product.priceTiers.length > 0) {
+          const cheapestTier = [...product.priceTiers].sort(
             (a, b) => Number(a.price) - Number(b.price),
           )[0];
-          bulkPrice = Number(cheapestTier.price);
+
+          calculatedBulkPrice = Number(cheapestTier.price);
+
+          minOrder = cheapestTier.minQuantity;
         }
 
-        // Jika gambar ada ambil URL-nya, jika tidak ada kembalikan null
-        const imageUrl = p.images.length > 0 ? p.images[0].url : null;
+        // ======================================
+        // FOREIGN PRICE ADJUSTER
+        // ======================================
+        if (isForeignTransaction) {
+          const productAdjuster = Number(product.foreignPriceAdjuster ?? 0);
+
+          const activeAdjuster =
+            productAdjuster !== 0 ? productAdjuster : globalAdjuster;
+
+          const multiplier = 1 + activeAdjuster / 100;
+
+          calculatedRegularPrice *= multiplier;
+          calculatedBulkPrice *= multiplier;
+        }
+
+        // ======================================
+        // CONVERT IDR -> TARGET CURRENCY
+        // ======================================
+        const regularPrice = Number(
+          (calculatedRegularPrice * conversionRate).toFixed(2),
+        );
+
+        const bulkPrice = Number(
+          (calculatedBulkPrice * conversionRate).toFixed(2),
+        );
+
+        // ======================================
+        // LANGUAGE
+        // ======================================
+        const productName =
+          requestedLang === "en"
+            ? product.name_en || product.name || "Unnamed Product"
+            : product.name || product.name_en || "Produk Tanpa Nama";
+
+        // ======================================
+        // IMAGE
+        // ======================================
+        const imageUrl =
+          product.images.length > 0 ? product.images[0].url : null;
 
         return {
-          id: p.id,
-          name: p.name,
-          slug: p.slug,
-          image: imageUrl, // Akan bernilai null jika kosong
-          bulkPrice: bulkPrice,
-          regularPrice: Number(p.basePrice),
+          id: product.id,
+          name: productName,
+          slug: product.slug,
+          image: imageUrl,
+
+          regularPrice,
+          bulkPrice,
+          minOrder,
+
+          // PENTING: dikirim ke frontend.
+          currencyCode: finalCurrency,
+
+          isCustom: product.isCustom,
         };
       });
 
       return formattedRelated;
     } catch (error) {
-      console.error(`❌ Error fetching related products for (${slug}):`, error);
+      console.error(`[RelatedProducts] Error for slug (${slug}):`, error);
+
       throw error;
     }
   }
