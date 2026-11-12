@@ -573,25 +573,23 @@ export class ProductController {
     try {
       const { country, lang } = req.query;
 
-      // 1. Tentukan mata uang default
+      const countryCode =
+        typeof country === "string" ? country.trim().toUpperCase() : "ID";
+
+      const language =
+        typeof lang === "string" ? lang.trim().toLowerCase() : "id";
+
       let targetCurrency = "IDR";
 
-      // 2. Konversi country menjadi mata uang yang sesuai
-      if (country && typeof country === "string") {
-        const countryCode = country.toUpperCase();
-        if (countryCode === "ID") {
-          targetCurrency = "IDR";
-        } else {
-          const autoCurrency =
-            countryToCurrency[countryCode as keyof typeof countryToCurrency];
-          targetCurrency = autoCurrency || "USD"; // Fallback ke USD jika tidak ditemukan
-        }
+      if (countryCode !== "ID") {
+        targetCurrency =
+          countryToCurrency[countryCode as keyof typeof countryToCurrency] ||
+          "USD";
       }
 
-      // 3. Panggil service dengan mengirimkan targetCurrency dan lang
       const result = await this.productService.getBestSellerProducts(
         targetCurrency,
-        typeof lang === "string" ? lang : "id",
+        language,
       );
 
       res.status(200).json(result);
