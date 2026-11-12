@@ -565,7 +565,6 @@ export class ProductController {
   };
 
   // === GET BEST SELLER PRODUCTS ===
-  // === GET BEST SELLER PRODUCTS ===
   getBestSellerProducts = async (
     req: Request,
     res: Response,

@@ -88,19 +88,32 @@ export class CartService {
 
     //  1. AMBIL NILAI KURS JIKA BUKAN IDR
     let conversionRate = 1;
-    if (targetCurrency && targetCurrency !== "IDR") {
+    let finalCurrency = "IDR";
+
+    const requestedCurrency = targetCurrency?.trim().toUpperCase() || "IDR";
+
+    if (requestedCurrency !== "IDR") {
       try {
         const conversionResult = await this.currencyConversion.convertCurrency({
           fromCurrency: "IDR",
-          toCurrency: targetCurrency,
+          toCurrency: requestedCurrency,
           amount: 1,
         });
+
+        if (
+          !Number.isFinite(conversionResult.rate) ||
+          conversionResult.rate <= 0
+        ) {
+          throw new Error("Invalid exchange rate");
+        }
+
         conversionRate = conversionResult.rate;
+        finalCurrency = requestedCurrency;
       } catch (error) {
-        console.error(
-          "Gagal mengambil nilai tukar untuk keranjang, fallback ke IDR",
-          error,
-        );
+        console.error("[Cart] Currency conversion failed, using IDR:", error);
+
+        conversionRate = 1;
+        finalCurrency = "IDR";
       }
     }
 
@@ -272,7 +285,7 @@ export class CartService {
 
     return {
       ...rawCart,
-      currencyCode: targetCurrency,
+      currencyCode: finalCurrency,
       items: processedItems,
     };
   }
@@ -336,21 +349,37 @@ export class CartService {
     targetCurrency: string = "IDR",
     lang: string = "id",
   ) {
-    let conversionRate = 1;
+    // ============================================
+    // CURRENCY CONVERSION - GUEST CART
+    // ============================================
 
-    if (targetCurrency !== "IDR") {
+    let conversionRate = 1;
+    let finalCurrency = "IDR";
+
+    const requestedCurrency = targetCurrency?.trim().toUpperCase() || "IDR";
+
+    if (requestedCurrency !== "IDR") {
       try {
         const conversionResult = await this.currencyConversion.convertCurrency({
           fromCurrency: "IDR",
-          toCurrency: targetCurrency,
+          toCurrency: requestedCurrency,
           amount: 1,
         });
+
+        if (
+          !Number.isFinite(conversionResult.rate) ||
+          conversionResult.rate <= 0
+        ) {
+          throw new Error("Invalid exchange rate");
+        }
+
         conversionRate = conversionResult.rate;
+        finalCurrency = requestedCurrency;
       } catch (error) {
-        console.error(
-          "Gagal mengambil nilai tukar untuk guest, fallback ke IDR",
-          error,
-        );
+        console.error("[GuestCart] Currency conversion failed:", error);
+
+        conversionRate = 1;
+        finalCurrency = "IDR";
       }
     }
 
@@ -545,7 +574,7 @@ export class CartService {
     );
 
     return {
-      currencyCode: targetCurrency,
+      currencyCode: finalCurrency,
       items: processedItems.filter((i) => i !== null),
     };
   }

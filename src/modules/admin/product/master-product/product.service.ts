@@ -1363,8 +1363,17 @@ export class ProductService {
             amount: 1,
           });
           offsetRate = res.rate;
-        } catch (e) {
-          offsetRate = 1;
+        } catch (error) {
+          console.error(
+            "[BatchPrice] Failed to convert offset currency:",
+            error,
+          );
+
+          throw new ApiError(
+            `Gagal mengambil kurs ${offsetCurr}/IDR. ` +
+              "Preview harga dibatalkan agar tidak menghasilkan harga yang salah.",
+            503,
+          );
         }
       }
     }
