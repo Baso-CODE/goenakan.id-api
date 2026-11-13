@@ -315,19 +315,27 @@ export class WebOrderService {
         calculatedSubtotal += actualTotalItem;
 
         return {
-          productName: productName,
+          productName,
           quantity: item.quantity,
           price: finalItemPrice,
           total: actualTotalItem,
+
+          // Konfigurasi masing-masing item
           customization: parsedCustomization,
           selectedAttributes: parsedSelectedAttributes,
+          notes: item.notes ?? null,
 
           product: {
-            connect: { id: item.productId },
+            connect: {
+              id: item.productId,
+            },
           },
+
           ...(item.variantId && {
             variant: {
-              connect: { id: item.variantId },
+              connect: {
+                id: item.variantId,
+              },
             },
           }),
         };
