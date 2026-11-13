@@ -278,7 +278,8 @@ export class CartService {
           // =============================
           materialType: materialTypeName,
           customization: customData,
-          selectedAttributes: item.selectedAttributes || null,
+          selectedAttributes: item.selectedAttributes ?? null,
+          notes: item.notes ?? null,
         };
       }),
     );
@@ -294,7 +295,66 @@ export class CartService {
   async addToCart(profileId: string, data: AddToCartDTO) {
     const cart = await this.getOrCreateCart(profileId);
 
-    const existingItem = await this.prisma.cartItem.findFirst({
+    // Menyamakan representasi JSON untuk keperluan
+    // perbandingan item keranjang.
+    const normalizeJson = (value: unknown): unknown => {
+      if (value === undefined || value === null) {
+        return null;
+      }
+
+      // Mendukung customization yang disimpan
+      // dalam bentuk JSON string maupun object.
+      if (typeof value === "string") {
+        try {
+          return normalizeJson(JSON.parse(value));
+        } catch {
+          return value;
+        }
+      }
+
+      if (Array.isArray(value)) {
+        return value.map(normalizeJson);
+      }
+
+      if (typeof value === "object") {
+        return Object.fromEntries(
+          Object.entries(value as Record<string, unknown>)
+            .filter(([, entry]) => entry !== undefined)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([key, entry]) => [key, normalizeJson(entry)]),
+        );
+      }
+
+      return value;
+    };
+
+    const getIdentity = (item: {
+      productId: string;
+      variantId?: string | null;
+      selectedAttributes?: unknown;
+      customization?: unknown;
+      notes?: string | null;
+    }) => {
+      return JSON.stringify({
+        productId: item.productId,
+        variantId: item.variantId || null,
+        selectedAttributes: normalizeJson(item.selectedAttributes),
+        customization: normalizeJson(item.customization),
+        notes: item.notes || null,
+      });
+    };
+
+    const incomingIdentity = getIdentity({
+      productId: data.productId,
+      variantId: data.variantId,
+      selectedAttributes: data.selectedAttributes,
+      customization: data.customization,
+      notes: data.notes,
+    });
+
+    // Cari kandidat dengan produk dan varian sama.
+    // Jangan langsung anggap semua kandidat identik.
+    const candidates = await this.prisma.cartItem.findMany({
       where: {
         cartId: cart.id,
         productId: data.productId,
@@ -302,30 +362,46 @@ export class CartService {
       },
     });
 
-    if (existingItem) {
-      return this.prisma.cartItem.update({
-        where: { id: existingItem.id },
-        data: {
-          quantity: existingItem.quantity + data.quantity,
-          customization: data.customization || existingItem.customization,
-          selectedAttributes:
-            data.selectedAttributes || existingItem.selectedAttributes,
-          notes: data.notes || existingItem.notes,
-        },
+    const existingItem = candidates.find((item) => {
+      const existingIdentity = getIdentity({
+        productId: item.productId,
+        variantId: item.variantId,
+        selectedAttributes: item.selectedAttributes,
+        customization: item.customization,
+        notes: item.notes,
       });
-    } else {
-      return this.prisma.cartItem.create({
+
+      return existingIdentity === incomingIdentity;
+    });
+
+    if (existingItem) {
+      // Konfigurasi benar-benar sama:
+      // hanya tambah quantity, jangan timpa logo.
+      return this.prisma.cartItem.update({
+        where: {
+          id: existingItem.id,
+        },
         data: {
-          cartId: cart.id,
-          productId: data.productId,
-          variantId: data.variantId || null,
-          quantity: data.quantity,
-          customization: data.customization || null,
-          selectedAttributes: data.selectedAttributes || null,
-          notes: data.notes || null,
+          quantity: {
+            increment: data.quantity,
+          },
         },
       });
     }
+
+    // Logo/atribut/catatan berbeda:
+    // buat item baru.
+    return this.prisma.cartItem.create({
+      data: {
+        cartId: cart.id,
+        productId: data.productId,
+        variantId: data.variantId || null,
+        quantity: data.quantity,
+        customization: data.customization || null,
+        selectedAttributes: data.selectedAttributes || null,
+        notes: data.notes || null,
+      },
+    });
   }
 
   // === 3. SYNC GUEST CART ===
@@ -335,10 +411,12 @@ export class CartService {
     targetCurrency: string = "IDR",
     lang: string = "id",
   ) {
-    const syncPromises = data.items.map((item) =>
-      this.addToCart(profileId, item),
-    );
-    await Promise.all(syncPromises);
+    // Sinkronisasi berurutan untuk mencegah
+    // dua item guest cart diproses bersamaan
+    // terhadap kondisi cart yang sama.
+    for (const item of data.items) {
+      await this.addToCart(profileId, item);
+    }
 
     return this.getCart(profileId, targetCurrency, lang);
   }
@@ -424,11 +502,15 @@ export class CartService {
           productName = dbProduct.name_en || dbProduct.name;
         }
 
-        let customData: any = item.customization || {};
-        try {
-          if (typeof customData === "string")
+        let customData: any = item.customization ?? null;
+
+        if (typeof customData === "string") {
+          try {
             customData = JSON.parse(customData);
-        } catch (e) {}
+          } catch (error) {
+            console.warn("[GuestCart] Customization is not valid JSON:", error);
+          }
+        }
 
         const isAir = customData?.freightMode === "AIR";
 
@@ -545,30 +627,30 @@ export class CartService {
         return {
           id: item.id,
           productId: item.productId,
-          variantId: item.variantId,
+          variantId: item.variantId ?? null,
           name: productName,
           price: finalConvertedPrice,
           quantity: item.quantity,
-          // =============================
-          // GTM ECOMMERCE METADATA
-          // =============================
+
+          // GTM Ecommerce Metadata
           productSku: dbProduct.sku ?? null,
           variantSku,
           itemCategoryEn: dbProduct.category?.name_en ?? null,
           itemCategoryName: dbProduct.itemCategory?.name ?? null,
           trackingPriceIdr: calculatedPriceIdr,
 
-          // =============================
-          // EXISTING CART DATA
-          // =============================
+          // Existing Cart Data
           image:
             dbProduct.images?.[0]?.url || "/images/products/demo-products.png",
           materialType: materialTypeName,
           dimensions:
             dimParts.length > 0 ? `${dimParts.join(" x ")} cm` : undefined,
           weight: dbProduct.weight ? `${dbProduct.weight} gram` : undefined,
+
+          // Pertahankan identitas konfigurasi
           customization: customData,
-          selectedAttributes: item.selectedAttributes || null,
+          selectedAttributes: item.selectedAttributes ?? null,
+          notes: item.notes ?? null,
         };
       }),
     );

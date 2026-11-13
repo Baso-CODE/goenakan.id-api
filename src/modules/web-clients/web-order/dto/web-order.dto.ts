@@ -92,6 +92,10 @@ class OrderItemDTO {
   //  TAMBAHAN BARU: Menerima atribut pilihan (seperti warna, bahan) dari frontend
   @IsOptional()
   selectedAttributes?: any;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
 }
 
 export class CreateWebOrderDTO {
