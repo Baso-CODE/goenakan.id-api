@@ -91,9 +91,13 @@ export function buildGA4Purchase(input: PurchaseInput) {
     transaction_id: input.isTestTransaction
       ? `TEST-${input.orderNumber}`
       : input.orderNumber,
+
     currency: input.currency,
     value,
     items,
+
+    engagement_time_msec: 1,
+    purchase_channel: "website",
   };
 
   const sessionId = attribution?.ga_session_id;

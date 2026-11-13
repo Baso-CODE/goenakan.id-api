@@ -111,6 +111,7 @@ export default class App {
           "Authorization",
           "X-Requested-With",
           "x-country",
+          "X-Guest-Order-Token",
         ],
       }),
     );

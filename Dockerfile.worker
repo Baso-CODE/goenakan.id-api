@@ -1,0 +1,45 @@
+# ===================================================
+# GOENAKAN GA4 TRACKING WORKER
+# ===================================================
+
+FROM oven/bun:1
+
+WORKDIR /app
+
+# Native dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    make \
+    g++ \
+    openssl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install dependencies
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
+
+# Copy source
+COPY . .
+
+# Generate Prisma Client (tidak mengubah database)
+RUN bunx prisma generate
+
+ENV NODE_ENV=production
+
+# ===================================================
+# DATABASE SAFETY
+# ===================================================
+# Worker TIDAK menjalankan:
+# - prisma db push
+# - prisma migrate deploy
+# - prisma migrate reset
+#
+# Jika schema Prisma berubah, lakukan review,
+# backup, dan update database secara MANUAL
+# sebelum deploy versi baru.
+# ===================================================
+
+# Menjalankan worker terus-menerus.
+# Tidak membutuhkan port HTTP publik.
+CMD ["bun", "src/modules/tracking-outbox/run-worker.ts"]
