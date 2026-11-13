@@ -349,16 +349,27 @@ export class ProductController {
   ) => {
     try {
       const query = {
-        categoryId: req.query.categoryId as string | undefined,
-        isCustom: req.query.isCustom as string | undefined,
+        categoryId:
+          typeof req.query.categoryId === "string"
+            ? req.query.categoryId
+            : undefined,
+        itemCategoryId:
+          typeof req.query.itemCategoryId === "string"
+            ? req.query.itemCategoryId
+            : undefined,
+        isCustom:
+          typeof req.query.isCustom === "string"
+            ? req.query.isCustom
+            : undefined,
       };
+
       const products = await this.productService.getAllProductsForOrder(query);
+
       res.status(200).json(products);
     } catch (error) {
       next(error);
     }
   };
-
   // === UPDATE PRODUCT ATTRIBUTES ===
   updateProductAttributes = async (
     req: Request,
