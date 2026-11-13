@@ -2967,6 +2967,7 @@ export class ProductService {
 
   async getAllProductsForOrder(query?: {
     categoryId?: string;
+    itemCategoryId?: string;
     isCustom?: boolean | string;
   }) {
     try {
@@ -2974,6 +2975,10 @@ export class ProductService {
 
       if (query?.categoryId) {
         where.categoryId = query.categoryId;
+      }
+
+      if (query?.itemCategoryId) {
+        where.itemCategoryId = query.itemCategoryId;
       }
 
       if (query?.isCustom !== undefined) {
@@ -2998,10 +3003,19 @@ export class ProductService {
           basePrice: true,
           isCustom: true,
           description: true,
+          categoryId: true,
+          itemCategoryId: true,
           category: {
             select: {
               id: true,
               name_id: true,
+            },
+          },
+          itemCategory: {
+            select: {
+              id: true,
+              name: true,
+              productCategoryId: true,
             },
           },
           priceTiers: {
@@ -3078,6 +3092,7 @@ export class ProductService {
             attributeName: string;
             attributeType: string;
             isCustom: boolean;
+
             position: number;
             values: {
               valueId: string;
@@ -3128,6 +3143,16 @@ export class ProductService {
           sku: product.sku,
           basePrice: Number(product.basePrice ?? 0),
           isCustom: product.isCustom,
+          categoryId: product.categoryId,
+          itemCategoryId: product.itemCategoryId,
+
+          itemCategory: product.itemCategory
+            ? {
+                id: product.itemCategory.id,
+                name: product.itemCategory.name,
+                productCategoryId: product.itemCategory.productCategoryId,
+              }
+            : null,
           category: product.category
             ? {
                 id: product.category.id,
