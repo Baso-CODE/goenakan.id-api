@@ -380,6 +380,10 @@ export class OrderService {
       throw new ApiError(`Order with ID ${id} not found`, 404);
     }
 
+    // ======================================================
+    // VALIDASI ORDER
+    // ======================================================
+
     if (
       data.clientId !== undefined &&
       data.clientId !== existingOrder.clientId
@@ -399,6 +403,7 @@ export class OrderService {
 
     if (data.dateOrder !== undefined) {
       const date = new Date(data.dateOrder);
+
       if (Number.isNaN(date.getTime())) {
         throw new ApiError("Tanggal order tidak valid", 400);
       }
@@ -433,77 +438,139 @@ export class OrderService {
       );
     }
 
+    // ======================================================
+    // VALIDASI DAN HITUNG PRODUK
+    // ======================================================
+
     const orderProductsData: any[] = [];
     let totalAmount = Number(existingOrder.totalAmount);
 
     if (shouldUpdateProducts) {
       totalAmount = 0;
 
-      for (const item of data.products ?? []) {
-        if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
-          throw new ApiError("Quantity produk tidak valid", 400);
-        }
+      for (const [index, item] of (data.products ?? []).entries()) {
+        const rowNumber = index + 1;
 
-        if (
-          item.price === undefined ||
-          !Number.isFinite(Number(item.price)) ||
-          Number(item.price) < 0
-        ) {
-          throw new ApiError("Harga produk tidak valid", 400);
-        }
-
-        const product = await this.prisma.product.findUnique({
-          where: { id: item.productId },
-          include: { productVariants: true },
-        });
-
-        if (!product) {
+        if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
           throw new ApiError(
-            `Product with ID ${item.productId} not found`,
-            404,
-          );
-        }
-
-        if (product.isCustom && !item.variantId) {
-          throw new ApiError(
-            `Variant is required for custom product: ${product.name}`,
+            `Baris ${rowNumber}: Quantity produk tidak valid`,
             400,
           );
         }
 
-        if (item.variantId) {
+        if (
+          item.price === undefined ||
+          item.price === null ||
+          !Number.isFinite(Number(item.price)) ||
+          Number(item.price) < 0
+        ) {
+          throw new ApiError(
+            `Baris ${rowNumber}: Harga produk tidak valid`,
+            400,
+          );
+        }
+
+        const product = await this.prisma.product.findUnique({
+          where: { id: item.productId },
+          include: {
+            productVariants: true,
+          },
+        });
+
+        if (!product) {
+          throw new ApiError(
+            `Baris ${rowNumber}: Product with ID ${item.productId} not found`,
+            404,
+          );
+        }
+
+        const finalPrice = Number(item.price);
+        const variantId =
+          typeof item.variantId === "string" ? item.variantId.trim() : "";
+
+        // ==================================================
+        // VALIDASI VARIAN YANG DIKIRIM
+        // ==================================================
+
+        if (variantId) {
           const variantExists = product.productVariants.some(
-            (variant) => variant.id === item.variantId,
+            (variant) => variant.id === variantId,
           );
 
           if (!variantExists) {
             throw new ApiError(
-              `Invalid variant for product: ${product.name}`,
+              `Baris ${rowNumber}: Invalid variant for product: ${product.name}`,
               400,
             );
           }
         }
 
-        const finalPrice = Number(item.price);
-        totalAmount += finalPrice * item.quantity;
+        // ==================================================
+        // KONTRAK MANUAL ORDER
+        // ==================================================
+        // Sejalan dengan createOrder:
+        //
+        // - SALES custom dengan harga manual > 0
+        //   boleh tanpa variantId.
+        //
+        // - SALES custom dengan harga 0 memerlukan
+        //   variantId untuk jalur harga otomatis.
+        //
+        // - SAMPLE dapat memiliki harga 0.
+        //
+        // Jika variantId diisi, tetap wajib milik produk.
+
+        if (
+          existingOrder.salesCategory === "SALES" &&
+          product.isCustom &&
+          finalPrice === 0 &&
+          !variantId
+        ) {
+          throw new ApiError(
+            `Baris ${rowNumber}: Isi harga manual atau pilih varian untuk produk custom: ${product.name}`,
+            400,
+          );
+        }
+
+        // ==================================================
+        // HITUNG SUBTOTAL DARI HARGA YANG DIKIRIM
+        // ==================================================
+
+        const subtotal = finalPrice * item.quantity;
+
+        if (!Number.isFinite(subtotal)) {
+          throw new ApiError(`Baris ${rowNumber}: Subtotal tidak valid`, 400);
+        }
+
+        totalAmount += subtotal;
 
         const productData: any = {
-          product: { connect: { id: item.productId } },
+          product: {
+            connect: { id: item.productId },
+          },
           quantity: item.quantity,
           unitPrice: finalPrice,
-          variant: item.variantId
-            ? { connect: { id: item.variantId } }
-            : undefined,
+          variant: variantId ? { connect: { id: variantId } } : undefined,
           selectedAttributes: item.selectedAttributes ?? undefined,
           remarks: item.remarks ?? null,
           customization: item.customization
-            ? JSON.stringify({ detail: item.customization })
+            ? JSON.stringify({
+                detail: item.customization,
+              })
             : undefined,
         };
 
         orderProductsData.push(productData);
       }
+
+      if (!Number.isFinite(totalAmount)) {
+        throw new ApiError("Total amount order tidak valid", 400);
+      }
     }
+
+    // ======================================================
+    // SAMPLE FOLLOW-UPS
+    // ======================================================
 
     const followUpsData =
       shouldUpdateFollowUps && existingOrder.salesCategory === "SAMPLE"
@@ -516,6 +583,10 @@ export class OrderService {
             isDone: followUp.isDone ?? false,
           }))
         : [];
+
+    // ======================================================
+    // DATABASE TRANSACTION
+    // ======================================================
 
     return this.prisma.$transaction(async (tx) => {
       if (shouldUpdateProducts) {
@@ -560,25 +631,41 @@ export class OrderService {
 
       if (data.clientB2BPICId !== undefined) {
         updateData.pic = data.clientB2BPICId
-          ? { connect: { id: data.clientB2BPICId } }
+          ? {
+              connect: {
+                id: data.clientB2BPICId,
+              },
+            }
           : { disconnect: true };
       }
 
       if (data.purchaseChannelId !== undefined) {
         updateData.purchaseChannel = data.purchaseChannelId
-          ? { connect: { id: data.purchaseChannelId } }
+          ? {
+              connect: {
+                id: data.purchaseChannelId,
+              },
+            }
           : { disconnect: true };
       }
 
       if (data.referenceQuotationId !== undefined) {
         updateData.referenceQuotation = data.referenceQuotationId
-          ? { connect: { id: data.referenceQuotationId } }
+          ? {
+              connect: {
+                id: data.referenceQuotationId,
+              },
+            }
           : { disconnect: true };
       }
 
       if (data.referenceSampleId !== undefined) {
         updateData.referenceSample = data.referenceSampleId
-          ? { connect: { id: data.referenceSampleId } }
+          ? {
+              connect: {
+                id: data.referenceSampleId,
+              },
+            }
           : { disconnect: true };
       }
 
@@ -590,6 +677,7 @@ export class OrderService {
 
       if (shouldUpdateProducts) {
         updateData.totalAmount = totalAmount;
+
         updateData.products = {
           create: orderProductsData,
         };
