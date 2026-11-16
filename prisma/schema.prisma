@@ -690,6 +690,7 @@ model AttributeValue {
   productImages                 ProductImage[]
   productImagesAsPosition       ProductImage[]                 @relation("PrintPositionValue")
   productImagesAsPrintSide      ProductImage[]                 @relation("PrintSideValue")
+  productVideos                 ProductVideo[]
 
   @@map("attribute_values")
 }
@@ -857,6 +858,9 @@ model ProductVideo {
   // Relasi ke Produk
   productId String
   product   Product @relation(fields: [productId], references: [id])
+
+  attributeValueId String?
+  attributeValue   AttributeValue? @relation(fields: [attributeValueId], references: [id])
 
   @@map("product_videos")
 }
