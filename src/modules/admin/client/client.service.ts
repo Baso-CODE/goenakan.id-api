@@ -1,7 +1,14 @@
+import { Prisma } from "@prisma/client";
 import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
 
 import { ApiError } from "../../../utils/api-error";
+import {
+  buildB2BIdentityKey,
+  buildB2CIdentityKey,
+  findClientByPhone,
+  normalizeClientPhone,
+} from "../../../utils/client-identity";
 import { CounterService } from "../../../utils/counter.service";
 import { SlugService } from "../../../utils/genereateSlug";
 import { CloudinaryService } from "../../cloudinary/cloudinary.service";
@@ -29,6 +36,19 @@ export class ClientService {
       // 1. Validasi Awal: Lempar ApiError 400 jika tipe salah
       if (clientType !== "B2B" && clientType !== "B2C") {
         throw new ApiError(`Invalid client type: received ${data.type}`, 400);
+      }
+
+      // Guard global berlaku untuk B2B dan B2C, termasuk format +62/08.
+      const phoneNormalized = normalizeClientPhone(data.phone);
+      if (!phoneNormalized) {
+        throw new ApiError("Nomor HP utama Client tidak valid", 400);
+      }
+      const phoneOwner = await findClientByPhone(this.prisma, data.phone);
+      if (phoneOwner) {
+        throw new ApiError(
+          `Nomor HP sudah digunakan Client ${phoneOwner.custCode}. Gunakan Client yang ada.`,
+          409,
+        );
       }
 
       const clientStatus =
@@ -91,9 +111,24 @@ export class ClientService {
 
         // ====================== B2B ========================
         if (clientType === "B2B") {
+          const identityKey = buildB2BIdentityKey(data.companyName, data.phone);
+          if (!identityKey) {
+            throw new ApiError(
+              "Nama perusahaan dan nomor telepon yang valid wajib diisi untuk Client B2B",
+              400,
+            );
+          }
+          const duplicate = await findClientByPhone(tx, data.phone);
+          if (duplicate) {
+            throw new ApiError(
+              `Nomor HP sudah digunakan Client ${duplicate.custCode}.`,
+              409,
+            );
+          }
           return await tx.client.create({
             data: {
               custCode,
+              phoneNormalized,
               type: data.type,
               status: clientStatus,
               joinedDate: parsedJoinedDate,
@@ -102,6 +137,7 @@ export class ClientService {
                   companyName: data.companyName!,
                   departmentId: data.departmentId!,
                   phone: data.phone ?? "",
+                  identityKey,
                   email: data.email ?? "",
                   website: data.website ?? "",
 
@@ -136,9 +172,26 @@ export class ClientService {
 
         // ====================== B2C ========================
         if (clientType === "B2C") {
+          const identityKey = buildB2CIdentityKey(data.name, data.phone);
+          if (!identityKey) {
+            throw new ApiError(
+              "Nama dan nomor HP valid wajib diisi untuk Client B2C",
+              400,
+            );
+          }
+
+          const duplicate = await findClientByPhone(tx, data.phone);
+          if (duplicate) {
+            throw new ApiError(
+              `Nomor HP sudah digunakan Client ${duplicate.custCode}.`,
+              409,
+            );
+          }
+
           return await tx.client.create({
             data: {
               custCode,
+              phoneNormalized,
               type: data.type,
               status: clientStatus,
               b2c: {
@@ -146,6 +199,7 @@ export class ClientService {
                   prefix: data.prefix ?? "",
                   name: data.name!,
                   phone: data.phone ?? "",
+                  identityKey,
 
                   country: data.countryB2C ?? "",
                   province: data.provinceB2C ?? "",
@@ -167,6 +221,15 @@ export class ClientService {
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
+      }
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        throw new ApiError(
+          "Client dengan identitas tersebut sudah terdaftar",
+          409,
+        );
       }
       console.error("❌ Terjadi kesalahan pada createClient:", error);
 
@@ -220,6 +283,27 @@ export class ClientService {
     // ====================================================
 
     if (existing.type === ClientType.B2B) {
+      const nextCompanyName = data.companyName ?? existing.b2b?.companyName;
+      const nextPhone = data.phone ?? existing.b2b?.phone;
+      const identityKey = buildB2BIdentityKey(nextCompanyName, nextPhone);
+      if (!identityKey) {
+        throw new ApiError(
+          "Nama perusahaan dan nomor telepon B2B harus valid",
+          400,
+        );
+      }
+      const phoneNormalized = normalizeClientPhone(nextPhone);
+      if (!phoneNormalized) {
+        throw new ApiError("Nomor HP utama Client B2B tidak valid", 400);
+      }
+      const duplicate = await findClientByPhone(this.prisma, nextPhone);
+      if (duplicate && duplicate.id !== id) {
+        throw new ApiError(
+          `Nomor HP sudah digunakan Client ${duplicate.custCode}.`,
+          409,
+        );
+      }
+
       let newLogoUrl: string | undefined = undefined;
       let newLogoId: string | undefined = undefined;
 
@@ -291,46 +375,61 @@ export class ClientService {
       }
 
       console.log("💾 [PRISMA] Menyimpan pembaruan data B2B ke database...");
-      const updatedClient = await this.prisma.client.update({
-        where: { id },
-        data: {
-          joinedDate: parsedJoinedDate ?? existing.joinedDate,
-          b2b: {
-            update: {
-              companyName: data.companyName ?? existing.b2b?.companyName,
-              departmentId: data.departmentId ?? existing.b2b?.departmentId,
-              phone: data.phone ?? existing.b2b?.phone,
-              email: data.email ?? existing.b2b?.email,
-              website: data.website ?? existing.b2b?.website,
+      const updatedClient = await this.prisma.client
+        .update({
+          where: { id },
+          data: {
+            joinedDate: parsedJoinedDate ?? existing.joinedDate,
+            phoneNormalized,
+            b2b: {
+              update: {
+                companyName: data.companyName ?? existing.b2b?.companyName,
+                departmentId: data.departmentId ?? existing.b2b?.departmentId,
+                phone: data.phone ?? existing.b2b?.phone,
+                identityKey,
+                email: data.email ?? existing.b2b?.email,
+                website: data.website ?? existing.b2b?.website,
 
-              country: data.country ?? existing.b2b?.country,
-              province: data.province ?? existing.b2b?.province,
-              city: data.city ?? existing.b2b?.city,
-              district: data.district ?? existing.b2b?.district,
-              subDistrict: data.subDistrict ?? existing.b2b?.subDistrict,
-              postalCode: data.postalCode ?? existing.b2b?.postalCode,
-              fullAddress: data.fullAddress ?? existing.b2b?.fullAddress,
+                country: data.country ?? existing.b2b?.country,
+                province: data.province ?? existing.b2b?.province,
+                city: data.city ?? existing.b2b?.city,
+                district: data.district ?? existing.b2b?.district,
+                subDistrict: data.subDistrict ?? existing.b2b?.subDistrict,
+                postalCode: data.postalCode ?? existing.b2b?.postalCode,
+                fullAddress: data.fullAddress ?? existing.b2b?.fullAddress,
 
-              pics: Array.isArray(data.pics)
-                ? {
-                    deleteMany: {},
-                    create: data.pics.map((pic: any) => ({
-                      prefix: pic.prefix ?? "",
-                      name: pic.name ?? "",
-                      email: pic.email ?? null,
-                      phone: pic.phone ?? null,
-                    })),
-                  }
-                : undefined,
+                pics: Array.isArray(data.pics)
+                  ? {
+                      deleteMany: {},
+                      create: data.pics.map((pic: any) => ({
+                        prefix: pic.prefix ?? "",
+                        name: pic.name ?? "",
+                        email: pic.email ?? null,
+                        phone: pic.phone ?? null,
+                      })),
+                    }
+                  : undefined,
 
-              brandClients: brandOperation,
+                brandClients: brandOperation,
+              },
             },
           },
-        },
-        include: {
-          b2b: { include: { pics: true, brandClients: true } },
-        },
-      });
+          include: {
+            b2b: { include: { pics: true, brandClients: true } },
+          },
+        })
+        .catch((error: unknown) => {
+          if (
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === "P2002"
+          ) {
+            throw new ApiError(
+              "Nomor HP atau identitas Client sudah digunakan",
+              409,
+            );
+          }
+          throw error;
+        });
 
       console.log("🎉 [UPDATE CLIENT] Data B2B berhasil diperbarui!");
       return updatedClient;
@@ -341,31 +440,64 @@ export class ClientService {
     // ====================================================
 
     if (existing.type === ClientType.B2C) {
+      const nextName = data.name ?? existing.b2c?.name;
+      const nextPhone = data.phone ?? existing.b2c?.phone;
+      const identityKey = buildB2CIdentityKey(nextName, nextPhone);
+      if (!identityKey) {
+        throw new ApiError("Nama dan nomor HP B2C harus valid", 400);
+      }
+      const phoneNormalized = normalizeClientPhone(nextPhone);
+      if (!phoneNormalized) {
+        throw new ApiError("Nomor HP utama Client B2C tidak valid", 400);
+      }
+      const other = await findClientByPhone(this.prisma, nextPhone);
+      if (other && other.id !== id) {
+        throw new ApiError(
+          `Nomor HP sudah digunakan Client ${other.custCode}.`,
+          409,
+        );
+      }
+
       console.log("💾 [PRISMA] Menyimpan pembaruan data B2C ke database...");
-      return await this.prisma.client.update({
-        where: { id },
-        data: {
-          joinedDate: parsedJoinedDate ?? existing.joinedDate,
-          b2c: {
-            update: {
-              prefix: data.prefix ?? existing.b2c?.prefix,
-              name: data.name ?? existing.b2c?.name,
-              phone: data.phone ?? existing.b2c?.phone,
-              country: data.country ?? existing.b2c?.country,
-              province: data.province ?? existing.b2c?.province,
-              city: data.city ?? existing.b2c?.city,
-              district: data.district ?? existing.b2c?.district,
-              subDistrict: data.subDistrict ?? existing.b2c?.subDistrict,
-              postalCode: data.postalCode ?? existing.b2c?.postalCode,
-              fullAddress:
-                data.fullAddressB2C ??
-                data.fullAddress ??
-                existing.b2c?.fullAddress,
+      return await this.prisma.client
+        .update({
+          where: { id },
+          data: {
+            joinedDate: parsedJoinedDate ?? existing.joinedDate,
+            phoneNormalized,
+            b2c: {
+              update: {
+                prefix: data.prefix ?? existing.b2c?.prefix,
+                name: data.name ?? existing.b2c?.name,
+                phone: data.phone ?? existing.b2c?.phone,
+                identityKey,
+                country: data.country ?? existing.b2c?.country,
+                province: data.province ?? existing.b2c?.province,
+                city: data.city ?? existing.b2c?.city,
+                district: data.district ?? existing.b2c?.district,
+                subDistrict: data.subDistrict ?? existing.b2c?.subDistrict,
+                postalCode: data.postalCode ?? existing.b2c?.postalCode,
+                fullAddress:
+                  data.fullAddressB2C ??
+                  data.fullAddress ??
+                  existing.b2c?.fullAddress,
+              },
             },
           },
-        },
-        include: { b2c: true },
-      });
+          include: { b2c: true },
+        })
+        .catch((error: unknown) => {
+          if (
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === "P2002"
+          ) {
+            throw new ApiError(
+              "Nomor HP atau identitas Client sudah digunakan",
+              409,
+            );
+          }
+          throw error;
+        });
     }
 
     throw new ApiError("Invalid client type", 400);
