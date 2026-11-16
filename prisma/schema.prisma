@@ -240,6 +240,8 @@ model User {
   productUrlRequests    ProductUrlChangeRequest[] @relation("ProductUrlRequestedBy")
   productUrlReviews     ProductUrlChangeRequest[] @relation("ProductUrlReviewedBy")
   adminNotifications    AdminNotification[]
+  assignedCrmLeads      CrmLead[]                 @relation("CrmLeadAssignedTo")
+  crmCustomCodes        CrmCustomCode[]
 
   @@map("users")
 }
@@ -310,6 +312,7 @@ model CustomerProfile {
   addresses CustomerAddress[]
   carts     Cart[]
   orders    WebOrder[]
+  crmLeads  CrmLead[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2757,4 +2760,67 @@ model AdminNotification {
 
   @@index([userId, isRead, createdAt])
   @@map("admin_notifications")
+}
+
+// ==========================================
+// WHATSAPP CRM (LEADS & CUSTOM CODES)
+// ==========================================
+
+enum CrmAssignMethod {
+  MANUAL
+  CLAIM
+  STICKY_CUSTOMER
+  ROUND_ROBIN
+}
+
+enum CrmCustomCodeType {
+  LEAD_SOURCE
+  CS_AGENT_CODE
+}
+
+enum CrmLeadStatus {
+  NEW
+  IN_PROGRESS
+  CLOSED
+}
+
+model CrmCustomCode {
+  id              String            @id @default(uuid())
+  code            String            @unique
+  label           String
+  type            CrmCustomCodeType
+  leadUrlRef      String?           @db.Text
+  assignedUserId  String?
+  assignedUser    User?             @relation(fields: [assignedUserId], references: [id])
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  leads           CrmLead[]
+
+  @@map("crm_custom_codes")
+}
+
+model CrmLead {
+  id                String             @id @default(uuid())
+  phoneNumber       String             @unique
+  displayName       String?
+  waPushName        String?
+  
+  customerProfileId String?
+  customerProfile   CustomerProfile?   @relation(fields: [customerProfileId], references: [id], onDelete: SetNull)
+
+  assignedToUserId  String?
+  assignedToUser    User?              @relation("CrmLeadAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  assignedAt        DateTime?
+  assignmentMethod  CrmAssignMethod    @default(CLAIM)
+
+  sourceCodeId      String?
+  sourceCode        CrmCustomCode?     @relation(fields: [sourceCodeId], references: [id], onDelete: SetNull)
+
+  status            CrmLeadStatus      @default(NEW)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@map("crm_leads")
 }
