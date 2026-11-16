@@ -606,145 +606,238 @@ export class QuotationService {
   // ==========================================
   // 4. UPDATE QUOTATION (DIPERBARUI)
   // ==========================================
+  // MANUAL_QUOTATION_ITEM_SUPPORT_V2
   async updateQuotation(id: string, data: UpdateQuotationDTO) {
     const existing = await this.prisma.quotation.findUnique({
       where: { id },
     });
 
-    if (!existing) throw new ApiError("Quotation not found", 404);
+    if (!existing) {
+      throw new ApiError("Quotation not found", 404);
+    }
 
     const { items, notes, ...headerData } = data;
 
-    return await this.prisma.$transaction(async (tx) => {
+    if (items !== undefined && (!Array.isArray(items) || items.length === 0)) {
+      throw new ApiError("Quotation harus memiliki minimal satu item.", 400);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
       let newSubTotal = existing.subTotal;
       let newTotalAmount = existing.totalAmount;
 
-      if (items && items.length > 0) {
-        // Hapus item lama beserta tier-nya secara berelasi
-        await tx.quotationItem.deleteMany({ where: { quotationId: id } });
-
+      if (items !== undefined) {
+        const itemsToCreate: any[] = [];
         let calculatedSubTotal = 0;
 
-        //  GUNAKAN FOR OF LOOP AGAR BISA MELAKUKAN AWAIT KE DATABASE
-        for (const item of items) {
-          const mainQty = item.quantity ? Number(item.quantity) : 1;
-          const itemDiscount = item.discount ? Number(item.discount) : 0;
+        for (const [index, item] of items.entries()) {
+          const itemNo = index + 1;
+          const mainQty =
+            item.quantity !== undefined && item.quantity !== null
+              ? Number(item.quantity)
+              : 1;
+          const itemDiscount =
+            item.discount !== undefined && item.discount !== null
+              ? Number(item.discount)
+              : 0;
 
-          // 1. Pastikan productId tersedia
-          if (!item.productId) {
+          if (!Number.isInteger(mainQty) || mainQty <= 0) {
             throw new ApiError(
-              "Product ID diperlukan untuk setiap item quotation",
+              `Quantity item ke-${itemNo} harus lebih dari 0.`,
               400,
             );
           }
+          if (!Number.isFinite(itemDiscount) || itemDiscount < 0) {
+            throw new ApiError(`Discount item ke-${itemNo} tidak valid.`, 400);
+          }
 
-          // 2. Ambil harga dasar produk BESERTA attributeValues (Disamakan dengan Create)
-          const productRecord = await tx.product.findUnique({
-            where: { id: item.productId },
-            select: {
-              name: true,
-              basePrice: true,
-              //  PERBAIKAN: Mengambil modifier atribut dari database
-              attributeValues: {
-                select: {
-                  attributeValueId: true,
-                  priceModifier: true,
+          // Produk manual tidak mempunyai ID katalog.
+          // DTO mengizinkan productId kosong atau null.
+          const productId =
+            typeof item.productId === "string" && item.productId.trim() !== ""
+              ? item.productId.trim()
+              : null;
+          const variantId =
+            typeof item.variantId === "string" && item.variantId.trim() !== ""
+              ? item.variantId.trim()
+              : null;
+          const isManualProduct = productId === null;
+
+          let finalUnitPrice = 0;
+          let finalProductName = "";
+
+          if (!isManualProduct) {
+            // Produk katalog: harga dan modifikasi atribut dari DB,
+            // konsisten dengan createQuotation().
+            const productRecord = await tx.product.findUnique({
+              where: { id: productId },
+              select: {
+                name: true,
+                basePrice: true,
+                attributeValues: {
+                  select: {
+                    attributeValueId: true,
+                    priceModifier: true,
+                  },
                 },
               },
-            },
-          });
+            });
+            if (!productRecord) {
+              throw new ApiError(`Produk dengan ID ${productId} tidak ditemukan.`, 404);
+            }
 
-          if (!productRecord) {
-            throw new ApiError(
-              `Produk dengan ID ${item.productId} tidak ditemukan`,
-              404,
-            );
-          }
-
-          //  Kalkulasi awal: Unit Price = Base Price
-          let finalUnitPrice = Number(productRecord.basePrice);
-
-          //  PERBAIKAN: 3. Tambahkan harga dari atribut yang dipilih (Multi-Select Attributes)
-          if (
-            item.selectedAttributes &&
-            typeof item.selectedAttributes === "object"
-          ) {
-            const allSelectedValIds = Object.values(item.selectedAttributes)
-              .flat()
-              .filter(Boolean) as string[];
-
-            const productAttributes = productRecord.attributeValues as any[];
+            finalProductName = item.productName?.trim() || productRecord.name;
+            finalUnitPrice = Number(productRecord.basePrice);
 
             if (
-              productAttributes &&
-              productAttributes.length > 0 &&
-              allSelectedValIds.length > 0
+              item.selectedAttributes &&
+              typeof item.selectedAttributes === "object" &&
+              !Array.isArray(item.selectedAttributes)
             ) {
-              productAttributes.forEach((attrVal: any) => {
-                if (allSelectedValIds.includes(attrVal.attributeValueId)) {
-                  finalUnitPrice += Number(attrVal.priceModifier || 0);
+              const selectedValueIds = Object.values(item.selectedAttributes)
+                .flat()
+                .filter(Boolean) as string[];
+
+              for (const attribute of productRecord.attributeValues) {
+                if (selectedValueIds.includes(attribute.attributeValueId)) {
+                  finalUnitPrice += Number(attribute.priceModifier || 0);
                 }
+              }
+            }
+
+            if (variantId) {
+              const variantRecord = await tx.productVariant.findFirst({
+                where: { id: variantId, productId },
+                select: { price: true },
               });
+              if (!variantRecord) {
+                throw new ApiError(
+                  `Varian item ke-${itemNo} tidak ditemukan atau bukan milik produk tersebut.`,
+                  400,
+                );
+              }
+              finalUnitPrice += Number(variantRecord.price || 0);
+            }
+          } else {
+            // Produk manual: gunakan nama dan harga yang diisi Admin.
+            finalProductName =
+              typeof item.productName === "string" ? item.productName.trim() : "";
+            if (!finalProductName) {
+              throw new ApiError(
+                `Nama produk manual diperlukan untuk item ke-${itemNo}.`,
+                400,
+              );
+            }
+            if (variantId) {
+              throw new ApiError(
+                `Produk manual item ke-${itemNo} tidak boleh menggunakan variantId.`,
+                400,
+              );
+            }
+            finalUnitPrice = Number(item.unitPrice ?? 0);
+          }
+
+          if (!Number.isFinite(finalUnitPrice) || finalUnitPrice < 0) {
+            throw new ApiError(`Harga satuan item ke-${itemNo} tidak valid.`, 400);
+          }
+
+          const tiersToCreate = (item.tiers || []).map((tier, tierIndex) => {
+            const minQuantity = Number(tier.minQuantity ?? 1);
+            const maxQuantity =
+              tier.maxQuantity !== undefined &&
+              tier.maxQuantity !== null
+                ? Number(tier.maxQuantity)
+                : null;
+            const tierUnitPrice = Number(tier.unitPrice ?? 0);
+
+            if (!Number.isInteger(minQuantity) || minQuantity <= 0) {
+              throw new ApiError(
+                `Minimum quantity tier ke-${tierIndex + 1} pada item ke-${itemNo} tidak valid.`,
+                400,
+              );
+            }
+            if (
+              maxQuantity !== null &&
+              (!Number.isInteger(maxQuantity) || maxQuantity < minQuantity)
+            ) {
+              throw new ApiError(
+                `Maximum quantity tier ke-${tierIndex + 1} pada item ke-${itemNo} tidak valid.`,
+                400,
+              );
+            }
+            if (!Number.isFinite(tierUnitPrice) || tierUnitPrice < 0) {
+              throw new ApiError(
+                `Harga tier ke-${tierIndex + 1} pada item ke-${itemNo} tidak valid.`,
+                400,
+              );
+            }
+            return {
+              minQuantity,
+              maxQuantity,
+              quantityLabel: tier.quantityLabel || "Pcs",
+              unitPrice: tierUnitPrice,
+              totalPrice: minQuantity * tierUnitPrice,
+            };
+          });
+
+          // MANUAL_QUOTATION_TIER_PRICING_V1
+          // Harga tier manual adalah sumber kebenaran saat Qty berada
+          // dalam rentang yang ditawarkan. Produk katalog tidak diubah.
+          if (isManualProduct) {
+            const pricedTiers = tiersToCreate
+              .filter((tier) => Number(tier.unitPrice) > 0)
+              .sort((a, b) => a.minQuantity - b.minQuantity);
+
+            if (pricedTiers.length > 0) {
+              const matchedTier = pricedTiers.find(
+                (tier) =>
+                  mainQty >= tier.minQuantity &&
+                  (tier.maxQuantity === null || mainQty <= tier.maxQuantity),
+              );
+
+              if (!matchedTier) {
+                throw new ApiError(
+                  `Item ke-${itemNo}: Quantity ${mainQty} di luar rentang harga tier. Minimum ${pricedTiers[0].minQuantity} pcs.`,
+                  400,
+                );
+              }
+              finalUnitPrice = Number(matchedTier.unitPrice);
             }
           }
 
-          // 4. Jika ada varian yang dipilih, ambil harga varian lalu tambahkan
-          if (item.variantId) {
-            const variantRecord = await tx.productVariant.findUnique({
-              where: { id: item.variantId },
-              select: { price: true },
-            });
-
-            // Catatan: Jika di frontend harga varian tidak ditambah, pastikan di sini juga sesuai dengan kebutuhan bisnis kamu.
-            // Saat ini disamakan 100% dengan fungsi createQuotation.
-            if (variantRecord && variantRecord.price) {
-              finalUnitPrice += Number(variantRecord.price);
-            }
-          }
-
-          // 5. Hitung total baris berdasarkan harga hasil kalkulasi backend (Quantity x Final Unit Price - Discount)
           const lineTotal = mainQty * finalUnitPrice - itemDiscount;
-          calculatedSubTotal += lineTotal < 0 ? 0 : lineTotal;
+          if (!Number.isFinite(lineTotal)) {
+            throw new ApiError(`Subtotal item ke-${itemNo} tidak valid.`, 400);
+          }
+          calculatedSubTotal += Math.max(0, lineTotal);
 
-          // 6. Siapkan data tiers (bisa dikurangi atau diubah oleh admin dari frontend)
-          const tiersData =
-            item.tiers && item.tiers.length > 0 ? item.tiers : [];
-          const tiersToCreate = tiersData.map((tier: any) => ({
-            minQuantity: tier.minQuantity ? Number(tier.minQuantity) : 1,
-            maxQuantity: tier.maxQuantity ? Number(tier.maxQuantity) : null,
-            quantityLabel: tier.quantityLabel || "Pcs",
-            unitPrice: tier.unitPrice ? Number(tier.unitPrice) : 0,
-            totalPrice:
-              (tier.minQuantity ? Number(tier.minQuantity) : 1) *
-              (tier.unitPrice ? Number(tier.unitPrice) : 0),
-          }));
-
-          // 7. Simpan item baru dengan harga murni dan atribut multi-pilihan
-          await tx.quotationItem.create({
-            data: {
-              quotationId: id,
-              productId: item.productId,
-              variantId: item.variantId || null,
-              productName: item.productName || productRecord.name,
-              description: item.description,
-              quantity: mainQty,
-              unitPrice: finalUnitPrice, //  Menggunakan harga kalkulasi yang aman
-              discount: itemDiscount,
-              selectedAttributes: item.selectedAttributes ?? Prisma.JsonNull,
-              customization: item.customization ?? Prisma.JsonNull,
-              remarks: item.remarks,
-              tiers: {
-                create: tiersToCreate,
-              },
-            },
+          itemsToCreate.push({
+            quotationId: id,
+            productId,
+            variantId: isManualProduct ? null : variantId,
+            productName: finalProductName,
+            description: item.description || null,
+            quantity: mainQty,
+            unitPrice: finalUnitPrice,
+            discount: itemDiscount,
+            selectedAttributes: isManualProduct
+              ? Prisma.JsonNull
+              : item.selectedAttributes ?? Prisma.JsonNull,
+            customization: item.customization ?? Prisma.JsonNull,
+            remarks: item.remarks || null,
+            tiers: { create: tiersToCreate },
           });
         }
 
+        // Validasi dulu seluruh item sebelum mengganti data lama.
+        await tx.quotationItem.deleteMany({ where: { quotationId: id } });
+        for (const itemData of itemsToCreate) {
+          await tx.quotationItem.create({ data: itemData });
+        }
         newSubTotal = new Prisma.Decimal(calculatedSubTotal);
         newTotalAmount = newSubTotal;
       }
 
-      // === LOGIC B: UPDATE NOTES ===
       if (notes !== undefined) {
         const noteKeys = notes
           .filter((note) => note.templateId)
@@ -754,10 +847,7 @@ export class QuotationService {
           throw new ApiError("Terdapat template notes yang duplikat", 400);
         }
 
-        await tx.quotationNote.deleteMany({
-          where: { quotationId: id },
-        });
-
+        await tx.quotationNote.deleteMany({ where: { quotationId: id } });
         if (notes.length > 0) {
           await tx.quotationNote.createMany({
             data: notes.map((note) => ({
@@ -769,7 +859,7 @@ export class QuotationService {
           });
         }
       }
-      // === LOGIC C: BUILD UPDATE PAYLOAD ===
+
       const updatePayload: Prisma.QuotationUncheckedUpdateInput = {
         ...(headerData.date && { date: new Date(headerData.date) }),
         ...(headerData.validUntil !== undefined && {
@@ -800,27 +890,20 @@ export class QuotationService {
         totalAmount: newTotalAmount,
       };
 
-      // Ambil status terbaru di dalam transaksi
       const currentQuotation = await tx.quotation.findUniqueOrThrow({
         where: { id },
         select: { status: true },
       });
-
       const updatedQuotation = await tx.quotation.update({
         where: { id },
         data: updatePayload,
       });
 
-      const previousStatus = currentQuotation.status;
-      const nextStatus = updatedQuotation.status;
-
-      // Tracking hanya saat status berubah
-      if (previousStatus !== nextStatus) {
-        if (nextStatus === "SENT" || nextStatus === "ACCEPTED") {
-          await this.enqueueQuotationTracking(tx, id, nextStatus);
+      if (currentQuotation.status !== updatedQuotation.status) {
+        if (updatedQuotation.status === "SENT" || updatedQuotation.status === "ACCEPTED") {
+          await this.enqueueQuotationTracking(tx, id, updatedQuotation.status);
         }
       }
-
       return updatedQuotation;
     });
   }
