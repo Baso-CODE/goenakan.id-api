@@ -82,6 +82,8 @@ import { WhatsappCronService } from "./modules/whatsapp/notification/whatsapp-cr
 import { WhatsappRouter } from "./modules/whatsapp/whatsapp.routes";
 import { WhatsappService } from "./modules/whatsapp/whatsapp.service";
 import { WilayahRouter } from "./modules/wilayah/wilayah.router";
+import { CustomCodeRouter } from "./modules/admin/crm/custom-codes/customCode.router";
+import { CrmLeadRouter } from "./modules/admin/crm/leads/crmLead.router";
 import { initializeCronJobs } from "./utils/cron";
 export default class App {
   public app;
@@ -188,6 +190,8 @@ export default class App {
       ProductUrlApprovalRouter,
     );
     const adminNotificationRouter = container.resolve(AdminNotificationRouter);
+    const customCodeRouter = container.resolve(CustomCodeRouter);
+    const crmLeadRouter = container.resolve(CrmLeadRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -275,6 +279,8 @@ export default class App {
       productUrlApprovalRouter.getRouter(),
     );
     this.app.use("/admin-notifications", adminNotificationRouter.getRouter());
+    this.app.use("/crm/custom-codes", customCodeRouter.getRouter());
+    this.app.use("/crm/leads", crmLeadRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);
