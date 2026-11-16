@@ -14,6 +14,12 @@ import { injectable } from "tsyringe";
 import { coreApi, snap } from "../../../lib/midtrans";
 import { ApiError } from "../../../utils/api-error";
 import { CounterService } from "../../../utils/counter.service";
+import {
+  buildB2CIdentityKey,
+  buildB2BIdentityKey,
+  findClientByPhone,
+  normalizeClientPhone,
+} from "../../../utils/client-identity";
 import { PrismaService } from "../../prisma/prisma.service";
 import { hasExistingGA4Purchase } from "../../tracking-outbox/ga4-purchase-idempotency.helper";
 import { buildGA4Purchase } from "../../tracking-outbox/ga4-purchase.helper";
@@ -164,6 +170,75 @@ export class WebOrderService {
   // === CREATE NEW ORDER (DENGAN KALKULASI TIER & PRICE MODIFIER ATRIBUT TEKS) ===
   async createOrder(data: CreateWebOrderDTO, profileId: string | null) {
     const { form, items, note, shippingCost } = data;
+
+    const normalizedPrimaryPhone = normalizeClientPhone(form.phone);
+    if (!normalizedPrimaryPhone) {
+      throw new ApiError("Nomor HP utama pelanggan tidak valid", 400);
+    }
+    // Block B2B/B2C phone collisions BEFORE the customer starts payment.
+    // This does not authenticate a customer or link any User account.
+    const profile = profileId
+      ? await this.prisma.customerProfile.findUnique({
+          where: { id: profileId },
+          select: { userId: true, accountType: true },
+        })
+      : null;
+    const expectedClientType = profile?.accountType === "CORPORATE"
+      ? ClientType.B2B
+      : ClientType.B2C;
+    const phoneOwner = await findClientByPhone(this.prisma, form.phone);
+    if (phoneOwner && phoneOwner.type !== expectedClientType) {
+      throw new ApiError(
+        "Nomor HP ini sudah terdaftar pada tipe Client berbeda. Hubungi admin.",
+        409,
+      );
+    }
+    // Never let an anonymous order use a CRM identity already owned by a
+    // registered User. That would attribute sales/invoices to another account.
+    if (!profile?.userId && phoneOwner?.userId) {
+      throw new ApiError(
+        "Nomor HP terhubung ke akun pelanggan. Silakan login untuk memesan.",
+        409,
+      );
+    }
+    if (profile?.userId && phoneOwner?.userId && phoneOwner.userId !== profile.userId) {
+      throw new ApiError(
+        "Nomor HP ini telah terhubung ke akun pelanggan lain.",
+        409,
+      );
+    }
+    if (profile?.userId && phoneOwner) {
+      const linkedClient = await this.prisma.client.findUnique({
+        where: { userId: profile.userId },
+      });
+      if (linkedClient && linkedClient.id !== phoneOwner.id) {
+        throw new ApiError(
+          "Nomor HP tidak sesuai dengan identitas Client akun ini.",
+          409,
+        );
+      }
+    }
+
+    // A stable B2C identity is required before accepting a web order.
+    if (!buildB2CIdentityKey(form.fullName, form.phone)) {
+      throw new ApiError("Nama lengkap dan nomor HP yang valid wajib diisi", 400);
+    }
+
+    if (profileId) {
+      const customerProfile = await this.prisma.customerProfile.findUnique({
+        where: { id: profileId },
+        select: { accountType: true, companyName: true },
+      });
+      if (
+        customerProfile?.accountType === "CORPORATE" &&
+        !buildB2BIdentityKey(customerProfile.companyName, form.phone)
+      ) {
+        throw new ApiError(
+          "Nama perusahaan dan nomor telepon valid wajib diisi untuk checkout Corporate",
+          400,
+        );
+      }
+    }
 
     let calculatedSubtotal = 0;
     const validatedItems = await Promise.all(
@@ -544,10 +619,51 @@ export class WebOrderService {
 
           const isCorporate = webOrder.profile?.accountType === "CORPORATE";
 
+          const guestIdentityName =
+            webOrder.guestName || addressData.recipient || "Guest";
+          const guestIdentityPhone =
+            webOrder.guestPhone || addressData.phone || "";
+          const guestIdentityKey = !isCorporate
+            ? buildB2CIdentityKey(guestIdentityName, guestIdentityPhone)
+            : null;
+          const corporateIdentityName = isCorporate
+            ? webOrder.profile?.companyName
+            : null;
+          const corporateIdentityKey = isCorporate
+            ? buildB2BIdentityKey(corporateIdentityName, guestIdentityPhone)
+            : null;
+
+          // Existing verified-account link takes priority over guest identity.
           const existingClient = webOrder.profile?.userId
-            ? await tx.client.findFirst({
+            ? await tx.client.findUnique({
                 where: { userId: webOrder.profile.userId },
               })
+            : null;
+
+          // CRM dedupe only; never link User accounts by unverified phone/name.
+          const normalizedPhone = normalizeClientPhone(guestIdentityPhone);
+          if (!normalizedPhone) {
+            throw new ApiError("Nomor HP Web Order tidak valid", 400);
+          }
+          const matchedByPhone = await findClientByPhone(tx, guestIdentityPhone);
+          const expectedType = isCorporate ? ClientType.B2B : ClientType.B2C;
+          if (matchedByPhone && matchedByPhone.type !== expectedType) {
+            throw new ApiError(
+              "Nomor HP sudah digunakan oleh Client dengan tipe berbeda",
+              409,
+            );
+          }
+          if (existingClient && matchedByPhone && matchedByPhone.id !== existingClient.id) {
+            throw new ApiError(
+              "Nomor HP sudah digunakan oleh Client lain",
+              409,
+            );
+          }
+          const matchedB2B = !existingClient && isCorporate
+            ? matchedByPhone?.b2b ?? null
+            : null;
+          const matchedB2C = !existingClient && !isCorporate
+            ? matchedByPhone?.b2c ?? null
             : null;
 
           let clientIdToUse: string;
@@ -570,6 +686,19 @@ export class WebOrderService {
                 },
               });
             }
+          } else if (matchedB2B) {
+            // Reuse existing internal CRM Client; never attach User ownership.
+            clientIdToUse = matchedB2B.id;
+            await tx.client.update({
+              where: { id: clientIdToUse },
+              data: { phoneNormalized: normalizedPhone },
+            });
+          } else if (matchedB2C) {
+            clientIdToUse = matchedB2C.id;
+            await tx.client.update({
+              where: { id: clientIdToUse },
+              data: { phoneNormalized: normalizedPhone },
+            });
           } else {
             const clientType = isCorporate ? ClientType.B2B : ClientType.B2C;
 
@@ -590,6 +719,7 @@ export class WebOrderService {
                 type: clientType,
                 status: "OFFICIAL",
                 userId: webOrder.profile?.userId || undefined,
+                phoneNormalized: normalizedPhone,
               },
             });
 
@@ -608,6 +738,7 @@ export class WebOrderService {
                   companyName:
                     webOrder.profile?.companyName || "Perusahaan Web",
                   departmentId: department.id,
+                  identityKey: corporateIdentityKey,
                   website: "-",
                   phone: webOrder.guestPhone || addressData.phone || "-",
                   fullAddress: addressData.fullAddress || "-",
@@ -618,8 +749,9 @@ export class WebOrderService {
                 data: {
                   id: clientIdToUse,
                   prefix: "Mr/Ms",
-                  name: webOrder.guestName || addressData.recipient || "Guest",
-                  phone: webOrder.guestPhone || addressData.phone || "-",
+                  name: guestIdentityName,
+                  phone: guestIdentityPhone,
+                  identityKey: guestIdentityKey,
                   fullAddress: addressData.fullAddress || "-",
                 },
               });
@@ -1187,7 +1319,7 @@ export class WebOrderService {
       } catch (error) {
         const isRetryable =
           error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === "P2034";
+          (error.code === "P2034" || error.code === "P2002");
 
         if (!isRetryable || attempt === maxAttempts) {
           throw error;

@@ -370,6 +370,7 @@ model PurchaseChannel {
 model Client {
   id                String                 @id @default(uuid())
   custCode          String                 @unique
+  phoneNormalized   String?                @unique @db.VarChar(20)
   type              ClientType
   userId            String?                @unique
   user              User?                  @relation(fields: [userId], references: [id])
@@ -391,6 +392,7 @@ model Client {
 
 model ClientB2C {
   id          String  @id
+  identityKey String? @unique @db.VarChar(64)
   prefix      String
   name        String
   phone       String?
@@ -408,6 +410,7 @@ model ClientB2C {
 
 model ClientB2B {
   id           String         @id
+  identityKey  String?        @unique @db.VarChar(64)
   companyName  String
   departmentId String
   department   Department     @relation(fields: [departmentId], references: [id])
