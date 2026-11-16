@@ -3466,6 +3466,10 @@ export class ProductService {
         title: data.title ?? undefined,
         altText: data.altText ?? undefined,
         isFeatured: data.isFeatured ?? undefined,
+        attributeValueId:
+          data.attributeValueId !== undefined
+            ? data.attributeValueId
+            : undefined,
       },
     });
 
@@ -4516,6 +4520,7 @@ export class ProductService {
             type: "video",
             url: vid.url,
             isFeatured: vid.isFeatured || false,
+            attributeValueId: vid.attributeValueId || null,
             sortOrder: vid.sortOrder ?? 0,
           });
         });

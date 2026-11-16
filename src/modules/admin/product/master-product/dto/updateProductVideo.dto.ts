@@ -12,4 +12,8 @@ export class UpdateProductVideoDTO {
   @IsOptional()
   @IsBoolean()
   isFeatured?: boolean;
+
+  @IsOptional()
+  @IsString()
+  attributeValueId?: string | null;
 }
