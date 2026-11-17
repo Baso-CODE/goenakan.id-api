@@ -73,7 +73,7 @@ export class CrmLeadService {
       ];
     }
 
-    const [total, items] = await Promise.all([
+    const [total, items, totalAll, totalMe, totalUnassigned] = await Promise.all([
       this.prisma.crmLead.count({ where }),
       this.prisma.crmLead.findMany({
         where,
@@ -111,6 +111,11 @@ export class CrmLeadService {
         skip,
         take: limit,
       }),
+      this.prisma.crmLead.count(),
+      params.currentUserId
+        ? this.prisma.crmLead.count({ where: { assignedToUserId: params.currentUserId } })
+        : 0,
+      this.prisma.crmLead.count({ where: { assignedToUserId: null } }),
     ]);
 
     const formattedItems = items.map((lead) => {
@@ -140,6 +145,11 @@ export class CrmLeadService {
 
     return {
       items: formattedItems,
+      counts: {
+        all: totalAll,
+        me: totalMe,
+        unassigned: totalUnassigned,
+      },
       meta: {
         total,
         page,
