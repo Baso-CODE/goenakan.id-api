@@ -34,6 +34,7 @@ export class CrmLeadService {
     currentUserId?: string;
     search?: string;
     tag?: string;
+    sourceCode?: string;
     page?: number;
     limit?: number;
   }) {
@@ -45,6 +46,12 @@ export class CrmLeadService {
 
     if (params.status) {
       where.status = params.status;
+    }
+
+    if (params.sourceCode && params.sourceCode.trim().length > 0) {
+      where.sourceCode = {
+        code: params.sourceCode.trim(),
+      };
     }
 
     if (params.assignedTo === "unassigned") {
@@ -70,6 +77,7 @@ export class CrmLeadService {
         { customerProfile: { companyName: { contains: q } } },
         { customerProfile: { picName: { contains: q } } },
         { customerProfile: { user: { name: { contains: q } } } },
+        { sourceCode: { code: { contains: q } } },
       ];
     }
 

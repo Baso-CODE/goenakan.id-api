@@ -13,6 +13,7 @@ export class CrmLeadController {
       const status = req.query.status as string | undefined;
       const assignedTo = req.query.assignedTo as string | undefined;
       const search = req.query.search as string | undefined;
+      const sourceCode = req.query.sourceCode as string | undefined;
       const page = req.query.page ? Number(req.query.page) : 1;
       const limit = req.query.limit ? Number(req.query.limit) : 20;
 
@@ -24,6 +25,7 @@ export class CrmLeadController {
         assignedTo,
         currentUserId,
         search,
+        sourceCode,
         page,
         limit,
       });

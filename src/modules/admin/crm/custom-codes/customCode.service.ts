@@ -21,6 +21,7 @@ export class CustomCodeService {
       where.OR = [
         { code: { contains: search.trim() } },
         { label: { contains: search.trim() } },
+        { channel: { contains: search.trim() } },
       ];
     }
 
@@ -93,6 +94,7 @@ export class CustomCodeService {
         code: normalizedCode,
         label: dto.label.trim(),
         type: dto.type,
+        channel: dto.channel?.trim() || null,
         leadUrlRef: dto.leadUrlRef?.trim() || null,
         assignedUserId: dto.assignedUserId || null,
       },
@@ -126,6 +128,7 @@ export class CustomCodeService {
       where: { id },
       data: {
         label: dto.label !== undefined ? dto.label.trim() : undefined,
+        channel: dto.channel !== undefined ? (dto.channel?.trim() || null) : undefined,
         leadUrlRef: dto.leadUrlRef !== undefined ? dto.leadUrlRef?.trim() || null : undefined,
         assignedUserId: dto.assignedUserId !== undefined ? dto.assignedUserId || null : undefined,
         isActive: dto.isActive !== undefined ? dto.isActive : undefined,

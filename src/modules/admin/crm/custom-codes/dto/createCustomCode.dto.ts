@@ -15,6 +15,10 @@ export class CreateCustomCodeDTO {
 
   @IsString()
   @IsOptional()
+  channel?: string;
+
+  @IsString()
+  @IsOptional()
   leadUrlRef?: string;
 
   @IsString()

@@ -7,6 +7,10 @@ export class UpdateCustomCodeDTO {
 
   @IsString()
   @IsOptional()
+  channel?: string;
+
+  @IsString()
+  @IsOptional()
   leadUrlRef?: string;
 
   @IsString()
