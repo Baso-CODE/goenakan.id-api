@@ -22,6 +22,8 @@ export class CrmLeadRouter {
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
 
     this.router.get("/", this.crmLeadController.getLeads);
+    this.router.post("/sync-from-wa", this.crmLeadController.syncFromWa);
+    this.router.post("/batch-sync", this.crmLeadController.batchSync);
     this.router.get("/customers/search", this.crmLeadController.searchCustomers);
     this.router.get("/:id", this.crmLeadController.getLeadById);
     this.router.patch("/:id/name", validateBody(UpdateLeadNameDTO), this.crmLeadController.updateName);

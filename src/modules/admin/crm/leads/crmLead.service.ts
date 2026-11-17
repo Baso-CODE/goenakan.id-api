@@ -4,10 +4,29 @@ import { ApiError } from "../../../../utils/api-error";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { resolveLeadContactName } from "../helpers/contactNameResolver";
 
+export interface SyncLeadResult {
+  totalChats: number;
+  synced: number;
+  created: number;
+  updated: number;
+  ignored: number;
+}
+
 @singleton()
 @injectable()
 export class CrmLeadService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Helper normalisasi nomor telepon ke format E.164 (628...)
+   */
+  private normalizePhoneNumber(phone: string): string {
+    let cleaned = phone.replace(/@c\.us$/i, "").replace(/@g\.us$/i, "").replace(/\D/g, "");
+    if (cleaned.startsWith("08")) {
+      cleaned = "62" + cleaned.slice(1);
+    }
+    return cleaned;
+  }
 
   async getLeads(params: {
     status?: CrmLeadStatus;
@@ -41,6 +60,7 @@ export class CrmLeadService {
         { phoneNumber: { contains: q } },
         { displayName: { contains: q } },
         { waPushName: { contains: q } },
+        { lastMessage: { contains: q } },
         { customerProfile: { companyName: { contains: q } } },
         { customerProfile: { picName: { contains: q } } },
         { customerProfile: { user: { name: { contains: q } } } },
@@ -72,7 +92,10 @@ export class CrmLeadService {
           },
           sourceCode: true,
         },
-        orderBy: { updatedAt: "desc" },
+        orderBy: [
+          { lastMessageAt: "desc" },
+          { updatedAt: "desc" },
+        ],
         skip,
         take: limit,
       }),
@@ -254,24 +277,28 @@ export class CrmLeadService {
     phoneNumber: string;
     waPushName?: string | null;
     rawMessageText?: string | null;
+    lastMessage?: string | null;
+    lastMessageAt?: Date | null;
+    unreadCount?: number;
   }) {
-    const cleanedPhone = params.phoneNumber.replace(/\D/g, "");
+    const cleanedPhone = this.normalizePhoneNumber(params.phoneNumber);
+    if (!cleanedPhone || cleanedPhone.length < 5) {
+      throw new ApiError("Nomor telepon tidak valid", 400);
+    }
 
-    // Cek apakah pesan pertama mengandung tag [REF:XXX]
-    let matchedSourceCodeId: string | null = null;
-    if (params.rawMessageText) {
-      const match = params.rawMessageText.match(/\[REF:([A-Za-z0-9_-]+)\]/i);
+    // 1. Cek apakah pesan pertama mengandung tag [REF:XXX] atau [CODE:XXX]
+    let matchedSourceCode: any = null;
+    const textToCheck = params.rawMessageText || params.lastMessage;
+    if (textToCheck) {
+      const match = textToCheck.match(/\[(?:REF|CODE):([A-Za-z0-9_-]+)\]/i);
       if (match && match[1]) {
-        const found = await this.prisma.crmCustomCode.findUnique({
+        matchedSourceCode = await this.prisma.crmCustomCode.findUnique({
           where: { code: match[1].toUpperCase() },
         });
-        if (found) {
-          matchedSourceCodeId = found.id;
-        }
       }
     }
 
-    // Cek apakah nomor telepon sudah terdaftar di customer_profiles
+    // 2. Cek apakah nomor telepon sudah terdaftar di customer_profiles
     const existingCustomer = await this.prisma.customerProfile.findFirst({
       where: {
         OR: [
@@ -281,22 +308,188 @@ export class CrmLeadService {
       },
     });
 
+    // 3. Cek apakah lead sudah ada
+    const existingLead = await this.prisma.crmLead.findUnique({
+      where: { phoneNumber: cleanedPhone },
+    });
+
+    // Penugasan otomatis jika custom code adalah kode CS
+    let assignedUserId: string | null = existingLead?.assignedToUserId || null;
+    let assignmentMethod: CrmAssignMethod = existingLead?.assignmentMethod || CrmAssignMethod.CLAIM;
+    let assignedAt: Date | null = existingLead?.assignedAt || null;
+
+    if (!assignedUserId && matchedSourceCode && matchedSourceCode.type === "CS_AGENT_CODE" && matchedSourceCode.assignedUserId) {
+      assignedUserId = matchedSourceCode.assignedUserId;
+      assignmentMethod = CrmAssignMethod.MANUAL;
+      assignedAt = new Date();
+    }
+
     const lead = await this.prisma.crmLead.upsert({
       where: { phoneNumber: cleanedPhone },
       update: {
-        waPushName: params.waPushName || undefined,
-        sourceCodeId: matchedSourceCodeId || undefined,
+        ...(params.waPushName && { waPushName: params.waPushName }),
+        ...(matchedSourceCode && { sourceCodeId: matchedSourceCode.id }),
+        ...(assignedUserId && !existingLead?.assignedToUserId && {
+          assignedToUserId: assignedUserId,
+          assignmentMethod: assignmentMethod,
+          assignedAt: assignedAt,
+        }),
+        ...(params.lastMessage !== undefined && { lastMessage: params.lastMessage }),
+        ...(params.lastMessageAt !== undefined && { lastMessageAt: params.lastMessageAt }),
+        ...(params.unreadCount !== undefined && { unreadCount: params.unreadCount }),
+        // Hubungkan ke customer profile jika belum terhubung
+        ...(existingCustomer && !existingLead?.customerProfileId && {
+          customerProfileId: existingCustomer.id,
+        }),
       },
       create: {
         phoneNumber: cleanedPhone,
         waPushName: params.waPushName || null,
         customerProfileId: existingCustomer ? existingCustomer.id : null,
-        sourceCodeId: matchedSourceCodeId,
+        sourceCodeId: matchedSourceCode ? matchedSourceCode.id : null,
+        assignedToUserId: assignedUserId,
+        assignmentMethod: assignmentMethod,
+        assignedAt: assignedAt,
         status: CrmLeadStatus.NEW,
-        assignmentMethod: CrmAssignMethod.CLAIM,
+        lastMessage: params.lastMessage || null,
+        lastMessageAt: params.lastMessageAt || new Date(),
+        unreadCount: params.unreadCount || 0,
       },
     });
 
     return lead;
+  }
+
+  /**
+   * Batch processing chat items dari WAHA/Catha API
+   */
+  async batchSyncChats(
+    chats: Array<{
+      id: string;
+      name?: string | null;
+      phoneNumber?: string | null;
+      isGroup?: boolean;
+      unreadCount?: number;
+      timestamp?: number;
+      lastMessage?: {
+        body?: string;
+        timestamp?: number;
+        fromMe?: boolean;
+      } | null;
+    }>
+  ): Promise<SyncLeadResult> {
+    const settings = await this.prisma.crmSetting.findUnique({
+      where: { id: "default" },
+    });
+
+    const ignoreGroups = settings?.ignoreGroups ?? true;
+    const ignoreBroadcasts = settings?.ignoreBroadcasts ?? true;
+    const blacklist = (settings?.blacklistedNumbers || "")
+      .split(/[\n,]+/)
+      .map((s) => s.trim().replace(/\D/g, ""))
+      .filter(Boolean);
+
+    let createdCount = 0;
+    let updatedCount = 0;
+    let ignoredCount = 0;
+
+    for (const chat of chats) {
+      const isGroup = chat.isGroup || chat.id.includes("@g.us");
+      const isBroadcast = chat.id.includes("@broadcast") || chat.id.includes("status@broadcast");
+
+      if (ignoreGroups && isGroup) {
+        ignoredCount++;
+        continue;
+      }
+
+      if (ignoreBroadcasts && isBroadcast) {
+        ignoredCount++;
+        continue;
+      }
+
+      const rawPhone = chat.phoneNumber || chat.id;
+      const cleaned = this.normalizePhoneNumber(rawPhone);
+
+      if (!cleaned || cleaned.length < 5 || blacklist.includes(cleaned)) {
+        ignoredCount++;
+        continue;
+      }
+
+      const lastMsgText = chat.lastMessage?.body || null;
+      const lastMsgTs = chat.lastMessage?.timestamp || chat.timestamp;
+      const lastMsgAt = lastMsgTs ? new Date(lastMsgTs * 1000) : null;
+
+      const existing = await this.prisma.crmLead.findUnique({
+        where: { phoneNumber: cleaned },
+        select: { id: true },
+      });
+
+      await this.createOrUpsertLead({
+        phoneNumber: cleaned,
+        waPushName: chat.name || null,
+        rawMessageText: lastMsgText,
+        lastMessage: lastMsgText,
+        lastMessageAt: lastMsgAt,
+        unreadCount: chat.unreadCount || 0,
+      });
+
+      if (existing) {
+        updatedCount++;
+      } else {
+        createdCount++;
+      }
+    }
+
+    return {
+      totalChats: chats.length,
+      synced: createdCount + updatedCount,
+      created: createdCount,
+      updated: updatedCount,
+      ignored: ignoredCount,
+    };
+  }
+
+  /**
+   * Tarik chat langsung dari Catha WA API server berdasarkan sesi yang dikonfigurasi
+   */
+  async syncLeadsFromWa(targetSessionId?: string): Promise<SyncLeadResult> {
+    const settings = await this.prisma.crmSetting.findUnique({
+      where: { id: "default" },
+    });
+
+    const sessionId = targetSessionId || settings?.leadReceiverSessionId;
+    if (!sessionId) {
+      throw new ApiError(
+        "Belum ada sesi WhatsApp yang dipilih sebagai penerima leads. Silakan atur di Pengaturan CRM terlebih dahulu.",
+        400
+      );
+    }
+
+    const baseUrl = process.env.WA_API_URL || "https://wa-api.goenakan.id";
+    const apiKey = process.env.WA_API_KEY || "catha_secret_key_change_me";
+
+    let chats: any[] = [];
+    try {
+      const url = `${baseUrl.replace(/\/+$/, "")}/api/v1/chats?sessionId=${encodeURIComponent(sessionId)}&limit=100`;
+      const res = await fetch(url, {
+        headers: {
+          "X-API-Key": apiKey,
+          Accept: "application/json",
+        },
+        signal: AbortSignal.timeout(12000),
+      });
+
+      if (!res.ok) {
+        throw new ApiError(`Gagal mengambil data dari WhatsApp API (${res.status} ${res.statusText})`, 502);
+      }
+
+      const json = await res.json();
+      chats = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : [];
+    } catch (err: any) {
+      if (err instanceof ApiError) throw err;
+      throw new ApiError(err.message || "Gagal menghubungi server WhatsApp", 502);
+    }
+
+    return this.batchSyncChats(chats);
   }
 }

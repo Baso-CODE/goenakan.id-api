@@ -132,4 +132,48 @@ export class CrmLeadController {
       });
     }
   };
+
+  syncFromWa = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const sessionId = req.body?.sessionId || (req.query?.sessionId as string);
+      const result = await this.crmLeadService.syncLeadsFromWa(sessionId);
+
+      res.status(200).json({
+        success: true,
+        message: `Sinkronisasi berhasil: ${result.synced} lead diproses (${result.created} baru, ${result.updated} diperbarui, ${result.ignored} diabaikan).`,
+        data: result,
+      });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || "Gagal menyinkronkan data dari WhatsApp",
+      });
+    }
+  };
+
+  batchSync = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const chats = req.body?.chats;
+      if (!Array.isArray(chats)) {
+        res.status(400).json({
+          success: false,
+          message: "Parameter chats harus berupa array",
+        });
+        return;
+      }
+
+      const result = await this.crmLeadService.batchSyncChats(chats);
+
+      res.status(200).json({
+        success: true,
+        message: `Sinkronisasi berhasil: ${result.synced} lead diproses (${result.created} baru, ${result.updated} diperbarui).`,
+        data: result,
+      });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || "Gagal menyinkronkan chat",
+      });
+    }
+  };
 }

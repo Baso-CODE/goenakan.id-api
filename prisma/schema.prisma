@@ -2819,8 +2819,26 @@ model CrmLead {
   sourceCode        CrmCustomCode?     @relation(fields: [sourceCodeId], references: [id], onDelete: SetNull)
 
   status            CrmLeadStatus      @default(NEW)
+  lastMessage       String?            @db.Text
+  lastMessageAt     DateTime?
+  unreadCount       Int                @default(0)
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
   @@map("crm_leads")
+}
+
+model CrmSetting {
+  id                    String          @id @default("default")
+  leadReceiverSessionId String?
+  leadReceiverPhone     String?
+  ignoreGroups          Boolean         @default(true)
+  ignoreBroadcasts      Boolean         @default(true)
+  defaultAssignMethod   CrmAssignMethod @default(CLAIM)
+  slaThresholdMinutes   Int             @default(15)
+  blacklistedNumbers    String?         @db.Text
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  @@map("crm_settings")
 }
