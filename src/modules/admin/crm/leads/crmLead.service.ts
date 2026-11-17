@@ -516,11 +516,11 @@ export class CrmLeadService {
       throw new ApiError("Nomor telepon tidak valid", 400);
     }
 
-    // 1. Cek apakah pesan mengandung tag [REF:XXX] atau [CODE:XXX]
+    // 1. Cek apakah pesan mengandung tag [REF:XXX], [CODE:XXX], atau variasi spasi/tanpa kurung
     let matchedSourceCode: any = null;
     const textToCheck = params.rawMessageText || params.lastMessage;
     if (textToCheck) {
-      const match = textToCheck.match(/\[(?:REF|CODE):([A-Za-z0-9_-]+)\]/i);
+      const match = textToCheck.match(/(?:\[\s*)?(?:REF|CODE)\s*:\s*([A-Za-z0-9_-]+)(?:\s*\])?/i);
       if (match && match[1]) {
         matchedSourceCode = await this.prisma.crmCustomCode.findUnique({
           where: { code: match[1].toUpperCase() },
