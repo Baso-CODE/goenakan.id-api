@@ -39,16 +39,36 @@ export class ClientService {
       }
 
       // Guard global berlaku untuk B2B dan B2C, termasuk format +62/08.
-      const phoneNormalized = normalizeClientPhone(data.phone);
-      if (!phoneNormalized) {
-        throw new ApiError("Nomor HP utama Client tidak valid", 400);
+
+      const hasPhone = Boolean(data.phone?.trim());
+
+      const phoneNormalized = hasPhone
+        ? normalizeClientPhone(data.phone)
+        : null;
+
+      // B2C wajib mempunyai nomor telepon.
+      if (clientType === "B2C" && !hasPhone) {
+        throw new ApiError("Nomor HP Client B2C wajib diisi.", 400);
       }
-      const phoneOwner = await findClientByPhone(this.prisma, data.phone);
-      if (phoneOwner) {
+
+      // Jika B2B mengisi nomor, formatnya tetap wajib valid.
+      if (hasPhone && !phoneNormalized) {
         throw new ApiError(
-          `Nomor HP sudah digunakan Client ${phoneOwner.custCode}. Gunakan Client yang ada.`,
-          409,
+          "Format nomor telepon tidak valid. Periksa kembali nomor yang dimasukkan.",
+          400,
         );
+      }
+
+      // Cek duplikasi hanya jika nomor diisi.
+      if (phoneNormalized) {
+        const phoneOwner = await findClientByPhone(this.prisma, data.phone);
+
+        if (phoneOwner) {
+          throw new ApiError(
+            `Nomor telepon sudah digunakan Client ${phoneOwner.custCode}. Gunakan Client yang ada atau masukkan nomor lain.`,
+            409,
+          );
+        }
       }
 
       const clientStatus =
@@ -111,20 +131,23 @@ export class ClientService {
 
         // ====================== B2B ========================
         if (clientType === "B2B") {
-          const identityKey = buildB2BIdentityKey(data.companyName, data.phone);
-          if (!identityKey) {
-            throw new ApiError(
-              "Nama perusahaan dan nomor telepon yang valid wajib diisi untuk Client B2B",
-              400,
-            );
+          if (!data.companyName?.trim()) {
+            throw new ApiError("Nama perusahaan B2B wajib diisi.", 400);
           }
-          const duplicate = await findClientByPhone(tx, data.phone);
-          if (duplicate) {
-            throw new ApiError(
-              `Nomor HP sudah digunakan Client ${duplicate.custCode}.`,
-              409,
-            );
+          const identityKey = phoneNormalized
+            ? buildB2BIdentityKey(data.companyName, data.phone)
+            : null;
+          if (phoneNormalized) {
+            const duplicate = await findClientByPhone(tx, data.phone);
+
+            if (duplicate) {
+              throw new ApiError(
+                `Nomor telepon sudah digunakan Client ${duplicate.custCode}.`,
+                409,
+              );
+            }
           }
+
           return await tx.client.create({
             data: {
               custCode,
@@ -136,7 +159,7 @@ export class ClientService {
                 create: {
                   companyName: data.companyName!,
                   departmentId: data.departmentId!,
-                  phone: data.phone ?? "",
+                  phone: data.phone?.trim() || null,
                   identityKey,
                   email: data.email ?? "",
                   website: data.website ?? "",
@@ -246,9 +269,6 @@ export class ClientService {
     data: UpdateClientDTO,
     logoFile?: Express.Multer.File,
   ) {
-    console.log("📥 [UPDATE CLIENT] Menerima data request untuk ID:", id);
-    console.log("📥 [UPDATE CLIENT] Data body:", JSON.stringify(data, null, 2));
-
     if (logoFile) {
       console.log("📸 [UPDATE CLIENT] File logo terdeteksi:", {
         originalname: logoFile.originalname,
@@ -283,25 +303,43 @@ export class ClientService {
     // ====================================================
 
     if (existing.type === ClientType.B2B) {
-      const nextCompanyName = data.companyName ?? existing.b2b?.companyName;
-      const nextPhone = data.phone ?? existing.b2b?.phone;
-      const identityKey = buildB2BIdentityKey(nextCompanyName, nextPhone);
-      if (!identityKey) {
-        throw new ApiError(
-          "Nama perusahaan dan nomor telepon B2B harus valid",
-          400,
-        );
+      const nextCompanyName = (
+        data.companyName ??
+        existing.b2b?.companyName ??
+        ""
+      ).trim();
+
+      if (!nextCompanyName) {
+        throw new ApiError("Nama perusahaan B2B wajib diisi.", 400);
       }
-      const phoneNormalized = normalizeClientPhone(nextPhone);
-      if (!phoneNormalized) {
-        throw new ApiError("Nomor HP utama Client B2B tidak valid", 400);
+
+      // String kosong berarti admin ingin menghapus nomor kantor.
+      const nextPhone = (data.phone ?? existing.b2b?.phone ?? "").trim();
+
+      // B2B tanpa nomor tidak perlu phoneNormalized.
+      const phoneNormalized = nextPhone
+        ? normalizeClientPhone(nextPhone)
+        : null;
+
+      if (nextPhone && !phoneNormalized) {
+        throw new ApiError("Format nomor telepon kantor B2B tidak valid.", 400);
       }
-      const duplicate = await findClientByPhone(this.prisma, nextPhone);
-      if (duplicate && duplicate.id !== id) {
-        throw new ApiError(
-          `Nomor HP sudah digunakan Client ${duplicate.custCode}.`,
-          409,
-        );
+
+      // Tidak membuat identityKey jika nomor dikosongkan.
+      const identityKey = phoneNormalized
+        ? buildB2BIdentityKey(nextCompanyName, nextPhone)
+        : null;
+
+      // Pastikan nomor yang diisi bukan milik Client lain.
+      if (phoneNormalized) {
+        const duplicate = await findClientByPhone(this.prisma, nextPhone);
+
+        if (duplicate && duplicate.id !== id) {
+          throw new ApiError(
+            `Nomor telepon sudah digunakan Client ${duplicate.custCode}. Masukkan nomor lain.`,
+            409,
+          );
+        }
       }
 
       let newLogoUrl: string | undefined = undefined;
@@ -385,8 +423,9 @@ export class ClientService {
               update: {
                 companyName: data.companyName ?? existing.b2b?.companyName,
                 departmentId: data.departmentId ?? existing.b2b?.departmentId,
-                phone: data.phone ?? existing.b2b?.phone,
+                phone: nextPhone || null,
                 identityKey,
+
                 email: data.email ?? existing.b2b?.email,
                 website: data.website ?? existing.b2b?.website,
 
