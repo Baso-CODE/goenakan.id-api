@@ -2779,13 +2779,21 @@ enum CrmCustomCodeType {
   CS_AGENT_CODE
 }
 
-enum CrmLeadStatus {
-  NEW
-  IN_PROGRESS
-  QUOTATION_SENT
-  WON
-  LOST
-  CLOSED
+model CrmLeadStatusConfig {
+  id          String    @id @default(uuid())
+  key         String    @unique
+  label       String
+  color       String    @default("#2563eb")
+  orderIndex  Int       @default(0)
+  isDefault   Boolean   @default(false)
+  isWon       Boolean   @default(false)
+  isLost      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  leads       CrmLead[]
+
+  @@map("crm_lead_status_configs")
 }
 
 model CrmCustomCode {
@@ -2822,7 +2830,8 @@ model CrmLead {
   sourceCodeId      String?
   sourceCode        CrmCustomCode?     @relation(fields: [sourceCodeId], references: [id], onDelete: SetNull)
 
-  status            CrmLeadStatus      @default(NEW)
+  status            String                 @default("NEW")
+  statusConfig      CrmLeadStatusConfig?   @relation(fields: [status], references: [key])
   lastMessage       String?            @db.Text
   lastMessageAt     DateTime?
   unreadCount       Int                @default(0)

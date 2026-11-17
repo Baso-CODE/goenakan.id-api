@@ -85,6 +85,7 @@ import { WilayahRouter } from "./modules/wilayah/wilayah.router";
 import { CustomCodeRouter } from "./modules/admin/crm/custom-codes/customCode.router";
 import { CrmLeadRouter } from "./modules/admin/crm/leads/crmLead.router";
 import { CrmSettingRouter } from "./modules/admin/crm/settings/crmSetting.router";
+import { CrmStatusRouter } from "./modules/admin/crm/statuses/crmStatus.router";
 import { initializeCronJobs } from "./utils/cron";
 export default class App {
   public app;
@@ -194,6 +195,7 @@ export default class App {
     const customCodeRouter = container.resolve(CustomCodeRouter);
     const crmLeadRouter = container.resolve(CrmLeadRouter);
     const crmSettingRouter = container.resolve(CrmSettingRouter);
+    const crmStatusRouter = container.resolve(CrmStatusRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -284,6 +286,7 @@ export default class App {
     this.app.use("/crm/custom-codes", customCodeRouter.getRouter());
     this.app.use("/crm/leads", crmLeadRouter.getRouter());
     this.app.use("/crm/settings", crmSettingRouter.getRouter());
+    this.app.use("/crm/statuses", crmStatusRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

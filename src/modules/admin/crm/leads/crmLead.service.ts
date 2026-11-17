@@ -1,4 +1,4 @@
-import { CrmAssignMethod, CrmLeadStatus } from "@prisma/client";
+import { CrmAssignMethod } from "@prisma/client";
 import { injectable, singleton } from "tsyringe";
 import { ApiError } from "../../../../utils/api-error";
 import { PrismaService } from "../../../prisma/prisma.service";
@@ -29,7 +29,7 @@ export class CrmLeadService {
   }
 
   async getLeads(params: {
-    status?: CrmLeadStatus;
+    status?: string;
     assignedTo?: string; // 'me', 'unassigned', or specific userId
     currentUserId?: string;
     search?: string;
@@ -97,6 +97,7 @@ export class CrmLeadService {
             },
           },
           sourceCode: true,
+          statusConfig: true,
           _count: {
             select: {
               notes: true,
@@ -326,7 +327,7 @@ export class CrmLeadService {
         assignedToUserId: userId,
         assignmentMethod: CrmAssignMethod.CLAIM,
         assignedAt: new Date(),
-        status: CrmLeadStatus.IN_PROGRESS,
+        status: "IN_PROGRESS",
       },
       include: {
         assignedToUser: {
@@ -358,12 +359,23 @@ export class CrmLeadService {
     return updated;
   }
 
-  async updateStatus(leadId: string, status: CrmLeadStatus) {
+  async updateStatus(leadId: string, status: string) {
     await this.getLeadById(leadId);
+
+    // Verifikasi apakah key status terdaftar di crm_lead_status_configs
+    const statusExists = await this.prisma.crmLeadStatusConfig.findUnique({
+      where: { key: status },
+    });
+    if (!statusExists) {
+      throw new ApiError(`Status "${status}" tidak terdaftar`, 400);
+    }
 
     const updated = await this.prisma.crmLead.update({
       where: { id: leadId },
       data: { status },
+      include: {
+        statusConfig: true,
+      },
     });
 
     return updated;
@@ -527,7 +539,7 @@ export class CrmLeadService {
         assignedToUserId: assignedUserId,
         assignmentMethod: assignmentMethod,
         assignedAt: assignedAt,
-        status: CrmLeadStatus.NEW,
+        status: "NEW",
         lastMessage: params.lastMessage || null,
         lastMessageAt: params.lastMessageAt || new Date(),
         unreadCount: params.unreadCount || 0,
