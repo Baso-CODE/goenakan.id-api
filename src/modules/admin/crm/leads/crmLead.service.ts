@@ -33,6 +33,7 @@ export class CrmLeadService {
     assignedTo?: string; // 'me', 'unassigned', or specific userId
     currentUserId?: string;
     search?: string;
+    tag?: string;
     page?: number;
     limit?: number;
   }) {
@@ -54,6 +55,10 @@ export class CrmLeadService {
       where.assignedToUserId = params.assignedTo;
     }
 
+    if (params.tag && params.tag.trim().length > 0) {
+      where.labels = { contains: params.tag.trim() };
+    }
+
     if (params.search && params.search.trim().length > 0) {
       const q = params.search.trim();
       where.OR = [
@@ -61,6 +66,7 @@ export class CrmLeadService {
         { displayName: { contains: q } },
         { waPushName: { contains: q } },
         { lastMessage: { contains: q } },
+        { labels: { contains: q } },
         { customerProfile: { companyName: { contains: q } } },
         { customerProfile: { picName: { contains: q } } },
         { customerProfile: { user: { name: { contains: q } } } },
@@ -91,6 +97,11 @@ export class CrmLeadService {
             },
           },
           sourceCode: true,
+          _count: {
+            select: {
+              notes: true,
+            },
+          },
         },
         orderBy: [
           { lastMessageAt: "desc" },
@@ -109,8 +120,19 @@ export class CrmLeadService {
         customerProfile: lead.customerProfile,
       });
 
+      let parsedLabels: string[] = [];
+      if (lead.labels) {
+        try {
+          parsedLabels = JSON.parse(lead.labels);
+        } catch {
+          parsedLabels = lead.labels.split(",").map((s) => s.trim()).filter(Boolean);
+        }
+      }
+
       return {
         ...lead,
+        labels: parsedLabels,
+        notesCount: lead._count?.notes || 0,
         resolvedContact: resolved,
       };
     });
@@ -153,6 +175,18 @@ export class CrmLeadService {
           },
         },
         sourceCode: true,
+        notes: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        },
       },
     });
 
@@ -167,8 +201,18 @@ export class CrmLeadService {
       customerProfile: lead.customerProfile,
     });
 
+    let parsedLabels: string[] = [];
+    if (lead.labels) {
+      try {
+        parsedLabels = JSON.parse(lead.labels);
+      } catch {
+        parsedLabels = lead.labels.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+    }
+
     return {
       ...lead,
+      labels: parsedLabels,
       resolvedContact: resolved,
     };
   }
@@ -273,6 +317,139 @@ export class CrmLeadService {
     return updated;
   }
 
+  async claimLead(leadId: string, userId: string) {
+    await this.getLeadById(leadId);
+
+    const updated = await this.prisma.crmLead.update({
+      where: { id: leadId },
+      data: {
+        assignedToUserId: userId,
+        assignmentMethod: CrmAssignMethod.CLAIM,
+        assignedAt: new Date(),
+        status: CrmLeadStatus.IN_PROGRESS,
+      },
+      include: {
+        assignedToUser: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+    });
+
+    return updated;
+  }
+
+  async assignLead(leadId: string, assignedToUserId: string | null) {
+    await this.getLeadById(leadId);
+
+    const updated = await this.prisma.crmLead.update({
+      where: { id: leadId },
+      data: {
+        assignedToUserId,
+        assignmentMethod: assignedToUserId ? CrmAssignMethod.MANUAL : CrmAssignMethod.CLAIM,
+        assignedAt: assignedToUserId ? new Date() : null,
+      },
+      include: {
+        assignedToUser: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+    });
+
+    return updated;
+  }
+
+  async updateStatus(leadId: string, status: CrmLeadStatus) {
+    await this.getLeadById(leadId);
+
+    const updated = await this.prisma.crmLead.update({
+      where: { id: leadId },
+      data: { status },
+    });
+
+    return updated;
+  }
+
+  async updateLabels(leadId: string, labels: string[]) {
+    await this.getLeadById(leadId);
+
+    const cleanLabels = Array.isArray(labels)
+      ? labels.map((l) => l.trim()).filter(Boolean)
+      : [];
+
+    const updated = await this.prisma.crmLead.update({
+      where: { id: leadId },
+      data: {
+        labels: JSON.stringify(cleanLabels),
+      },
+    });
+
+    return {
+      ...updated,
+      labels: cleanLabels,
+    };
+  }
+
+  async getNotes(leadId: string) {
+    return this.prisma.crmLeadNote.findMany({
+      where: { leadId },
+      include: {
+        user: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  async addNote(leadId: string, userId: string, content: string) {
+    if (!content || !content.trim()) {
+      throw new ApiError("Isi catatan tidak boleh kosong", 400);
+    }
+    await this.getLeadById(leadId);
+
+    const note = await this.prisma.crmLeadNote.create({
+      data: {
+        leadId,
+        userId,
+        content: content.trim(),
+      },
+      include: {
+        user: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+    });
+
+    return note;
+  }
+
+  async deleteNote(leadId: string, noteId: string) {
+    const note = await this.prisma.crmLeadNote.findUnique({
+      where: { id: noteId },
+    });
+    if (!note || note.leadId !== leadId) {
+      throw new ApiError("Catatan tidak ditemukan", 404);
+    }
+
+    await this.prisma.crmLeadNote.delete({
+      where: { id: noteId },
+    });
+
+    return { success: true };
+  }
+
+  async getCsUsers() {
+    return this.prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        email: true,
+      },
+      orderBy: { name: "asc" },
+      take: 100,
+    });
+  }
+
   async createOrUpsertLead(params: {
     phoneNumber: string;
     waPushName?: string | null;
@@ -286,7 +463,7 @@ export class CrmLeadService {
       throw new ApiError("Nomor telepon tidak valid", 400);
     }
 
-    // 1. Cek apakah pesan pertama mengandung tag [REF:XXX] atau [CODE:XXX]
+    // 1. Cek apakah pesan mengandung tag [REF:XXX] atau [CODE:XXX]
     let matchedSourceCode: any = null;
     const textToCheck = params.rawMessageText || params.lastMessage;
     if (textToCheck) {

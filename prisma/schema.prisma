@@ -242,6 +242,7 @@ model User {
   adminNotifications    AdminNotification[]
   assignedCrmLeads      CrmLead[]                 @relation("CrmLeadAssignedTo")
   crmCustomCodes        CrmCustomCode[]
+  crmLeadNotes          CrmLeadNote[]
 
   @@map("users")
 }
@@ -2781,6 +2782,9 @@ enum CrmCustomCodeType {
 enum CrmLeadStatus {
   NEW
   IN_PROGRESS
+  QUOTATION_SENT
+  WON
+  LOST
   CLOSED
 }
 
@@ -2822,10 +2826,28 @@ model CrmLead {
   lastMessage       String?            @db.Text
   lastMessageAt     DateTime?
   unreadCount       Int                @default(0)
+  labels            String?            @db.Text
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
+  notes             CrmLeadNote[]
+
   @@map("crm_leads")
+}
+
+model CrmLeadNote {
+  id        String   @id @default(uuid())
+  leadId    String
+  lead      CrmLead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([leadId])
+  @@index([userId])
+  @@map("crm_lead_notes")
 }
 
 model CrmSetting {

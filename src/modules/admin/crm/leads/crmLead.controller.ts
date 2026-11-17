@@ -176,4 +176,155 @@ export class CrmLeadController {
       });
     }
   };
+
+  claimLead = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const currentUserId = (req as any).user?.id || (req as any).session?.user?.id;
+      if (!currentUserId) {
+        res.status(401).json({ success: false, message: "User tidak terautentikasi" });
+        return;
+      }
+
+      const data = await this.crmLeadService.claimLead(id, currentUserId);
+      res.status(200).json({
+        success: true,
+        message: "Lead berhasil diklaim",
+        data,
+      });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || "Gagal mengklaim lead",
+      });
+    }
+  };
+
+  assignLead = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { assignedToUserId } = req.body;
+
+      const data = await this.crmLeadService.assignLead(id, assignedToUserId || null);
+      res.status(200).json({
+        success: true,
+        message: "Penugasan lead berhasil diperbarui",
+        data,
+      });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || "Gagal menugaskan lead",
+      });
+    }
+  };
+
+  updateStatus = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      const data = await this.crmLeadService.updateStatus(id, status);
+      res.status(200).json({
+        success: true,
+        message: "Status lead berhasil diperbarui",
+        data,
+      });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || "Gagal memperbarui status lead",
+      });
+    }
+  };
+
+  updateLabels = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { labels } = req.body;
+
+      const data = await this.crmLeadService.updateLabels(id, labels || []);
+      res.status(200).json({
+        success: true,
+        message: "Label lead berhasil diperbarui",
+        data,
+      });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || "Gagal memperbarui label lead",
+      });
+    }
+  };
+
+  getNotes = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const data = await this.crmLeadService.getNotes(id);
+      res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || "Gagal mengambil catatan lead",
+      });
+    }
+  };
+
+  addNote = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { content } = req.body;
+      const currentUserId = (req as any).user?.id || (req as any).session?.user?.id;
+      if (!currentUserId) {
+        res.status(401).json({ success: false, message: "User tidak terautentikasi" });
+        return;
+      }
+
+      const data = await this.crmLeadService.addNote(id, currentUserId, content);
+      res.status(201).json({
+        success: true,
+        message: "Catatan berhasil ditambahkan",
+        data,
+      });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || "Gagal menambahkan catatan",
+      });
+    }
+  };
+
+  deleteNote = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id, noteId } = req.params;
+      await this.crmLeadService.deleteNote(id, noteId);
+      res.status(200).json({
+        success: true,
+        message: "Catatan berhasil dihapus",
+      });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || "Gagal menghapus catatan",
+      });
+    }
+  };
+
+  getCsUsers = async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const data = await this.crmLeadService.getCsUsers();
+      res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || "Gagal mengambil daftar user CS",
+      });
+    }
+  };
 }
