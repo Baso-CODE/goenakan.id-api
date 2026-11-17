@@ -92,7 +92,13 @@ export class QuotationController {
         (body as any).updatedById = userId;
       }
 
-      const result = await this.quotationService.updateQuotation(id, body);
+      const files = (req.files as Express.Multer.File[]) ?? [];
+
+      const result = await this.quotationService.updateQuotation(
+        id,
+        body,
+        files,
+      );
       res.status(200).json(result);
     } catch (error) {
       next(error);

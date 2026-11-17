@@ -71,6 +71,8 @@ export class QuotationRouter {
     // Update
     this.router.patch(
       "/:id",
+      upload.any(),
+      parseFormData,
       validateBody(UpdateQuotationDTO),
       this.quotationController.update,
     );

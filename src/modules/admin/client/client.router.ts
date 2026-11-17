@@ -1,8 +1,7 @@
-import { Router } from "express";
+import { NextFunction, Request, Response, Router } from "express";
+import multer from "multer";
 import { autoInjectable } from "tsyringe";
 import { ClientController } from "./client.controller";
-
-import multer from "multer";
 
 import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
 import { autoVerifyPermission } from "../../../middleware/permission.middleware";
@@ -10,7 +9,27 @@ import { validateBody } from "../../../middleware/validation.middleware";
 import { CreateClientDTO } from "./dto/createClient.dto";
 
 const upload = multer({ storage: multer.memoryStorage() });
+const parseClientPics = (req: Request, res: Response, next: NextFunction) => {
+  if (typeof req.body?.pics === "string") {
+    try {
+      req.body.pics = JSON.parse(req.body.pics);
 
+      if (!Array.isArray(req.body.pics)) {
+        res.status(400).json({
+          message: "Data PIC harus berupa daftar.",
+        });
+        return;
+      }
+    } catch {
+      res.status(400).json({
+        message: "Format data PIC tidak valid.",
+      });
+      return;
+    }
+  }
+
+  next();
+};
 @autoInjectable()
 export class ClientRouter {
   private readonly router: Router = Router();
@@ -50,8 +69,9 @@ export class ClientRouter {
     // 5. Create Client -> Otomatis butuh 'create'
     this.router.post(
       "/",
+      upload.single("logoFile"),
+      parseClientPics,
       validateBody(CreateClientDTO),
-      upload.single("logoFile"), // Memproses upload logo klien
       this.clientController.createClient,
     );
 

@@ -1,6 +1,7 @@
 import { Transform, Type } from "class-transformer";
 import {
   IsArray,
+  IsBoolean,
   IsNotEmpty,
   IsNumber,
   IsObject,
@@ -94,4 +95,12 @@ export class CreateQuotationItemDTO {
   @IsOptional()
   @IsString()
   remarks?: string;
+
+  @IsOptional()
+  @IsString()
+  id?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  imageUploadExpected?: boolean;
 }

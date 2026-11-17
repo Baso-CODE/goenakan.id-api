@@ -303,6 +303,13 @@ export class QuotationService {
       const item = data.items[i];
       const img = uploadedImages[i];
 
+      if (item.imageUploadExpected && !img) {
+        throw new ApiError(
+          `Gambar item ke-${i + 1} tidak diterima server. Quotation tidak disimpan.`,
+          400,
+        );
+      }
+
       // ==========================================
       // 1. VALIDASI QUANTITY DAN DISCOUNT
       // ==========================================
@@ -607,7 +614,11 @@ export class QuotationService {
   // 4. UPDATE QUOTATION (DIPERBARUI)
   // ==========================================
   // MANUAL_QUOTATION_ITEM_SUPPORT_V2
-  async updateQuotation(id: string, data: UpdateQuotationDTO) {
+  async updateQuotation(
+    id: string,
+    data: UpdateQuotationDTO,
+    files: Express.Multer.File[] = [],
+  ) {
     const existing = await this.prisma.quotation.findUnique({
       where: { id },
     });
@@ -620,6 +631,73 @@ export class QuotationService {
 
     if (items !== undefined && (!Array.isArray(items) || items.length === 0)) {
       throw new ApiError("Quotation harus memiliki minimal satu item.", 400);
+    }
+
+    // Simpan referensi gambar lama sebelum item quotation diganti.
+    const previousItems = await this.prisma.quotationItem.findMany({
+      where: { quotationId: id },
+      select: {
+        id: true,
+        imageUrl: true,
+        imagePublicId: true,
+      },
+    });
+
+    const previousImages = new Map(
+      previousItems.map((item) => [item.id, item]),
+    );
+
+    // Upload gambar baru ke Cloudinary.
+    const uploadedImages: Record<number, { url: string; publicId: string }> =
+      {};
+
+    for (const file of files) {
+      const match = file.fieldname.match(/^items\[(\d+)\]\[image\]$/);
+
+      const index = match ? Number(match[1]) : -1;
+
+      if (!items || index < 0 || index >= items.length) {
+        throw new ApiError(
+          `Field upload gambar tidak valid: ${file.fieldname}`,
+          400,
+        );
+      }
+
+      if (!file.mimetype.startsWith("image/") || file.size > 5 * 1024 * 1024) {
+        throw new ApiError(
+          `Gambar item ke-${index + 1} harus berupa gambar maksimal 5MB.`,
+          400,
+        );
+      }
+
+      try {
+        const result = await this.cloudinary.upload(file, {
+          folder: "quotation-items",
+        });
+
+        uploadedImages[index] = {
+          url: result.secure_url,
+          publicId: result.public_id,
+        };
+      } catch (error) {
+        console.error("Quotation image upload failed:", error);
+
+        throw new ApiError(
+          `Gagal upload gambar item ke-${index + 1} ke Cloudinary.`,
+          500,
+        );
+      }
+    }
+
+    if (items) {
+      for (const [index, item] of items.entries()) {
+        if (item.imageUploadExpected && !uploadedImages[index]) {
+          throw new ApiError(
+            `Gambar item ke-${index + 1} tidak diterima server.`,
+            400,
+          );
+        }
+      }
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -683,7 +761,10 @@ export class QuotationService {
               },
             });
             if (!productRecord) {
-              throw new ApiError(`Produk dengan ID ${productId} tidak ditemukan.`, 404);
+              throw new ApiError(
+                `Produk dengan ID ${productId} tidak ditemukan.`,
+                404,
+              );
             }
 
             finalProductName = item.productName?.trim() || productRecord.name;
@@ -721,7 +802,9 @@ export class QuotationService {
           } else {
             // Produk manual: gunakan nama dan harga yang diisi Admin.
             finalProductName =
-              typeof item.productName === "string" ? item.productName.trim() : "";
+              typeof item.productName === "string"
+                ? item.productName.trim()
+                : "";
             if (!finalProductName) {
               throw new ApiError(
                 `Nama produk manual diperlukan untuk item ke-${itemNo}.`,
@@ -738,14 +821,16 @@ export class QuotationService {
           }
 
           if (!Number.isFinite(finalUnitPrice) || finalUnitPrice < 0) {
-            throw new ApiError(`Harga satuan item ke-${itemNo} tidak valid.`, 400);
+            throw new ApiError(
+              `Harga satuan item ke-${itemNo} tidak valid.`,
+              400,
+            );
           }
 
           const tiersToCreate = (item.tiers || []).map((tier, tierIndex) => {
             const minQuantity = Number(tier.minQuantity ?? 1);
             const maxQuantity =
-              tier.maxQuantity !== undefined &&
-              tier.maxQuantity !== null
+              tier.maxQuantity !== undefined && tier.maxQuantity !== null
                 ? Number(tier.maxQuantity)
                 : null;
             const tierUnitPrice = Number(tier.unitPrice ?? 0);
@@ -810,7 +895,11 @@ export class QuotationService {
             throw new ApiError(`Subtotal item ke-${itemNo} tidak valid.`, 400);
           }
           calculatedSubTotal += Math.max(0, lineTotal);
+          const previousImage = item.id
+            ? previousImages.get(item.id)
+            : undefined;
 
+          const newImage = uploadedImages[index];
           itemsToCreate.push({
             quotationId: id,
             productId,
@@ -822,10 +911,15 @@ export class QuotationService {
             discount: itemDiscount,
             selectedAttributes: isManualProduct
               ? Prisma.JsonNull
-              : item.selectedAttributes ?? Prisma.JsonNull,
+              : (item.selectedAttributes ?? Prisma.JsonNull),
             customization: item.customization ?? Prisma.JsonNull,
             remarks: item.remarks || null,
             tiers: { create: tiersToCreate },
+
+            imageUrl: newImage?.url ?? previousImage?.imageUrl ?? null,
+
+            imagePublicId:
+              newImage?.publicId ?? previousImage?.imagePublicId ?? null,
           });
         }
 
@@ -900,7 +994,10 @@ export class QuotationService {
       });
 
       if (currentQuotation.status !== updatedQuotation.status) {
-        if (updatedQuotation.status === "SENT" || updatedQuotation.status === "ACCEPTED") {
+        if (
+          updatedQuotation.status === "SENT" ||
+          updatedQuotation.status === "ACCEPTED"
+        ) {
           await this.enqueueQuotationTracking(tx, id, updatedQuotation.status);
         }
       }
