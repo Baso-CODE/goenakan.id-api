@@ -2796,6 +2796,18 @@ model CrmLeadStatusConfig {
   @@map("crm_lead_status_configs")
 }
 
+model CrmLeadLabelConfig {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  color       String    @default("#059669")
+  description String?   @db.Text
+  orderIndex  Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("crm_lead_label_configs")
+}
+
 model CrmCustomCode {
   id              String            @id @default(uuid())
   code            String            @unique

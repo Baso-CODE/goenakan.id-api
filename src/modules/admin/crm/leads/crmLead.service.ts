@@ -395,6 +395,29 @@ export class CrmLeadService {
       },
     });
 
+    // Auto-upsert label baru ke database konfigurasi label CRM
+    for (const labelName of cleanLabels) {
+      try {
+        const existing = await this.prisma.crmLeadLabelConfig.findFirst({
+          where: { name: labelName },
+        });
+        if (!existing) {
+          const maxOrder = await this.prisma.crmLeadLabelConfig.aggregate({
+            _max: { orderIndex: true },
+          });
+          await this.prisma.crmLeadLabelConfig.create({
+            data: {
+              name: labelName,
+              color: "#059669",
+              orderIndex: (maxOrder._max.orderIndex || 0) + 1,
+            },
+          });
+        }
+      } catch {
+        // Abaikan jika sudah ada / race condition
+      }
+    }
+
     return {
       ...updated,
       labels: cleanLabels,
