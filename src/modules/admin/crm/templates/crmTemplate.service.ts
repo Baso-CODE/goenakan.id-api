@@ -174,4 +174,135 @@ export class CrmTemplateService {
       message: `Template "${existing.title}" berhasil dihapus`,
     };
   }
+
+  /**
+   * Mengambil semua kategori template pesan beserta jumlah penggunaannya
+   */
+  async getCategories() {
+    let items = await this.prisma.crmTemplateCategory.findMany({
+      orderBy: [{ orderIndex: "asc" }, { createdAt: "asc" }],
+    });
+
+    if (items.length === 0) {
+      const defaultCategories = ["Salam", "Pemesanan", "Katalog", "Pembayaran", "Follow Up", "Komplain", "Umum"];
+      for (let i = 0; i < defaultCategories.length; i++) {
+        await this.prisma.crmTemplateCategory.upsert({
+          where: { name: defaultCategories[i] },
+          update: {},
+          create: { name: defaultCategories[i], orderIndex: i + 1 },
+        });
+      }
+      items = await this.prisma.crmTemplateCategory.findMany({
+        orderBy: [{ orderIndex: "asc" }, { createdAt: "asc" }],
+      });
+    }
+
+    const templates = await this.prisma.crmMessageTemplate.findMany({
+      select: { category: true },
+    });
+
+    const counts: Record<string, number> = {};
+    for (const t of templates) {
+      const cat = t.category || "Umum";
+      counts[cat.toLowerCase()] = (counts[cat.toLowerCase()] || 0) + 1;
+    }
+
+    return items.map((cat) => ({
+      ...cat,
+      templateCount: counts[cat.name.toLowerCase()] || 0,
+    }));
+  }
+
+  /**
+   * Membuat kategori template pesan baru
+   */
+  async createCategory(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      throw new ApiError("Nama kategori tidak boleh kosong", 400);
+    }
+
+    const existing = await this.prisma.crmTemplateCategory.findFirst({
+      where: { name: trimmed },
+    });
+    if (existing) {
+      throw new ApiError(`Kategori "${trimmed}" sudah ada`, 409);
+    }
+
+    const maxOrder = await this.prisma.crmTemplateCategory.aggregate({
+      _max: { orderIndex: true },
+    });
+    const nextOrder = (maxOrder._max.orderIndex || 0) + 1;
+
+    return this.prisma.crmTemplateCategory.create({
+      data: {
+        name: trimmed,
+        orderIndex: nextOrder,
+      },
+    });
+  }
+
+  /**
+   * Memperbarui kategori template pesan (juga sinkron ke template terkait)
+   */
+  async updateCategory(id: string, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      throw new ApiError("Nama kategori tidak boleh kosong", 400);
+    }
+
+    const existing = await this.prisma.crmTemplateCategory.findUnique({
+      where: { id },
+    });
+    if (!existing) {
+      throw new ApiError("Kategori tidak ditemukan", 404);
+    }
+
+    if (trimmed.toLowerCase() !== existing.name.toLowerCase()) {
+      const duplicate = await this.prisma.crmTemplateCategory.findFirst({
+        where: { name: trimmed, id: { not: id } },
+      });
+      if (duplicate) {
+        throw new ApiError(`Kategori "${trimmed}" sudah ada`, 409);
+      }
+
+      // Update template yang menggunakan nama kategori lama
+      await this.prisma.crmMessageTemplate.updateMany({
+        where: { category: existing.name },
+        data: { category: trimmed },
+      });
+    }
+
+    return this.prisma.crmTemplateCategory.update({
+      where: { id },
+      data: { name: trimmed },
+    });
+  }
+
+  /**
+   * Menghapus kategori template pesan
+   */
+  async deleteCategory(id: string) {
+    const existing = await this.prisma.crmTemplateCategory.findUnique({
+      where: { id },
+    });
+    if (!existing) {
+      throw new ApiError("Kategori tidak ditemukan", 404);
+    }
+
+    // Pindahkan template terkait ke "Umum"
+    await this.prisma.crmMessageTemplate.updateMany({
+      where: { category: existing.name },
+      data: { category: "Umum" },
+    });
+
+    await this.prisma.crmTemplateCategory.delete({
+      where: { id },
+    });
+
+    return {
+      success: true,
+      message: `Kategori "${existing.name}" berhasil dihapus`,
+    };
+  }
 }

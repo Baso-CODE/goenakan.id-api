@@ -21,6 +21,13 @@ export class CrmTemplateRouter {
     // Autentikasi Admin via NextAuth
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
 
+    // Kategori Template CRUD (harus sebelum /:id)
+    this.router.get("/categories", this.crmTemplateController.getCategories);
+    this.router.post("/categories", this.crmTemplateController.createCategory);
+    this.router.put("/categories/:id", this.crmTemplateController.updateCategory);
+    this.router.delete("/categories/:id", this.crmTemplateController.deleteCategory);
+
+    // Template Pesan CRUD
     this.router.get("/", this.crmTemplateController.getTemplates);
     this.router.post("/", validateBody(CreateCrmTemplateDTO), this.crmTemplateController.createTemplate);
     this.router.put("/:id", validateBody(UpdateCrmTemplateDTO), this.crmTemplateController.updateTemplate);

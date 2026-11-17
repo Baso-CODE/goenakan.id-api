@@ -2821,6 +2821,16 @@ model CrmMessageTemplate {
   @@map("crm_message_templates")
 }
 
+model CrmTemplateCategory {
+  id         String   @id @default(uuid())
+  name       String   @unique
+  orderIndex Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("crm_template_categories")
+}
+
 model CrmCustomCode {
   id              String            @id @default(uuid())
   code            String            @unique
