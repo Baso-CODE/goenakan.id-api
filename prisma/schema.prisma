@@ -2808,6 +2808,19 @@ model CrmLeadLabelConfig {
   @@map("crm_lead_label_configs")
 }
 
+model CrmMessageTemplate {
+  id          String   @id @default(uuid())
+  title       String
+  content     String   @db.Text
+  category    String?  @default("Umum")
+  shortcut    String?
+  orderIndex  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("crm_message_templates")
+}
+
 model CrmCustomCode {
   id              String            @id @default(uuid())
   code            String            @unique

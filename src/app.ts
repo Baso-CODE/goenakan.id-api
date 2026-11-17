@@ -87,6 +87,7 @@ import { CrmLeadRouter } from "./modules/admin/crm/leads/crmLead.router";
 import { CrmSettingRouter } from "./modules/admin/crm/settings/crmSetting.router";
 import { CrmStatusRouter } from "./modules/admin/crm/statuses/crmStatus.router";
 import { CrmLabelRouter } from "./modules/admin/crm/labels/crmLabel.router";
+import { CrmTemplateRouter } from "./modules/admin/crm/templates/crmTemplate.router";
 import { initializeCronJobs } from "./utils/cron";
 export default class App {
   public app;
@@ -198,6 +199,7 @@ export default class App {
     const crmSettingRouter = container.resolve(CrmSettingRouter);
     const crmStatusRouter = container.resolve(CrmStatusRouter);
     const crmLabelRouter = container.resolve(CrmLabelRouter);
+    const crmTemplateRouter = container.resolve(CrmTemplateRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
@@ -290,6 +292,7 @@ export default class App {
     this.app.use("/crm/settings", crmSettingRouter.getRouter());
     this.app.use("/crm/statuses", crmStatusRouter.getRouter());
     this.app.use("/crm/labels", crmLabelRouter.getRouter());
+    this.app.use("/crm/templates", crmTemplateRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);
