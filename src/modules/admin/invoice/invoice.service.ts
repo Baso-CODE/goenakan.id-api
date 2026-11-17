@@ -846,13 +846,31 @@ export class InvoiceService {
                 customization: true,
               },
             },
+
             product: {
               select: {
                 name: true,
                 sku: true,
                 materialType: true,
+                attributeValues: {
+                  select: {
+                    attributeValue: {
+                      select: {
+                        id: true,
+                        value: true,
+                        attribute: {
+                          select: {
+                            id: true,
+                            name: true,
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
               },
             },
+
             variant: {
               select: {
                 variantName: true,
@@ -918,14 +936,68 @@ export class InvoiceService {
         }
       };
 
+      const selectedAttributes = parseJson(
+        item.orderProduct?.selectedAttributes ?? null,
+      );
+
+      const customization = parseJson(
+        item.customization ?? item.orderProduct?.customization ?? null,
+      );
+
+      const attributeLookup = new Map<
+        string,
+        { name: string; value: string }
+      >();
+
+      for (const entry of item.product.attributeValues) {
+        const attributeValue = entry.attributeValue;
+
+        attributeLookup.set(attributeValue.id, {
+          name: attributeValue.attribute.name,
+          value: attributeValue.value,
+        });
+      }
+
+      const grouped = new Map<string, Set<string>>();
+
+      if (
+        selectedAttributes &&
+        typeof selectedAttributes === "object" &&
+        !Array.isArray(selectedAttributes)
+      ) {
+        for (const rawValue of Object.values(
+          selectedAttributes as Record<string, unknown>,
+        )) {
+          const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+
+          for (const value of values) {
+            if (typeof value !== "string") continue;
+
+            const matched = attributeLookup.get(value);
+
+            if (!matched) continue;
+
+            if (!grouped.has(matched.name)) {
+              grouped.set(matched.name, new Set());
+            }
+
+            grouped.get(matched.name)!.add(matched.value);
+          }
+        }
+      }
+
+      const displayAttributes = Array.from(grouped.entries()).map(
+        ([name, values]) => ({
+          name,
+          value: Array.from(values).join(", "),
+        }),
+      );
+
       return {
         ...item,
-        selectedAttributes: parseJson(
-          item.orderProduct?.selectedAttributes ?? null,
-        ),
-        customization: parseJson(
-          item.customization ?? item.orderProduct?.customization ?? null,
-        ),
+        selectedAttributes,
+        customization,
+        displayAttributes,
       };
     });
 
