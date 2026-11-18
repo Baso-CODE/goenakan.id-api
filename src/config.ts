@@ -22,11 +22,19 @@ class EnvConfig {
 
   @IsNotEmpty()
   @IsString()
-  readonly MAIL_USER!: string;
+  readonly SMTP_HOST!: string;
+
+  @IsNotEmpty()
+  @IsNumber()
+  readonly SMTP_PORT!: number;
 
   @IsNotEmpty()
   @IsString()
-  readonly MAIL_PASSWORD!: string;
+  readonly SMTP_USER!: string;
+
+  @IsNotEmpty()
+  @IsString()
+  readonly SMTP_PASS!: string;
 
   @IsNotEmpty()
   @IsString()

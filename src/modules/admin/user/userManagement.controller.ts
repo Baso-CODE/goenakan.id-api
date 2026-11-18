@@ -87,4 +87,41 @@ export class UserController {
       next(error);
     }
   };
+
+  // Public: aktivasi akun lewat email.
+  activateAdminAccount = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { token, password } = req.body;
+
+      const result = await this.userService.activateAdminAccount(
+        token,
+        password,
+      );
+
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Protected: kirim ulang hanya oleh Super Admin.
+  resendAdminInvitation = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const id = String(req.params.id);
+
+      const result = await this.userService.resendAdminInvitation(id);
+
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
 }

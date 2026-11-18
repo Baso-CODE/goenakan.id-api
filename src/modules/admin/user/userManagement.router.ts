@@ -1,14 +1,20 @@
-import { Router } from "express";
+import { NextFunction, Request, Response, Router } from "express";
 import multer from "multer";
 import { autoInjectable } from "tsyringe";
 
+import { AuthenticatedRequest } from "../../../middleware/AuthenticatedUser";
 import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
 import { parseFormData } from "../../../middleware/parseFormData.middleware";
 import { autoVerifyPermission } from "../../../middleware/permission.middleware";
 import { validateBody } from "../../../middleware/validation.middleware";
 
-import { CreateUserDTO, UpdateUserDTO } from "./dto/userManagement.dto";
+import {
+  ActivateAdminAccountDTO,
+  CreateUserDTO,
+  UpdateUserDTO,
+} from "./dto/userManagement.dto";
 
+import { authLimiter } from "../../../middleware/rateLimiter.middleware";
 import { UserController } from "./userManagement.controller";
 
 // ==========================================
@@ -30,6 +36,20 @@ const upload = multer({
   },
 });
 
+const requireSuperAdmin = (req: Request, res: Response, next: NextFunction) => {
+  const authReq = req as AuthenticatedRequest;
+
+  if (authReq.user?.role !== "SUPER_ADMIN") {
+    res.status(403).json({
+      message:
+        "Hanya Super Admin yang dapat membuat akun dan mengirim ulang undangan.",
+    });
+    return;
+  }
+
+  next();
+};
+
 @autoInjectable()
 export class UserRouter {
   private readonly router: Router = Router();
@@ -42,48 +62,56 @@ export class UserRouter {
   }
 
   private initializeRoutes = (): void => {
-    // ==========================================
-    // AUTHENTICATION & PERMISSION
-    // ==========================================
+    // ==================================================
+    // PUBLIC: AKTIVASI AKUN (TIDAK PERLU LOGIN)
+    // ==================================================
+    this.router.post(
+      "/activate-account",
+      authLimiter,
+      validateBody(ActivateAdminAccountDTO),
+      this.userController.activateAdminAccount,
+    );
 
+    // ==================================================
+    // AUTHENTICATION
+    // ==================================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
 
     this.router.use(autoVerifyPermission("user"));
 
-    // ==========================================
-    // GET ALL USERS
-    // Permission: user.read
-    // ==========================================
-
+    // ==================================================
+    // READ USERS
+    // ==================================================
     this.router.get("/", this.userController.getAllUsers);
-
-    // ==========================================
-    // GET AUTHORS
-    // Permission: user.read
-    // ==========================================
 
     this.router.get("/authors", this.userController.getAuthorsForFilter);
 
     this.router.get("/:id", this.userController.getUserById);
 
-    // ==========================================
-    // CREATE USER
-    // Permission: user.create
-    // ==========================================
-
+    // ==================================================
+    // CREATE USER - SUPER ADMIN ONLY
+    // ==================================================
     this.router.post(
       "/",
+      requireSuperAdmin,
       upload.single("image"),
       parseFormData,
       validateBody(CreateUserDTO),
       this.userController.createUser,
     );
 
-    // ==========================================
-    // UPDATE USER
-    // Permission: user.update
-    // ==========================================
+    // ==================================================
+    // RESEND INVITATION - SUPER ADMIN ONLY
+    // ============================================invitation======
+    this.router.post(
+      "/:id/resend-invitation",
+      requireSuperAdmin,
+      this.userController.resendAdminInvitation,
+    );
 
+    // ==================================================
+    // UPDATE USER
+    // ==================================================
     this.router.patch(
       "/:id",
       upload.single("image"),

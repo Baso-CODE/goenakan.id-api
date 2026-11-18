@@ -7,20 +7,16 @@ import {
 } from "class-validator";
 
 export class CreateUserDTO {
-  @IsNotEmpty({ message: "Nama tidak boleh kosong" })
   @IsString()
+  @IsNotEmpty({ message: "Nama wajib diisi" })
   name!: string;
 
-  @IsNotEmpty({ message: "Email tidak boleh kosong" })
   @IsEmail({}, { message: "Format email tidak valid" })
+  @IsNotEmpty({ message: "Email wajib diisi" })
   email!: string;
 
-  @IsNotEmpty({ message: "Password tidak boleh kosong" })
-  @MinLength(6, { message: "Password minimal 6 karakter" })
-  password!: string;
-
-  @IsNotEmpty({ message: "Role ID tidak boleh kosong" })
   @IsString()
+  @IsNotEmpty({ message: "Role wajib dipilih" })
   roleId!: string;
 
   @IsOptional()
@@ -28,27 +24,35 @@ export class CreateUserDTO {
   image?: string;
 }
 
-// ==========================================
-// UPDATE USER DTO
-// ==========================================
-
 export class UpdateUserDTO {
   @IsOptional()
   @IsString()
-  @IsNotEmpty({ message: "Nama tidak boleh kosong" })
+  @IsNotEmpty()
   name?: string;
 
   @IsOptional()
-  @IsEmail({}, { message: "Format email tidak valid" })
+  @IsEmail()
   email?: string;
 
   @IsOptional()
   @IsString()
-  @MinLength(6, { message: "Password minimal 6 karakter" })
+  @MinLength(8, { message: "Password minimal 8 karakter" })
   password?: string;
 
   @IsOptional()
   @IsString()
-  @IsNotEmpty({ message: "Role ID tidak boleh kosong" })
+  @IsNotEmpty()
   roleId?: string;
+}
+
+export class ActivateAdminAccountDTO {
+  @IsString()
+  @IsNotEmpty()
+  token!: string;
+
+  @IsString()
+  @MinLength(12, {
+    message: "Password minimal 12 karakter",
+  })
+  password!: string;
 }
