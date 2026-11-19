@@ -13,13 +13,13 @@ import {
 import { injectable } from "tsyringe";
 import { coreApi, snap } from "../../../lib/midtrans";
 import { ApiError } from "../../../utils/api-error";
-import { CounterService } from "../../../utils/counter.service";
 import {
-  buildB2CIdentityKey,
   buildB2BIdentityKey,
+  buildB2CIdentityKey,
   findClientByPhone,
   normalizeClientPhone,
 } from "../../../utils/client-identity";
+import { CounterService } from "../../../utils/counter.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { hasExistingGA4Purchase } from "../../tracking-outbox/ga4-purchase-idempotency.helper";
 import { buildGA4Purchase } from "../../tracking-outbox/ga4-purchase.helper";
@@ -183,9 +183,8 @@ export class WebOrderService {
           select: { userId: true, accountType: true },
         })
       : null;
-    const expectedClientType = profile?.accountType === "CORPORATE"
-      ? ClientType.B2B
-      : ClientType.B2C;
+    const expectedClientType =
+      profile?.accountType === "CORPORATE" ? ClientType.B2B : ClientType.B2C;
     const phoneOwner = await findClientByPhone(this.prisma, form.phone);
     if (phoneOwner && phoneOwner.type !== expectedClientType) {
       throw new ApiError(
@@ -201,7 +200,11 @@ export class WebOrderService {
         409,
       );
     }
-    if (profile?.userId && phoneOwner?.userId && phoneOwner.userId !== profile.userId) {
+    if (
+      profile?.userId &&
+      phoneOwner?.userId &&
+      phoneOwner.userId !== profile.userId
+    ) {
       throw new ApiError(
         "Nomor HP ini telah terhubung ke akun pelanggan lain.",
         409,
@@ -221,7 +224,10 @@ export class WebOrderService {
 
     // A stable B2C identity is required before accepting a web order.
     if (!buildB2CIdentityKey(form.fullName, form.phone)) {
-      throw new ApiError("Nama lengkap dan nomor HP yang valid wajib diisi", 400);
+      throw new ApiError(
+        "Nama lengkap dan nomor HP yang valid wajib diisi",
+        400,
+      );
     }
 
     if (profileId) {
@@ -645,7 +651,10 @@ export class WebOrderService {
           if (!normalizedPhone) {
             throw new ApiError("Nomor HP Web Order tidak valid", 400);
           }
-          const matchedByPhone = await findClientByPhone(tx, guestIdentityPhone);
+          const matchedByPhone = await findClientByPhone(
+            tx,
+            guestIdentityPhone,
+          );
           const expectedType = isCorporate ? ClientType.B2B : ClientType.B2C;
           if (matchedByPhone && matchedByPhone.type !== expectedType) {
             throw new ApiError(
@@ -653,18 +662,24 @@ export class WebOrderService {
               409,
             );
           }
-          if (existingClient && matchedByPhone && matchedByPhone.id !== existingClient.id) {
+          if (
+            existingClient &&
+            matchedByPhone &&
+            matchedByPhone.id !== existingClient.id
+          ) {
             throw new ApiError(
               "Nomor HP sudah digunakan oleh Client lain",
               409,
             );
           }
-          const matchedB2B = !existingClient && isCorporate
-            ? matchedByPhone?.b2b ?? null
-            : null;
-          const matchedB2C = !existingClient && !isCorporate
-            ? matchedByPhone?.b2c ?? null
-            : null;
+          const matchedB2B =
+            !existingClient && isCorporate
+              ? (matchedByPhone?.b2b ?? null)
+              : null;
+          const matchedB2C =
+            !existingClient && !isCorporate
+              ? (matchedByPhone?.b2c ?? null)
+              : null;
 
           let clientIdToUse: string;
 
@@ -923,6 +938,7 @@ export class WebOrderService {
                   orderNumber: webOrder.orderNumber,
 
                   amount: webOrder.subtotal,
+                  shipping: webOrder.shippingCost,
                   currency: "IDR",
 
                   attribution: webOrder.attribution,
