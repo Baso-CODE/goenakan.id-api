@@ -20,6 +20,7 @@ type PurchaseInput = {
   invoiceId: number;
   orderNumber: string;
   amount: Prisma.Decimal | string | number;
+  shipping: Prisma.Decimal | string | number | null;
   currency: string;
   attribution: Prisma.JsonValue | null;
   items: PurchaseItem[];
@@ -78,8 +79,14 @@ export function buildGA4Purchase(input: PurchaseInput) {
   }
 
   const value = Number(input.amount);
+  const shipping = input.shipping == null ? 0 : Number(input.shipping);
 
-  if (!Number.isFinite(value) || value < 0) {
+  if (
+    !Number.isFinite(value) ||
+    value < 0 ||
+    !Number.isFinite(shipping) ||
+    shipping < 0
+  ) {
     return null;
   }
 
@@ -94,6 +101,7 @@ export function buildGA4Purchase(input: PurchaseInput) {
 
     currency: input.currency,
     value,
+    shipping,
     items,
 
     engagement_time_msec: 1,

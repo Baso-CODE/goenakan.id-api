@@ -365,6 +365,7 @@ export class InvoiceService {
                     attribution: true,
                     subtotal: true,
                     currencyCode: true,
+                    shippingCost: true,
 
                     // Ambil seluruh item website order.
                     items: {
@@ -533,7 +534,7 @@ export class InvoiceService {
 
                 // Nilai seluruh barang, bukan nilai DP/cicilan.
                 amount: order.webOrder.subtotal,
-
+                shipping: order.webOrder.shippingCost,
                 currency: "IDR",
 
                 attribution: order.webOrder.attribution,
@@ -541,7 +542,8 @@ export class InvoiceService {
                 paidAt: paidDate,
 
                 // Admin invoice manual yang benar-benar transaksi nyata.
-                isTestTransaction: false,
+                isTestTransaction:
+                  process.env.MIDTRANS_IS_PRODUCTION !== "true",
 
                 // Seluruh item dari website order.
                 items: order.webOrder.items.map((item) => ({
