@@ -82,6 +82,15 @@ import { WhatsappCronService } from "./modules/whatsapp/notification/whatsapp-cr
 import { WhatsappRouter } from "./modules/whatsapp/whatsapp.routes";
 import { WhatsappService } from "./modules/whatsapp/whatsapp.service";
 import { WilayahRouter } from "./modules/wilayah/wilayah.router";
+import { CustomCodeRouter } from "./modules/admin/crm/custom-codes/customCode.router";
+import { CrmLeadRouter } from "./modules/admin/crm/leads/crmLead.router";
+import { CrmSettingRouter } from "./modules/admin/crm/settings/crmSetting.router";
+import { CrmStatusRouter } from "./modules/admin/crm/statuses/crmStatus.router";
+import { CrmLabelRouter } from "./modules/admin/crm/labels/crmLabel.router";
+import { CrmTemplateRouter } from "./modules/admin/crm/templates/crmTemplate.router";
+import { CrmNotificationRouter } from "./modules/admin/crm/notifications/crmNotification.router";
+import swaggerUi from "swagger-ui-express";
+import { swaggerDocument } from "./docs/swagger";
 import { initializeCronJobs } from "./utils/cron";
 export default class App {
   public app;
@@ -98,7 +107,11 @@ export default class App {
   private configure(): void {
     this.app.set("trust proxy", 1);
     this.app.use(compression());
-    this.app.use(helmet());
+    this.app.use(
+      helmet({
+        contentSecurityPolicy: false,
+      }),
+    );
 
     this.app.use(globalLimiter);
     this.app.use(
@@ -189,9 +202,23 @@ export default class App {
       ProductUrlApprovalRouter,
     );
     const adminNotificationRouter = container.resolve(AdminNotificationRouter);
+    const customCodeRouter = container.resolve(CustomCodeRouter);
+    const crmLeadRouter = container.resolve(CrmLeadRouter);
+    const crmSettingRouter = container.resolve(CrmSettingRouter);
+    const crmStatusRouter = container.resolve(CrmStatusRouter);
+    const crmLabelRouter = container.resolve(CrmLabelRouter);
+    const crmTemplateRouter = container.resolve(CrmTemplateRouter);
+    const crmNotificationRouter = container.resolve(CrmNotificationRouter);
 
     this.app.get("/", (_, res) => {
       res.send("Welcome");
+    });
+
+    // Swagger Documentation UI & OpenAPI Spec
+    this.app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+    this.app.get("/api-docs.json", (_, res) => {
+      res.setHeader("Content-Type", "application/json");
+      res.send(swaggerDocument);
     });
 
     this.app.use("/seo/sitemap", publicLimiter, seoSitemapRouter.getRouter());
@@ -276,6 +303,13 @@ export default class App {
       productUrlApprovalRouter.getRouter(),
     );
     this.app.use("/admin-notifications", adminNotificationRouter.getRouter());
+    this.app.use("/crm/custom-codes", customCodeRouter.getRouter());
+    this.app.use("/crm/leads", crmLeadRouter.getRouter());
+    this.app.use("/crm/settings", crmSettingRouter.getRouter());
+    this.app.use("/crm/statuses", crmStatusRouter.getRouter());
+    this.app.use("/crm/labels", crmLabelRouter.getRouter());
+    this.app.use("/crm/templates", crmTemplateRouter.getRouter());
+    this.app.use("/crm/notifications", crmNotificationRouter.getRouter());
   }
   private handleError(): void {
     this.app.use(errorMiddleware);

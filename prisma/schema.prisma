@@ -240,6 +240,9 @@ model User {
   productUrlRequests    ProductUrlChangeRequest[] @relation("ProductUrlRequestedBy")
   productUrlReviews     ProductUrlChangeRequest[] @relation("ProductUrlReviewedBy")
   adminNotifications    AdminNotification[]
+  assignedCrmLeads      CrmLead[]                 @relation("CrmLeadAssignedTo")
+  crmCustomCodes        CrmCustomCode[]
+  crmLeadNotes          CrmLeadNote[]
 
   @@map("users")
 }
@@ -310,6 +313,7 @@ model CustomerProfile {
   addresses CustomerAddress[]
   carts     Cart[]
   orders    WebOrder[]
+  crmLeads  CrmLead[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2606,6 +2610,9 @@ model WhatsappClick {
   leadId Int?
   lead   ContactMessage? @relation(fields: [leadId], references: [id], onDelete: SetNull)
 
+  // Relasi CRM Leads (WhatsApp CRM)
+  crmLeads CrmLead[]
+
   // Relasi order
   orderId String?
   order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
@@ -2760,4 +2767,155 @@ model AdminNotification {
 
   @@index([userId, isRead, createdAt])
   @@map("admin_notifications")
+}
+
+// ==========================================
+// WHATSAPP CRM (LEADS & CUSTOM CODES)
+// ==========================================
+
+enum CrmAssignMethod {
+  MANUAL
+  CLAIM
+  STICKY_CUSTOMER
+  ROUND_ROBIN
+}
+
+enum CrmCustomCodeType {
+  LEAD_SOURCE
+  CS_AGENT_CODE
+}
+
+model CrmLeadStatusConfig {
+  id          String    @id @default(uuid())
+  key         String    @unique
+  label       String
+  color       String    @default("#2563eb")
+  orderIndex  Int       @default(0)
+  isDefault   Boolean   @default(false)
+  isWon       Boolean   @default(false)
+  isLost      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  leads       CrmLead[]
+
+  @@map("crm_lead_status_configs")
+}
+
+model CrmLeadLabelConfig {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  color       String    @default("#059669")
+  description String?   @db.Text
+  orderIndex  Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("crm_lead_label_configs")
+}
+
+model CrmMessageTemplate {
+  id          String   @id @default(uuid())
+  title       String
+  content     String   @db.Text
+  category    String?  @default("Umum")
+  shortcut    String?
+  orderIndex  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("crm_message_templates")
+}
+
+model CrmTemplateCategory {
+  id         String   @id @default(uuid())
+  name       String   @unique
+  orderIndex Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("crm_template_categories")
+}
+
+model CrmCustomCode {
+  id              String            @id @default(uuid())
+  code            String            @unique
+  label           String
+  type            CrmCustomCodeType
+  channel         String?
+  leadUrlRef      String?           @db.Text
+  assignedUserId  String?
+  assignedUser    User?             @relation(fields: [assignedUserId], references: [id])
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  leads           CrmLead[]
+
+  @@map("crm_custom_codes")
+}
+
+model CrmLead {
+  id                String             @id @default(uuid())
+  phoneNumber       String             @unique
+  displayName       String?
+  waPushName        String?
+  
+  customerProfileId String?
+  customerProfile   CustomerProfile?   @relation(fields: [customerProfileId], references: [id], onDelete: SetNull)
+
+  assignedToUserId  String?
+  assignedToUser    User?              @relation("CrmLeadAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  assignedAt        DateTime?
+  assignmentMethod  CrmAssignMethod    @default(CLAIM)
+
+  sourceCodeId      String?
+  sourceCode        CrmCustomCode?     @relation(fields: [sourceCodeId], references: [id], onDelete: SetNull)
+
+  whatsappClickId   String?
+  whatsappClick     WhatsappClick?     @relation(fields: [whatsappClickId], references: [id], onDelete: SetNull)
+
+  status            String                 @default("NEW")
+  statusConfig      CrmLeadStatusConfig?   @relation(fields: [status], references: [key])
+  lastMessage       String?            @db.Text
+  lastMessageAt     DateTime?
+  unreadCount       Int                @default(0)
+  labels            String?            @db.Text
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  notes             CrmLeadNote[]
+
+  @@index([whatsappClickId])
+  @@map("crm_leads")
+}
+
+model CrmLeadNote {
+  id        String   @id @default(uuid())
+  leadId    String
+  lead      CrmLead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([leadId])
+  @@index([userId])
+  @@map("crm_lead_notes")
+}
+
+model CrmSetting {
+  id                    String          @id @default("default")
+  leadReceiverSessionId String?
+  leadReceiverPhone     String?
+  ignoreGroups          Boolean         @default(true)
+  ignoreBroadcasts      Boolean         @default(true)
+  defaultAssignMethod   CrmAssignMethod @default(CLAIM)
+  slaThresholdMinutes   Int             @default(15)
+  blacklistedNumbers    String?         @db.Text
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  @@map("crm_settings")
 }
