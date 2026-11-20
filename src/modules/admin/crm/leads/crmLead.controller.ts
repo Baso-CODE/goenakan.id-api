@@ -136,10 +136,53 @@ export class CrmLeadController {
     }
   };
 
+  attachCode = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const codeOrText = req.body?.code || req.body?.text;
+      const data = await this.crmLeadService.attachCode(id, codeOrText);
+
+      res.status(200).json({
+        success: true,
+        message: "Kode atribusi berhasil ditautkan ke lead",
+        data,
+      });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || "Gagal menautkan kode ke lead",
+      });
+    }
+  };
+
+  /**
+   * Endpoint Webhook Real-Time untuk menerima notifikasi pesan dari WhatsApp (WAHA / Catha)
+   */
+  handleWebhook = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const payload = req.body;
+      const result = await this.crmLeadService.processWebhookEvent(payload);
+
+      res.status(200).json({
+        success: true,
+        message: result.reason || "Webhook diproses",
+        data: result,
+      });
+    } catch (error: any) {
+      console.error("❌ [CRM Webhook Controller Error]:", error);
+      // Selalu kirim 200/202 agar server WhatsApp tidak me-retry berulang kali jika ada payload aneh
+      res.status(200).json({
+        success: false,
+        message: error.message || "Gagal memproses event webhook",
+      });
+    }
+  };
+
   syncFromWa = async (req: Request, res: Response): Promise<void> => {
     try {
       const sessionId = req.body?.sessionId || (req.query?.sessionId as string);
-      const result = await this.crmLeadService.syncLeadsFromWa(sessionId);
+      const limit = req.body?.limit ? Number(req.body.limit) : req.query?.limit ? Number(req.query.limit) : 50;
+      const result = await this.crmLeadService.syncLeadsFromWa(sessionId, limit);
 
       res.status(200).json({
         success: true,
@@ -200,6 +243,54 @@ export class CrmLeadController {
         success: false,
         message: error.message || "Gagal mengklaim lead",
       });
+    }
+  };
+
+  takeoverLead = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { pin } = req.body || {};
+      const currentUserId = (req as any).user?.id || (req as any).session?.user?.id;
+      const currentUserRole = String((req as any).user?.role || (req as any).session?.user?.role || "").toUpperCase();
+
+      if (!currentUserId) {
+        res.status(401).json({ success: false, message: "User tidak terautentikasi" });
+        return;
+      }
+
+      const isSupervisorOrAdmin = ["SUPER_ADMIN", "ADMIN", "SUPERVISOR", "MANAGER"].includes(currentUserRole);
+
+      const data = await this.crmLeadService.takeoverLead({
+        leadId: id,
+        userId: currentUserId,
+        supervisorPin: pin,
+        isSupervisorOrAdmin,
+      });
+
+      res.status(200).json({
+        success: true,
+        message: "Chat berhasil diambil alih dan dikunci ke akun Anda!",
+        data,
+      });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || "Gagal mengambil alih chat",
+      });
+    }
+  };
+
+  verifySupervisorPin = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { pin } = req.body || {};
+      const isValid = await this.crmLeadService.verifySupervisorPin(pin);
+      if (!isValid) {
+        res.status(401).json({ success: false, message: "Kode supervisor salah" });
+        return;
+      }
+      res.status(200).json({ success: true, message: "Kode supervisor valid" });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message || "Gagal memverifikasi kode" });
     }
   };
 
@@ -327,6 +418,42 @@ export class CrmLeadController {
       res.status(error.statusCode || 500).json({
         success: false,
         message: error.message || "Gagal mengambil daftar user CS",
+      });
+    }
+  };
+
+  autoClassifyAllLeads = async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const result = await this.crmLeadService.autoClassifyAllLeads();
+      res.status(200).json({
+        success: true,
+        message: `Berhasil mengklasifikasikan ${result.updated} dari ${result.total} leads`,
+        data: result,
+      });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || "Gagal melakukan klasifikasi otomatis",
+      });
+    }
+  };
+
+  scanHistory = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { sessionId, limit } = req.body || {};
+      const result = await this.crmLeadService.scanHistoricalMessagesForAttribution(
+        sessionId,
+        limit ? Number(limit) : 50
+      );
+      res.status(200).json({
+        success: true,
+        message: `Berhasil memindai ${result.scannedLeads} percakapan. Ditemukan dan ditautkan ${result.matchedLeads} jejak kode website (GK)!`,
+        data: result,
+      });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || "Gagal memindai riwayat percakapan WhatsApp",
       });
     }
   };

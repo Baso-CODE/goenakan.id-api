@@ -24,6 +24,7 @@ export class CrmSettingRouter {
     this.router.put("/", validateBody(UpdateCrmSettingDTO), this.crmSettingController.updateSettings);
     this.router.patch("/", validateBody(UpdateCrmSettingDTO), this.crmSettingController.updateSettings);
     this.router.get("/sessions", this.crmSettingController.getSessions);
+    this.router.post("/subscribe-webhook", this.crmSettingController.subscribeWebhook);
   };
 
   public getRouter = (): Router => {

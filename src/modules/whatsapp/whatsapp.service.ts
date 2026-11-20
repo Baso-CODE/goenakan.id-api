@@ -1,6 +1,6 @@
 import QRCode from "qrcode-terminal";
 import { injectable } from "tsyringe";
-import { Client, LocalAuth } from "whatsapp-web.js";
+import { Client, LocalAuth, MessageMedia } from "whatsapp-web.js";
 @injectable()
 export class WhatsappService {
   private client: Client | null = null;
@@ -75,6 +75,68 @@ export class WhatsappService {
       return true;
     } catch (error) {
       console.error("Send error:", error);
+      return false;
+    }
+  }
+
+  async sendMediaMessage(
+    phoneNumber: string,
+    mediaInput: {
+      url?: string;
+      buffer?: Buffer;
+      base64?: string;
+      mimetype?: string;
+      fileName?: string;
+    },
+    caption?: string,
+  ): Promise<boolean> {
+    if (!this.client) {
+      throw new Error("WhatsApp not initialized");
+    }
+
+    let attempts = 0;
+    while (!this.isReady && attempts < 30) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      attempts++;
+    }
+
+    if (!this.isReady) {
+      throw new Error("WhatsApp client not ready after waiting");
+    }
+
+    try {
+      const formattedPhone = this.formatPhoneNumber(phoneNumber);
+      const chatId = `${formattedPhone}@c.us`;
+
+      let media: MessageMedia;
+
+      if (mediaInput.url) {
+        media = await MessageMedia.fromUrl(mediaInput.url, { unsafeMime: true });
+        if (mediaInput.fileName) {
+          media.filename = mediaInput.fileName;
+        }
+      } else if (mediaInput.buffer) {
+        const mime = mediaInput.mimetype || "application/octet-stream";
+        const base64Data = mediaInput.buffer.toString("base64");
+        media = new MessageMedia(mime, base64Data, mediaInput.fileName || "attachment");
+      } else if (mediaInput.base64) {
+        const cleanBase64 = mediaInput.base64.replace(/^data:[^;]+;base64,/, "");
+        const mime = mediaInput.mimetype || "application/octet-stream";
+        media = new MessageMedia(mime, cleanBase64, mediaInput.fileName || "attachment");
+      } else {
+        throw new Error("No media source provided (url, buffer, or base64 required)");
+      }
+
+      const isPdf = media.mimetype?.includes("pdf") || media.filename?.endsWith(".pdf");
+      await this.client.sendMessage(chatId, media, {
+        caption: caption || undefined,
+        sendMediaAsDocument: isPdf,
+      });
+
+      console.log(`📤 Sent media (${media.filename || "file"}) to ${formattedPhone}`);
+      return true;
+    } catch (error) {
+      console.error("Send media error:", error);
       return false;
     }
   }

@@ -43,4 +43,13 @@ export class CrmSettingController {
       next(error);
     }
   };
+
+  subscribeWebhook = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const result = await this.crmSettingService.subscribeWebhook(req.body?.url);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
 }

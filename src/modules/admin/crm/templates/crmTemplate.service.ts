@@ -40,6 +40,34 @@ const DEFAULT_TEMPLATES = [
     shortcut: "/followup",
     orderIndex: 5,
   },
+  {
+    title: "Notifikasi Invoice Diterbitkan",
+    content: "Halo Kak {{nama}},\n\nInvoice {{nomor_invoice}} telah diterbitkan dengan rincian:\n💰 Total Tagihan: {{total}}\n📅 Batas Pembayaran: {{jatuh_tempo}}\n📄 Detail Invoice & Pembayaran: {{link}}\n\nMohon konfirmasi jika pembayaran telah dilakukan. Terima kasih! 🙏\n*Goenakan.id*",
+    category: "ERP / Invoice",
+    shortcut: "/notif-invoice",
+    orderIndex: 6,
+  },
+  {
+    title: "Notifikasi Pembayaran Lunas",
+    content: "Halo Kak {{nama}},\n\nPembayaran untuk Invoice {{nomor_invoice}} sebesar {{total}} telah kami terima (LUNAS).\nStatus pesanan Anda kini masuk ke tahapan persiapan produksi.\n\nTerima kasih atas kepercayaannya! ✨\n*Goenakan.id*",
+    category: "ERP / Pembayaran",
+    shortcut: "/notif-bayar",
+    orderIndex: 7,
+  },
+  {
+    title: "Notifikasi Update Produksi",
+    content: "Halo Kak {{nama}},\n\nUpdate Progres Pesanan {{nomor_order}}:\n⚙️ Tahapan Saat Ini: {{tahapan}} ({{keterangan}})\nEstimasi Selesai: {{estimasi}}\n\nTim produksi kami sedang mengerjakan pesanan Anda dengan standar kualitas terbaik.\n*Goenakan.id*",
+    category: "ERP / Produksi",
+    shortcut: "/notif-produksi",
+    orderIndex: 8,
+  },
+  {
+    title: "Notifikasi Resi Pengiriman",
+    content: "Halo Kak {{nama}},\n\nPesanan Anda ({{nomor_order}}) telah selesai dipacking dan diserahkan ke kurir pengiriman! 🚚\n📦 Ekspedisi: {{kurir}}\n🔢 No. Resi: {{resi}}\nTautan Lacak: {{link_resi}}\n\nTerima kasih telah berbelanja di Goenakan.id!",
+    category: "ERP / Pengiriman",
+    shortcut: "/notif-resi",
+    orderIndex: 9,
+  },
 ];
 
 @singleton()
@@ -304,5 +332,52 @@ export class CrmTemplateService {
       success: true,
       message: `Kategori "${existing.name}" berhasil dihapus`,
     };
+  }
+
+  /**
+   * Mencari template pesan berdasarkan shortcut, id, atau title (untuk notifikasi ERP)
+   */
+  async findTemplateByIdentifier(identifier: string) {
+    if (!identifier) return null;
+    const cleanId = identifier.trim();
+    const cleanShortcut = cleanId.startsWith("/") ? cleanId : `/${cleanId}`;
+
+    // 1. Coba cari by shortcut atau ID
+    let tpl = await this.prisma.crmMessageTemplate.findFirst({
+      where: {
+        OR: [
+          { shortcut: cleanShortcut },
+          { shortcut: cleanId },
+          { id: cleanId },
+          { title: { equals: cleanId } },
+        ],
+      },
+    });
+
+    if (!tpl) {
+      // 2. Coba cari case-insensitive title
+      tpl = await this.prisma.crmMessageTemplate.findFirst({
+        where: {
+          title: { contains: cleanId },
+        },
+      });
+    }
+
+    // 3. Fallback ke DEFAULT_TEMPLATES in-memory jika belum pernah di-seed ke DB
+    if (!tpl) {
+      const defaultMatch = DEFAULT_TEMPLATES.find(
+        (d) =>
+          d.shortcut === cleanShortcut ||
+          d.shortcut === cleanId ||
+          d.title.toLowerCase() === cleanId.toLowerCase(),
+      );
+      if (defaultMatch) {
+        tpl = await this.prisma.crmMessageTemplate.create({
+          data: defaultMatch,
+        });
+      }
+    }
+
+    return tpl;
   }
 }
