@@ -35,6 +35,7 @@ export class CrmLeadService {
     search?: string;
     tag?: string;
     sourceCode?: string;
+    trafficSource?: string; // 'all' | 'website' | 'master_code' | 'direct'
     page?: number;
     limit?: number;
   }) {
@@ -52,6 +53,15 @@ export class CrmLeadService {
       where.sourceCode = {
         code: params.sourceCode.trim(),
       };
+    }
+
+    if (params.trafficSource === "website") {
+      where.whatsappClickId = { not: null };
+    } else if (params.trafficSource === "master_code") {
+      where.sourceCodeId = { not: null };
+    } else if (params.trafficSource === "direct") {
+      where.whatsappClickId = null;
+      where.sourceCodeId = null;
     }
 
     if (params.assignedTo === "unassigned") {
@@ -78,6 +88,9 @@ export class CrmLeadService {
         { customerProfile: { picName: { contains: q } } },
         { customerProfile: { user: { name: { contains: q } } } },
         { sourceCode: { code: { contains: q } } },
+        { whatsappClick: { code: { contains: q } } },
+        { whatsappClick: { pagePath: { contains: q } } },
+        { whatsappClick: { ctaName: { contains: q } } },
       ];
     }
 
@@ -105,6 +118,16 @@ export class CrmLeadService {
             },
           },
           sourceCode: true,
+          whatsappClick: {
+            select: {
+              id: true,
+              code: true,
+              pagePath: true,
+              ctaName: true,
+              attribution: true,
+              createdAt: true,
+            },
+          },
           statusConfig: true,
           _count: {
             select: {
@@ -194,6 +217,7 @@ export class CrmLeadService {
           },
         },
         sourceCode: true,
+        whatsappClick: true,
         notes: {
           include: {
             user: {
@@ -516,15 +540,42 @@ export class CrmLeadService {
       throw new ApiError("Nomor telepon tidak valid", 400);
     }
 
-    // 1. Cek apakah pesan mengandung tag [REF:XXX], [CODE:XXX], atau variasi spasi/tanpa kurung
+    // 1. Cek apakah pesan mengandung tag [REF:XXX], [CODE:XXX], atau Kode acak web client (GK-XXXXX)
     let matchedSourceCode: any = null;
+    let matchedWhatsappClick: any = null;
     const textToCheck = params.rawMessageText || params.lastMessage;
+
     if (textToCheck) {
-      const match = textToCheck.match(/(?:\[\s*)?(?:REF|CODE)\s*:\s*([A-Za-z0-9_-]+)(?:\s*\])?/i);
-      if (match && match[1]) {
+      // 1a. Cek format static custom code: [REF:XXX], [CODE:XXX], atau REF: XXX
+      const staticMatch = textToCheck.match(/(?:\[\s*)?(?:REF|CODE)\s*:\s*([A-Za-z0-9_-]+)(?:\s*\])?/i);
+
+      // 1b. Cek format dynamic web attribution: "Kode: GK-XXXXX" atau "Code: GK-XXXXX" atau pola GK-[A-Z0-9]{4,6}
+      const dynamicMatch = textToCheck.match(/(?:Kode\s*(?:WA)?|Code)\s*:\s*(GK-[A-HJ-KM-NP-Z0-9]{4,6})/i)
+        || textToCheck.match(/\b(GK-[A-HJ-KM-NP-Z0-9]{5})\b/i);
+
+      const candidateCode = staticMatch ? staticMatch[1].toUpperCase() : null;
+      const candidateClickCode = dynamicMatch ? dynamicMatch[1].toUpperCase() : null;
+
+      // Prioritas 1: Cari di crmCustomCode (Master Kode)
+      if (candidateCode) {
         matchedSourceCode = await this.prisma.crmCustomCode.findUnique({
-          where: { code: match[1].toUpperCase() },
+          where: { code: candidateCode },
         });
+      }
+
+      // Prioritas 2: Cari di whatsapp_clicks (Dynamic Website Click)
+      const clickCodeToLook = candidateClickCode || (matchedSourceCode ? null : candidateCode);
+      if (clickCodeToLook) {
+        matchedWhatsappClick = await this.prisma.whatsappClick.findUnique({
+          where: { code: clickCodeToLook },
+        });
+        if (matchedWhatsappClick) {
+          // Tandai bahwa klik ini sudah terhubung ke pesan WhatsApp
+          await this.prisma.whatsappClick.update({
+            where: { id: matchedWhatsappClick.id },
+            data: { matchedAt: new Date() },
+          }).catch(() => {});
+        }
       }
     }
 
@@ -559,6 +610,7 @@ export class CrmLeadService {
       update: {
         ...(params.waPushName && { waPushName: params.waPushName }),
         ...(matchedSourceCode && { sourceCodeId: matchedSourceCode.id }),
+        ...(matchedWhatsappClick && { whatsappClickId: matchedWhatsappClick.id }),
         ...(assignedUserId && !existingLead?.assignedToUserId && {
           assignedToUserId: assignedUserId,
           assignmentMethod: assignmentMethod,
@@ -577,6 +629,7 @@ export class CrmLeadService {
         waPushName: params.waPushName || null,
         customerProfileId: existingCustomer ? existingCustomer.id : null,
         sourceCodeId: matchedSourceCode ? matchedSourceCode.id : null,
+        whatsappClickId: matchedWhatsappClick ? matchedWhatsappClick.id : null,
         assignedToUserId: assignedUserId,
         assignmentMethod: assignmentMethod,
         assignedAt: assignedAt,

@@ -2607,6 +2607,9 @@ model WhatsappClick {
   leadId Int?
   lead   ContactMessage? @relation(fields: [leadId], references: [id], onDelete: SetNull)
 
+  // Relasi CRM Leads (WhatsApp CRM)
+  crmLeads CrmLead[]
+
   // Relasi order
   orderId String?
   order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
@@ -2866,6 +2869,9 @@ model CrmLead {
   sourceCodeId      String?
   sourceCode        CrmCustomCode?     @relation(fields: [sourceCodeId], references: [id], onDelete: SetNull)
 
+  whatsappClickId   String?
+  whatsappClick     WhatsappClick?     @relation(fields: [whatsappClickId], references: [id], onDelete: SetNull)
+
   status            String                 @default("NEW")
   statusConfig      CrmLeadStatusConfig?   @relation(fields: [status], references: [key])
   lastMessage       String?            @db.Text
@@ -2877,6 +2883,7 @@ model CrmLead {
 
   notes             CrmLeadNote[]
 
+  @@index([whatsappClickId])
   @@map("crm_leads")
 }
 
