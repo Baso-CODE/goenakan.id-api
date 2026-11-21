@@ -956,7 +956,7 @@ export class InvoiceService {
 
         attributeLookup.set(attributeValue.id, {
           name: attributeValue.attribute.name,
-          value: attributeValue.value,
+          value: attributeValue.value.split("|", 1)[0].trim(),
         });
       }
 
