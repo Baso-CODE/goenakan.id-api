@@ -182,6 +182,7 @@ export class ArticleCategoryService {
           id: true,
           name_id: true,
           name_en: true,
+          slug: true,
         },
       });
 

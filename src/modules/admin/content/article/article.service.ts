@@ -940,7 +940,22 @@ export class ArticleService {
       ];
     }
 
-    if (query.categoryId) {
+    if (query.categoryId === "__uncategorized__") {
+      // Menampilkan artikel dalam kategori khusus
+      // Uncategorized / Tanpa Kategori.
+      where.category = {
+        is: {
+          OR: [
+            { slug: "uncategorized" },
+            { slug: "tanpa-kategori" },
+            { name_id: "Uncategorized" },
+            { name_id: "Tanpa Kategori" },
+            { name_en: "Uncategorized" },
+          ],
+        },
+      };
+    } else if (query.categoryId) {
+      // Filter kategori normal berdasarkan ID.
       where.categoryId = query.categoryId;
     }
 
@@ -1008,6 +1023,7 @@ export class ArticleService {
     page?: number;
     take?: number;
     search?: string;
+    category?: string;
     categoryName?: string;
     sort?: "newest" | "older";
     locale?: string;
@@ -1027,15 +1043,29 @@ export class ArticleService {
       ];
     }
 
-    // Filter Kategori (Jika ada)
-    if (
+    const categorySlug = query.category?.trim();
+
+    if (categorySlug) {
+      // Filter utama berdasarkan slug yang konsisten
+      // untuk bahasa Indonesia maupun Inggris.
+      where.category = {
+        is: {
+          slug: categorySlug,
+        },
+      };
+    } else if (
       query.categoryName &&
       query.categoryName !== "All posts" &&
       query.categoryName !== "Semua Postingan"
     ) {
-      // Kita gunakan OR karena kategori yang dikirim dari frontend bisa berupa bahasa Inggris atau Indonesia
+      // Kompatibilitas untuk request lama.
       where.category = {
-        OR: [{ name_id: query.categoryName }, { name_en: query.categoryName }],
+        is: {
+          OR: [
+            { name_id: query.categoryName },
+            { name_en: query.categoryName },
+          ],
+        },
       };
     }
 
