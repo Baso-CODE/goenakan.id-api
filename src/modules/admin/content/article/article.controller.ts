@@ -199,18 +199,19 @@ export class ArticleController {
   ) => {
     try {
       // 1. Ambil semua parameter yang dikirim dari frontend melalui URL query (?search=...&page=...)
-      const { page, take, search, categoryName, sort, locale } = req.query;
-
+      const { page, take, search, category, categoryName, sort, locale } =
+        req.query;
       // 2. Lempar data tersebut ke Service
       const articles = await this.articleService.getArticleListPublic({
         page: page ? Number(page) : 1,
-        take: take ? Number(take) : 6, // Default ambil 6 data (sesuai kebutuhan frontend)
-        search: search as string,
-        categoryName: categoryName as string,
+        take: take ? Number(take) : 6,
+        search: typeof search === "string" ? search : undefined,
+        category: typeof category === "string" ? category : undefined,
+        categoryName:
+          typeof categoryName === "string" ? categoryName : undefined,
         sort: sort as "newest" | "older",
-        locale: locale as string,
+        locale: typeof locale === "string" ? locale : undefined,
       });
-
       // 3. Kirim hasilnya kembali ke frontend
       res.status(200).json(articles);
     } catch (error) {
