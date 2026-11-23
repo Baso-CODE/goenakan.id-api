@@ -4,7 +4,9 @@ import { autoInjectable } from "tsyringe";
 import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
 //  Import autoVerifyPermission
 import { autoVerifyPermission } from "../../../middleware/permission.middleware";
+import { verifySuperAdmin } from "../../../middleware/superAdmin.middleware";
 import { validateBody } from "../../../middleware/validation.middleware";
+import { ChangeInvoiceSignerDTO } from "./dto/changeInvoiceSigner.dto";
 import { CreateInvoiceDTO } from "./dto/createInvoice.dto";
 import { InvoiceController } from "./invoice.controller";
 
@@ -47,6 +49,13 @@ export class InvoiceRouter {
 
     // 4. Pay Invoice (Statis turunan id di atas `/:id`) -> Otomatis butuh 'update' / 'create'
     this.router.post("/:id/pay", this.invoiceController.pay);
+
+    this.router.patch(
+      "/:id/signer",
+      verifySuperAdmin,
+      validateBody(ChangeInvoiceSignerDTO),
+      this.invoiceController.changeSigner,
+    );
 
     // 5. Get Detail Invoice by ID -> Otomatis butuh 'read'
     this.router.get("/:id", this.invoiceController.getDetailInvoiceById);

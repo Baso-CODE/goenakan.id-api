@@ -139,7 +139,7 @@ export class RoleController {
   ) => {
     try {
       const permissions = await this.roleAccessService.getAllPermissionsList();
-      console.log("🔍 DEBUG PERMISSIONS FROM DB:", permissions);
+
       res.status(200).json({
         success: true,
         data: permissions,

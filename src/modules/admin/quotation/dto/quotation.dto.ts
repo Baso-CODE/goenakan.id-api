@@ -68,6 +68,11 @@ export class CreateQuotationDTO {
   @IsString()
   currencyCode?: string;
 
+  @IsOptional()
+  @EmptyStringToUndefined
+  @IsUUID(4)
+  signerUserId?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateQuotationItemDTO)
@@ -117,6 +122,11 @@ export class UpdateQuotationDTO {
   @IsOptional()
   @IsString()
   paymentTerms?: string;
+
+  @IsOptional()
+  @EmptyStringToUndefined
+  @IsUUID(4)
+  signerUserId?: string;
 
   @IsOptional()
   @IsArray()

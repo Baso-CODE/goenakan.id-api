@@ -102,6 +102,10 @@ export class CreateInvoiceDTO {
   customAmount?: number;
 
   @IsOptional()
+  @IsUUID(4)
+  signerUserId?: string;
+
+  @IsOptional()
   @IsArray()
   @ArrayNotEmpty()
   @ValidateNested({ each: true })

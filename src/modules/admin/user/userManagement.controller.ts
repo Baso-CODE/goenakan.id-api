@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
-
+import { AuthenticatedRequest } from "../../../middleware/AuthenticatedUser";
+import { ApiError } from "../../../utils/api-error";
 import { CreateUserDTO, UpdateUserDTO } from "./dto/userManagement.dto";
 import { UserService } from "./userManagement.service";
 
@@ -120,6 +121,59 @@ export class UserController {
       const result = await this.userService.resendAdminInvitation(id);
 
       res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // ==========================================
+  // UPDATE USER SIGNATURE
+  // ==========================================
+  updateSignature = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const actorId = authReq.user?.id;
+
+      if (!actorId) {
+        throw new ApiError("Unauthorized: User ID tidak ditemukan.", 401);
+      }
+
+      // /me/signature => gunakan user login
+      // /:id/signature => gunakan target dari URL
+      const targetUserId = req.params.id ? String(req.params.id) : actorId;
+
+      const file: Express.Multer.File | undefined = req.file;
+
+      const result = await this.userService.updateUserSignature(
+        actorId,
+        targetUserId,
+        file,
+      );
+
+      res.status(200).json({
+        success: true,
+        message: "Tanda tangan berhasil diperbarui.",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getMySignature = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = (req as AuthenticatedRequest).user?.id;
+
+      if (!userId) {
+        throw new ApiError("Unauthorized", 401);
+      }
+
+      const result = await this.userService.getMySignature(userId);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
     } catch (error) {
       next(error);
     }

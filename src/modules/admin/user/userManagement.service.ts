@@ -1,8 +1,8 @@
-import * as argon2 from "argon2";
-import { injectable } from "tsyringe";
-
 import { Prisma } from "@prisma/client";
+import * as argon2 from "argon2";
 import { createHash, randomBytes } from "crypto";
+import sharp from "sharp";
+import { injectable } from "tsyringe";
 import { ApiError } from "../../../utils/api-error";
 import { CloudinaryService } from "../../cloudinary/cloudinary.service";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -324,7 +324,7 @@ export class UserService {
         email: true,
         createdAt: true,
         image: true,
-
+        signatureUrl: true,
         // Hanya digunakan di backend untuk menentukan status.
         emailVerified: true,
         verificationToken: true,
@@ -569,6 +569,7 @@ export class UserService {
         name: true,
         email: true,
         image: true,
+        signatureUrl: true,
         roleId: true,
         createdAt: true,
         role: {
@@ -586,5 +587,143 @@ export class UserService {
     }
 
     return user;
+  }
+
+  async updateUserSignature(
+    actorId: string,
+    targetUserId: string,
+    file?: Express.Multer.File,
+  ) {
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actorId },
+      select: {
+        id: true,
+        role: { select: { name: true } },
+      },
+    });
+
+    if (!actor) {
+      throw new ApiError("Unauthorized", 401);
+    }
+
+    const isSuperAdmin = actor.role.name === "SUPER_ADMIN";
+    const isOwnSalesSignature =
+      actor.id === targetUserId && actor.role.name === "ADMIN_SALES";
+
+    if (!isSuperAdmin && !isOwnSalesSignature) {
+      throw new ApiError(
+        "Tidak memiliki izin mengganti tanda tangan user ini.",
+        403,
+      );
+    }
+
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: {
+        id: true,
+        role: { select: { name: true } },
+      },
+    });
+
+    if (!target) {
+      throw new ApiError("User tidak ditemukan.", 404);
+    }
+
+    if (!["SUPER_ADMIN", "ADMIN_SALES"].includes(target.role.name)) {
+      throw new ApiError(
+        "Tanda tangan hanya untuk Super Admin dan Admin Sales.",
+        400,
+      );
+    }
+
+    if (!file?.buffer?.length) {
+      throw new ApiError("File tanda tangan wajib diunggah.", 400);
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      throw new ApiError("Ukuran tanda tangan maksimal 2 MB.", 400);
+    }
+
+    let format: string | undefined;
+
+    try {
+      const metadata = await sharp(file.buffer).metadata();
+      format = metadata.format;
+    } catch {
+      throw new ApiError("Gambar tanda tangan tidak valid.", 400);
+    }
+
+    if (!format || !["png", "jpeg", "webp"].includes(format)) {
+      throw new ApiError("Format tanda tangan harus PNG, JPG, atau WebP.", 400);
+    }
+
+    let uploaded;
+
+    try {
+      uploaded = await this.cloudinary.upload(file, {
+        folder: "user-signatures",
+        resource_type: "image",
+        maxWidth: 800,
+        maxHeight: 400,
+      });
+    } catch {
+      throw new ApiError("Gagal mengunggah tanda tangan.", 500);
+    }
+
+    try {
+      return await this.prisma.user.update({
+        where: { id: targetUserId },
+        data: {
+          signatureUrl: uploaded.secure_url,
+          signaturePublicId: uploaded.public_id,
+        },
+        select: {
+          id: true,
+          name: true,
+          signatureUrl: true,
+          signaturePublicId: true,
+        },
+      });
+    } catch (error) {
+      try {
+        await this.cloudinary.delete(uploaded.public_id);
+      } catch (cleanupError) {
+        console.error("Gagal membersihkan upload signature:", cleanupError);
+      }
+
+      throw error;
+    }
+  }
+  async getMySignature(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        signatureUrl: true,
+        role: {
+          select: {
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new ApiError("User tidak ditemukan.", 404);
+    }
+
+    if (!["SUPER_ADMIN", "ADMIN_SALES"].includes(user.role.name)) {
+      throw new ApiError("Role tidak diizinkan mengelola tanda tangan.", 403);
+    }
+
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role.name,
+      signatureUrl: user.signatureUrl,
+    };
   }
 }
