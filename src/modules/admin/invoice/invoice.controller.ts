@@ -1,11 +1,12 @@
 // src/modules/invoice/invoice.controller.ts
 import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
+import { AuthenticatedRequest } from "../../../middleware/AuthenticatedUser";
 import { ApiError } from "../../../utils/api-error";
+import { ChangeInvoiceSignerDTO } from "./dto/changeInvoiceSigner.dto";
 import { CreateInvoiceDTO } from "./dto/createInvoice.dto";
 import { PayInvoiceDTO } from "./dto/updateInvoice.dto";
 import { InvoiceService } from "./invoice.service";
-
 @injectable()
 export class InvoiceController {
   constructor(private readonly invoiceService: InvoiceService) {}
@@ -118,6 +119,38 @@ export class InvoiceController {
       res.status(200).json({
         success: true,
         message: "Invoice berhasil dihapus",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  changeSigner = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const actorUserId = (req as AuthenticatedRequest).user?.id;
+
+      if (!actorUserId) {
+        throw new ApiError("Unauthorized", 401);
+      }
+
+      const invoiceId = Number(req.params.id);
+
+      if (!Number.isSafeInteger(invoiceId) || invoiceId <= 0) {
+        throw new ApiError("ID Invoice tidak valid.", 400);
+      }
+
+      const dto = req.body as ChangeInvoiceSignerDTO;
+
+      const result = await this.invoiceService.changeInvoiceSigner(
+        invoiceId,
+        actorUserId,
+        dto,
+      );
+
+      res.status(200).json({
+        success: true,
+        message: "Penandatangan Invoice berhasil diganti.",
         data: result,
       });
     } catch (error) {

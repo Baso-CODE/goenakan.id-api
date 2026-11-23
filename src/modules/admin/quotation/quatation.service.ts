@@ -1,12 +1,12 @@
 import { Prisma } from "@prisma/client";
 import { injectable } from "tsyringe";
-
 import { ApiError } from "../../../utils/api-error";
 import { CounterService } from "../../../utils/counter.service";
 import { CloudinaryService } from "../../cloudinary/cloudinary.service";
 import { PaginationService } from "../../pagination/pagination.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { buildQuotationTrackingEvent } from "../../tracking-outbox/quotation-tracking.helper";
+import { resolveDocumentSigner } from "../document-signer/document-signer.helper";
 import { CreateFollowUpDTO } from "./dto/follow-up.dto";
 import { CreateQuotationDTO, UpdateQuotationDTO } from "./dto/quotation.dto";
 
@@ -243,6 +243,7 @@ export class QuotationService {
   async createQuotation(
     data: CreateQuotationDTO,
     files: Express.Multer.File[],
+    actorUserId: string,
   ) {
     if (!data.clientId) {
       throw new ApiError(
@@ -250,6 +251,12 @@ export class QuotationService {
         400,
       );
     }
+
+    const signer = await resolveDocumentSigner(
+      this.prisma,
+      actorUserId,
+      data.signerUserId,
+    );
 
     // A. CEK CLIENT SEBELUM TRANSAKSI MULAI (Agar bisa dapat custCode)
     const client = await this.prisma.client.findUnique({
@@ -571,7 +578,11 @@ export class QuotationService {
           date: data.date || new Date(),
           validUntil: data.validUntil,
           status: "DRAFT",
-          userId: data.userId || null,
+          userId: actorUserId,
+          // Penandatangan + snapshot.
+          signerUserId: signer.signerUserId,
+          signerName: signer.signerName,
+          signerSignatureUrl: signer.signerSignatureUrl,
           clientId: data.clientId,
           picId: (data as any).picId || null,
           currencyCode: data.currencyCode || "IDR",
@@ -617,6 +628,7 @@ export class QuotationService {
   async updateQuotation(
     id: string,
     data: UpdateQuotationDTO,
+    actorUserId: string,
     files: Express.Multer.File[] = [],
   ) {
     const existing = await this.prisma.quotation.findUnique({
@@ -626,6 +638,15 @@ export class QuotationService {
     if (!existing) {
       throw new ApiError("Quotation not found", 404);
     }
+
+    const signer =
+      data.signerUserId !== undefined
+        ? await resolveDocumentSigner(
+            this.prisma,
+            actorUserId,
+            data.signerUserId,
+          )
+        : null;
 
     const { items, notes, ...headerData } = data;
 
@@ -965,9 +986,7 @@ export class QuotationService {
         ...((headerData as any).updatedById && {
           updatedById: (headerData as any).updatedById,
         }),
-        ...(headerData.userId !== undefined && {
-          userId: headerData.userId || null,
-        }),
+
         ...(headerData.clientId !== undefined && {
           clientId: headerData.clientId || null,
         }),
@@ -980,8 +999,18 @@ export class QuotationService {
         ...(headerData.paymentTerms !== undefined && {
           paymentTerms: headerData.paymentTerms || null,
         }),
+
+        ...(signer
+          ? {
+              signerUserId: signer.signerUserId,
+              signerName: signer.signerName,
+              signerSignatureUrl: signer.signerSignatureUrl,
+            }
+          : {}),
+
         subTotal: newSubTotal,
         totalAmount: newTotalAmount,
+        updatedById: actorUserId,
       };
 
       const currentQuotation = await tx.quotation.findUniqueOrThrow({
@@ -1162,7 +1191,19 @@ export class QuotationService {
           },
         },
         user: {
-          select: { name: true, email: true },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        signer: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+          },
         },
         items: {
           include: {
@@ -1433,6 +1474,17 @@ export class QuotationService {
       validUntil: quotation.validUntil ?? null,
       items: normalizedItems,
       createdBy: quotation.user,
+
+      // Format kompatibel dengan quotationPrint.tsx
+      sales: {
+        id: quotation.signerUserId ?? null,
+        name: quotation.signerName ?? quotation.user?.name ?? "Goenakan Admin",
+        email: quotation.signer?.email ?? quotation.user?.email ?? null,
+        phone: quotation.signer?.phone ?? null,
+
+        // Gunakan snapshot, bukan signature profil terbaru.
+        signatureUrl: quotation.signerSignatureUrl ?? null,
+      },
     };
   }
 

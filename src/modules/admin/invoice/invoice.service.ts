@@ -2,13 +2,14 @@
 import { InvoiceBillingMode, Prisma } from "@prisma/client";
 import { format } from "date-fns";
 import { injectable } from "tsyringe";
-
 import { ApiError } from "../../../utils/api-error";
 import { PaginationService } from "../../pagination/pagination.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { hasExistingGA4Purchase } from "../../tracking-outbox/ga4-purchase-idempotency.helper";
 import { buildGA4Purchase } from "../../tracking-outbox/ga4-purchase.helper";
+import { resolveDocumentSigner } from "../document-signer/document-signer.helper";
 import { OrderService } from "../order/order.service";
+import { ChangeInvoiceSignerDTO } from "./dto/changeInvoiceSigner.dto";
 import {
   CreateInvoiceDTO,
   InvoiceCategory,
@@ -38,6 +39,11 @@ export class InvoiceService {
       selectedItems,
       notes,
     } = data;
+    const signer = await resolveDocumentSigner(
+      this.prisma,
+      userId,
+      data.signerUserId,
+    );
     const billingMode = data.billingMode ?? InvoiceBillingMode.STANDARD;
     if (status === InvoiceStatus.PAID)
       throw new ApiError(
@@ -270,6 +276,10 @@ export class InvoiceService {
             orderId: order.id,
             clientId: order.clientId,
             userId,
+            // User yang menandatangani invoice
+            signerUserId: signer.signerUserId,
+            signerName: signer.signerName,
+            signerSignatureUrl: signer.signerSignatureUrl,
             totalAmount: invoiceAmount,
             category,
             billingMode,
@@ -837,6 +847,22 @@ export class InvoiceService {
             },
           },
         },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+          },
+        },
+        signer: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+          },
+        },
         items: {
           include: {
             orderProduct: {
@@ -1005,6 +1031,15 @@ export class InvoiceService {
 
     return {
       ...invoice,
+
+      signerInfo: {
+        id: invoice.signerUserId ?? null,
+        name: invoice.signerName ?? invoice.user?.name ?? "Goenakan Admin",
+        email: invoice.signer?.email ?? invoice.user?.email ?? null,
+        phone: invoice.signer?.phone ?? invoice.user?.phone ?? null,
+        signatureUrl: invoice.signerSignatureUrl ?? null,
+      },
+
       items: formattedItems,
       previousInvoice,
       totalPreviousPaid: totalPreviousPaid.toNumber(),
@@ -1077,6 +1112,179 @@ export class InvoiceService {
         date: format(date, "dd MMM"),
         revenue: revenueByDay.get(day) || 0,
       };
+    });
+  }
+
+  async changeInvoiceSigner(
+    invoiceId: number,
+    actorUserId: string,
+    data: ChangeInvoiceSignerDTO,
+  ) {
+    if (!Number.isSafeInteger(invoiceId) || invoiceId <= 0) {
+      throw new ApiError("ID Invoice tidak valid.", 400);
+    }
+
+    const reason = data.reason?.trim();
+
+    if (!reason || reason.length < 10 || reason.length > 500) {
+      throw new ApiError("Alasan perubahan harus 10–500 karakter.", 400);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // ==========================================
+      // 1. VALIDASI SUPER ADMIN
+      // ==========================================
+      const actor = await tx.user.findUnique({
+        where: { id: actorUserId },
+        select: {
+          id: true,
+          role: {
+            select: { name: true },
+          },
+        },
+      });
+
+      if (!actor) {
+        throw new ApiError("User tidak ditemukan.", 401);
+      }
+
+      if (actor.role.name !== "SUPER_ADMIN") {
+        throw new ApiError(
+          "Hanya Super Admin yang dapat mengganti penandatangan Invoice.",
+          403,
+        );
+      }
+
+      // ==========================================
+      // 2. AMBIL INVOICE SEBELUM PERUBAHAN
+      // ==========================================
+      const invoice = await tx.invoice.findUnique({
+        where: { id: invoiceId },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          userId: true,
+          status: true,
+          signerUserId: true,
+          signerName: true,
+          signerSignatureUrl: true,
+        },
+      });
+
+      if (!invoice) {
+        throw new ApiError("Invoice tidak ditemukan.", 404);
+      }
+
+      if (invoice.status === "CANCELLED") {
+        throw new ApiError(
+          "Penandatangan Invoice yang dibatalkan tidak dapat diubah.",
+          400,
+        );
+      }
+
+      // ==========================================
+      // 3. VALIDASI SALES PENGGANTI
+      // ==========================================
+      const signer = await tx.user.findUnique({
+        where: { id: data.signerUserId },
+        select: {
+          id: true,
+          name: true,
+          signatureUrl: true,
+          role: {
+            select: { name: true },
+          },
+        },
+      });
+
+      if (!signer) {
+        throw new ApiError("User penandatangan tidak ditemukan.", 404);
+      }
+
+      if (!["SUPER_ADMIN", "ADMIN_SALES"].includes(signer.role.name)) {
+        throw new ApiError(
+          "Penandatangan harus memiliki role ADMIN_SALES atau SUPER_ADMIN.",
+          400,
+        );
+      }
+
+      const signerName = signer.name?.trim();
+      const signatureUrl = signer.signatureUrl?.trim();
+
+      if (!signerName) {
+        throw new ApiError("Nama penandatangan belum tersedia.", 400);
+      }
+
+      if (!signatureUrl) {
+        throw new ApiError(
+          "Sales yang dipilih belum memiliki tanda tangan.",
+          400,
+        );
+      }
+
+      if (invoice.signerUserId === signer.id) {
+        throw new ApiError(
+          "Penandatangan yang dipilih sama dengan penandatangan saat ini.",
+          400,
+        );
+      }
+
+      // ==========================================
+      // 4. UPDATE SNAPSHOT INVOICE
+      // ==========================================
+      // Kondisi signerUserId melindungi dari
+      // perubahan bersamaan oleh dua admin.
+      const updated = await tx.invoice.updateMany({
+        where: {
+          id: invoiceId,
+          signerUserId: invoice.signerUserId,
+        },
+        data: {
+          signerUserId: signer.id,
+          signerName,
+          signerSignatureUrl: signatureUrl,
+        },
+      });
+
+      if (updated.count !== 1) {
+        throw new ApiError(
+          "Penandatangan telah berubah. Muat ulang Invoice dan coba lagi.",
+          409,
+        );
+      }
+
+      // ==========================================
+      // 5. SIMPAN AUDIT LOG
+      // ==========================================
+      await tx.invoiceSignerAudit.create({
+        data: {
+          invoiceId: invoice.id,
+          changedByUserId: actor.id,
+          previousSignerUserId: invoice.signerUserId,
+          previousSignerName: invoice.signerName,
+          previousSignatureUrl: invoice.signerSignatureUrl,
+          newSignerUserId: signer.id,
+          newSignerName: signerName,
+          newSignatureUrl: signatureUrl,
+          reason,
+        },
+      });
+
+      // ==========================================
+      // 6. RETURN DATA TERBARU
+      // ==========================================
+      return tx.invoice.findUniqueOrThrow({
+        where: { id: invoiceId },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          userId: true,
+          status: true,
+          signerUserId: true,
+          signerName: true,
+          signerSignatureUrl: true,
+        },
+      });
     });
   }
 }

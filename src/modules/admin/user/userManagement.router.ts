@@ -6,6 +6,7 @@ import { AuthenticatedRequest } from "../../../middleware/AuthenticatedUser";
 import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
 import { parseFormData } from "../../../middleware/parseFormData.middleware";
 import { autoVerifyPermission } from "../../../middleware/permission.middleware";
+import { authLimiter } from "../../../middleware/rateLimiter.middleware";
 import { validateBody } from "../../../middleware/validation.middleware";
 
 import {
@@ -13,14 +14,11 @@ import {
   CreateUserDTO,
   UpdateUserDTO,
 } from "./dto/userManagement.dto";
-
-import { authLimiter } from "../../../middleware/rateLimiter.middleware";
 import { UserController } from "./userManagement.controller";
 
 // ==========================================
-// MULTER CONFIG
+// PROFILE IMAGE UPLOAD
 // ==========================================
-
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -36,13 +34,37 @@ const upload = multer({
   },
 });
 
+// ==========================================
+// SIGNATURE IMAGE UPLOAD
+// ==========================================
+const uploadSignature = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 2 * 1024 * 1024,
+    files: 1,
+  },
+  fileFilter: (_req, file, cb) => {
+    const allowedTypes = ["image/png", "image/jpeg", "image/webp"];
+
+    if (!allowedTypes.includes(file.mimetype)) {
+      return cb(
+        new Error("Tanda tangan harus menggunakan PNG, JPG, atau WebP."),
+      );
+    }
+
+    cb(null, true);
+  },
+});
+
+// ==========================================
+// SUPER ADMIN AUTHORIZATION
+// ==========================================
 const requireSuperAdmin = (req: Request, res: Response, next: NextFunction) => {
   const authReq = req as AuthenticatedRequest;
 
   if (authReq.user?.role !== "SUPER_ADMIN") {
     res.status(403).json({
-      message:
-        "Hanya Super Admin yang dapat membuat akun dan mengirim ulang undangan.",
+      message: "Hanya Super Admin yang memiliki akses.",
     });
     return;
   }
@@ -62,9 +84,9 @@ export class UserRouter {
   }
 
   private initializeRoutes = (): void => {
-    // ==================================================
-    // PUBLIC: AKTIVASI AKUN (TIDAK PERLU LOGIN)
-    // ==================================================
+    // ==========================================
+    // PUBLIC: ACTIVATE ADMIN ACCOUNT
+    // ==========================================
     this.router.post(
       "/activate-account",
       authLimiter,
@@ -72,25 +94,57 @@ export class UserRouter {
       this.userController.activateAdminAccount,
     );
 
-    // ==================================================
-    // AUTHENTICATION
-    // ==================================================
+    // ==========================================
+    // AUTHENTICATION FOR PRIVATE ROUTES
+    // ==========================================
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
 
+    // ==========================================
+    // OWN SIGNATURE
+    // ==========================================
+    // Tidak memerlukan permission update_user.
+    // Hanya pemilik akun yang bisa mengganti
+    // tanda tangannya sendiri.
+    // Role diperiksa ulang di UserService.
+    this.router.get("/me/signature", this.userController.getMySignature);
+
+    this.router.patch(
+      "/me/signature",
+      uploadSignature.single("signature"),
+      this.userController.updateSignature,
+    );
+    // ==========================================
+    // DYNAMIC USER PERMISSIONS
+    // ==========================================
     this.router.use(autoVerifyPermission("user"));
 
-    // ==================================================
+    // ==========================================
     // READ USERS
-    // ==================================================
+    // ==========================================
     this.router.get("/", this.userController.getAllUsers);
 
     this.router.get("/authors", this.userController.getAuthorsForFilter);
 
+    // ==========================================
+    // UPDATE OTHER USER SIGNATURE
+    // SUPER ADMIN ONLY
+    // ==========================================
+    this.router.patch(
+      "/:id/signature",
+      requireSuperAdmin,
+      uploadSignature.single("signature"),
+      this.userController.updateSignature,
+    );
+
+    // ==========================================
+    // GET USER BY ID
+    // ==========================================
     this.router.get("/:id", this.userController.getUserById);
 
-    // ==================================================
-    // CREATE USER - SUPER ADMIN ONLY
-    // ==================================================
+    // ==========================================
+    // CREATE USER
+    // SUPER ADMIN ONLY
+    // ==========================================
     this.router.post(
       "/",
       requireSuperAdmin,
@@ -100,20 +154,23 @@ export class UserRouter {
       this.userController.createUser,
     );
 
-    // ==================================================
-    // RESEND INVITATION - SUPER ADMIN ONLY
-    // ============================================invitation======
+    // ==========================================
+    // RESEND ADMIN INVITATION
+    // SUPER ADMIN ONLY
+    // ==========================================
     this.router.post(
       "/:id/resend-invitation",
       requireSuperAdmin,
       this.userController.resendAdminInvitation,
     );
 
-    // ==================================================
+    // ==========================================
     // UPDATE USER
-    // ==================================================
+    // SUPER ADMIN ONLY
+    // ==========================================
     this.router.patch(
       "/:id",
+      requireSuperAdmin,
       upload.single("image"),
       parseFormData,
       validateBody(UpdateUserDTO),

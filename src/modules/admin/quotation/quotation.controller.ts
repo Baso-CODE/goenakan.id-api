@@ -1,9 +1,10 @@
 import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
+import { AuthenticatedRequest } from "../../../middleware/AuthenticatedUser";
+import { ApiError } from "../../../utils/api-error";
 import { CreateFollowUpDTO } from "./dto/follow-up.dto";
 import { CreateQuotationDTO, UpdateQuotationDTO } from "./dto/quotation.dto";
 import { QuotationService } from "./quatation.service";
-
 @injectable()
 export class QuotationController {
   constructor(private readonly quotationService: QuotationService) {}
@@ -61,17 +62,23 @@ export class QuotationController {
   };
 
   // === CREATE ===
+
   create = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const body = req.body as CreateQuotationDTO;
+      const actorUserId = (req as AuthenticatedRequest).user?.id;
 
-      const userId = (req as any).user?.id;
-      if (userId) {
-        body.userId = userId;
+      if (!actorUserId) {
+        throw new ApiError("Unauthorized: User ID tidak ditemukan.", 401);
       }
 
+      const body = req.body as CreateQuotationDTO;
       const files = (req.files as Express.Multer.File[]) ?? [];
-      const result = await this.quotationService.createQuotation(body, files);
+
+      const result = await this.quotationService.createQuotation(
+        body,
+        files,
+        actorUserId,
+      );
 
       res.status(201).json(result);
     } catch (error) {
@@ -80,25 +87,28 @@ export class QuotationController {
   };
 
   // === UPDATE ===
+
   update = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      console.log(req.body);
       const { id } = req.params;
 
-      const body = req.body as UpdateQuotationDTO;
+      const actorUserId = (req as AuthenticatedRequest).user?.id;
 
-      const userId = (req as any).user?.id;
-      if (userId) {
-        (body as any).updatedById = userId;
+      if (!actorUserId) {
+        throw new ApiError("Unauthorized: User ID tidak ditemukan.", 401);
       }
+
+      const body = req.body as UpdateQuotationDTO;
 
       const files = (req.files as Express.Multer.File[]) ?? [];
 
       const result = await this.quotationService.updateQuotation(
         id,
         body,
+        actorUserId,
         files,
       );
+
       res.status(200).json(result);
     } catch (error) {
       next(error);
