@@ -10,6 +10,11 @@ import {
   round,
 } from "./analytics.helper";
 
+import {
+  buildCustomerBreakdown,
+  type ChannelOrderChartData,
+  type CustomerRegionRow,
+} from "./customer-breakdown.helper";
 // =========================================================================
 // TYPE DEFINITIONS
 // =========================================================================
@@ -23,14 +28,6 @@ interface MonthlyComparisonData {
   repeatSales: number;
 }
 
-interface RegionData {
-  id: string;
-  region: string;
-  totalCustomerSet: Set<string>;
-  totalSales: number;
-  lastOrder: Date;
-}
-
 interface CustomerAnalyticsResult {
   metrics: {
     newCustomer: number;
@@ -40,12 +37,14 @@ interface CustomerAnalyticsResult {
     cac: number | null;
     totalMarketingCost: number | null;
   };
+
   graphs: {
     retention: Array<{
       label: string;
       repeatRate: number;
       churnRate: number | null;
     }>;
+
     comparison: Array<{
       label: string;
       newOrderPct: number;
@@ -53,18 +52,17 @@ interface CustomerAnalyticsResult {
       avgSalesNew: number;
       avgSalesRepeat: number;
     }>;
-  };
-  regionData: Array<{
-    id: string;
-    region: string;
-    totalCustomer: number;
-    totalSales: number;
-    lastOrder: string;
-  }>;
-  period: { start: Date; end: Date };
-}
 
-const UNKNOWN_REGION = "Unknown Region";
+    channelOrders: ChannelOrderChartData;
+  };
+
+  regionData: CustomerRegionRow[];
+
+  period: {
+    start: Date;
+    end: Date;
+  };
+}
 
 // =========================================================================
 // SERVICE
@@ -81,71 +79,137 @@ export class CustomerAnalyticsService {
     const { start, end } = range;
     const rangeDays = getRangeDays(range);
 
-    // 1. Tarik orders di period dengan data client
+    // ==========================================
+    // 1. FETCH ORDERS WITH CLIENT & CHANNEL
+    // ==========================================
     const orders = await this.prisma.order.findMany({
       where: {
-        dateOrder: { gte: start, lte: end },
-        status: { not: OrderStatus.CANCELLED },
+        dateOrder: {
+          gte: start,
+          lte: end,
+        },
+        status: {
+          not: OrderStatus.CANCELLED,
+        },
       },
+
       select: {
         id: true,
         clientId: true,
         dateOrder: true,
         totalAmount: true,
+        currencyCode: true,
+
+        purchaseChannel: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+
         client: {
           select: {
             type: true,
-            b2b: { select: { city: true, province: true } },
-            b2c: { select: { city: true, province: true } },
+
+            b2b: {
+              select: {
+                country: true,
+                province: true,
+                city: true,
+              },
+            },
+
+            b2c: {
+              select: {
+                country: true,
+                province: true,
+                city: true,
+              },
+            },
           },
         },
       },
-      // Secondary sort by id untuk deterministic order saat dateOrder sama
+
       orderBy: [{ dateOrder: "asc" }, { id: "asc" }],
     });
 
-    // Early return kalau tidak ada data
+    // ==========================================
+    // EARLY RETURN
+    // ==========================================
     if (orders.length === 0) {
       return this.buildEmptyResult(range);
     }
 
-    // 2. Cari first order ID untuk setiap client (ALL TIME, bukan cuma di range)
+    // ==========================================
+    // 2. GET FIRST ORDER FOR EACH CUSTOMER
+    // ==========================================
+    // Mengambil first order berdasarkan seluruh
+    // histori, bukan hanya periode filter.
     const clientIds = Array.from(
-      new Set(orders.map((o) => o.clientId).filter((id): id is string => !!id)),
+      new Set(
+        orders
+          .map((order) => order.clientId)
+          .filter((id): id is string => Boolean(id)),
+      ),
     );
 
     const firstOrders = await this.prisma.order.findMany({
       where: {
-        clientId: { in: clientIds },
-        status: { not: OrderStatus.CANCELLED },
+        clientId: {
+          in: clientIds,
+        },
+        status: {
+          not: OrderStatus.CANCELLED,
+        },
       },
-      select: { id: true, clientId: true, dateOrder: true },
+
+      select: {
+        id: true,
+        clientId: true,
+        dateOrder: true,
+      },
+
       orderBy: [{ dateOrder: "asc" }, { id: "asc" }],
     });
 
     const firstOrderIdByClient = new Map<string, string>();
-    for (const o of firstOrders) {
-      if (o.clientId && !firstOrderIdByClient.has(o.clientId)) {
-        firstOrderIdByClient.set(o.clientId, o.id);
+
+    for (const order of firstOrders) {
+      if (order.clientId && !firstOrderIdByClient.has(order.clientId)) {
+        firstOrderIdByClient.set(order.clientId, order.id);
       }
     }
 
-    // 3. Penampung hasil
+    // ==========================================
+    // 3. INITIALIZE ANALYTICS ACCUMULATORS
+    // ==========================================
     let totalRevenue = 0;
-    const newCustomers = new Set<string>();
-    const returningCustomers = new Set<string>();
-    const uniqueCustomers = new Set<string>();
-    const monthlyMap = new Map<string, MonthlyComparisonData>();
-    const regionMap = new Map<string, RegionData>();
 
-    // 4. Iterasi orders
+    const newCustomers = new Set<string>();
+
+    const returningCustomers = new Set<string>();
+
+    const uniqueCustomers = new Set<string>();
+
+    const monthlyMap = new Map<string, MonthlyComparisonData>();
+
+    // ==========================================
+    // 4. PROCESS CUSTOMER ORDERS
+    // ==========================================
     for (const order of orders) {
-      if (!order.clientId || !order.client) continue;
+      if (!order.clientId || !order.client) {
+        continue;
+      }
 
       const orderRevenue = Number(order.totalAmount || 0);
+
       totalRevenue += orderRevenue;
+
       uniqueCustomers.add(order.clientId);
 
+      // ==========================================
+      // NEW VS RETURNING CUSTOMER
+      // ==========================================
       const isFirstOrder =
         firstOrderIdByClient.get(order.clientId) === order.id;
 
@@ -155,8 +219,11 @@ export class CustomerAnalyticsService {
         returningCustomers.add(order.clientId);
       }
 
-      // Monthly grouping
+      // ==========================================
+      // DATE GROUPING
+      // ==========================================
       const dateKey = getDateKey(order.dateOrder, rangeDays);
+
       const sortKey = getDateSortKey(order.dateOrder, rangeDays);
 
       if (!monthlyMap.has(dateKey)) {
@@ -169,60 +236,61 @@ export class CustomerAnalyticsService {
           repeatSales: 0,
         });
       }
+
       const monthData = monthlyMap.get(dateKey)!;
 
       if (isFirstOrder) {
-        monthData.newOrderCount++;
+        monthData.newOrderCount += 1;
         monthData.newSales += orderRevenue;
       } else {
-        monthData.repeatOrderCount++;
+        monthData.repeatOrderCount += 1;
         monthData.repeatSales += orderRevenue;
       }
 
-      // Region grouping
-      const regionName = this.resolveRegionName(order.client);
-
-      if (!regionMap.has(regionName)) {
-        regionMap.set(regionName, {
-          id: regionName,
-          region: regionName,
-          totalCustomerSet: new Set<string>(),
-          totalSales: 0,
-          lastOrder: order.dateOrder,
-        });
-      }
-      const regData = regionMap.get(regionName)!;
-      regData.totalCustomerSet.add(order.clientId);
-      regData.totalSales += orderRevenue;
-      if (order.dateOrder > regData.lastOrder) {
-        regData.lastOrder = order.dateOrder;
-      }
+      // Region dan Purchase Channel tidak lagi
+      // dihitung di dalam loop ini.
+      // Keduanya ditangani oleh
+      // buildCustomerBreakdown().
     }
 
-    // 5. CLV
+    // ==========================================
+    // 5. CUSTOMER LIFETIME VALUE
+    // ==========================================
     const totalUnique = uniqueCustomers.size;
+
     const clv = totalUnique > 0 ? totalRevenue / totalUnique : 0;
 
-    // 6. CAC
+    // ==========================================
+    // 6. CUSTOMER ACQUISITION COST
+    // ==========================================
     const { cac, totalMarketingCost } = await this.calculateCAC(
       start,
       end,
       newCustomers.size,
     );
 
-    // 7. Build graphs
+    // ==========================================
+    // 7. SORT DATE GROUPS
+    // ==========================================
     const sortedMonthly = Array.from(monthlyMap.values()).sort((a, b) =>
       a.sortKey.localeCompare(b.sortKey),
     );
 
+    // ==========================================
+    // 8. NEW VS REPEAT CUSTOMER GRAPH
+    // ==========================================
     const comparisonGraph = sortedMonthly.map((data) => {
       const totalOrders = data.newOrderCount + data.repeatOrderCount;
+
       const newPct =
         totalOrders > 0 ? (data.newOrderCount / totalOrders) * 100 : 0;
+
       const repeatPct =
         totalOrders > 0 ? (data.repeatOrderCount / totalOrders) * 100 : 0;
+
       const avgNew =
         data.newOrderCount > 0 ? data.newSales / data.newOrderCount : 0;
+
       const avgRepeat =
         data.repeatOrderCount > 0
           ? data.repeatSales / data.repeatOrderCount
@@ -237,27 +305,42 @@ export class CustomerAnalyticsService {
       };
     });
 
+    // ==========================================
+    // 9. CUSTOMER RETENTION GRAPH
+    // ==========================================
     const retentionGraph = sortedMonthly.map((data) => {
       const totalOrders = data.newOrderCount + data.repeatOrderCount;
+
       const repeatRate =
         totalOrders > 0 ? (data.repeatOrderCount / totalOrders) * 100 : 0;
+
       return {
         label: data.dateKey,
         repeatRate: round(repeatRate, 1),
-        churnRate: null, // TODO: cohort analysis
+
+        // TODO: Implement cohort analysis.
+        churnRate: null,
       };
     });
 
-    const regionDataArray = Array.from(regionMap.values())
-      .map((r) => ({
-        id: r.id,
-        region: r.region,
-        totalCustomer: r.totalCustomerSet.size,
-        totalSales: r.totalSales,
-        lastOrder: r.lastOrder.toISOString(),
-      }))
-      .sort((a, b) => b.totalSales - a.totalSales);
+    // ==========================================
+    // 10. CUSTOMER REGION & CHANNEL BREAKDOWN
+    // ==========================================
+    // Helper ini menangani:
+    // - Country
+    // - Region / Province
+    // - City
+    // - Total Unique Customer
+    // - Total Sales by Currency
+    // - Last Order
+    // - Channel Order per Month
+    // - Unassigned Purchase Channel
+    // - Empty Month Buckets
+    const breakdown = buildCustomerBreakdown(orders, range);
 
+    // ==========================================
+    // 11. FINAL RESPONSE
+    // ==========================================
     return {
       metrics: {
         newCustomer: newCustomers.size,
@@ -267,34 +350,21 @@ export class CustomerAnalyticsService {
         cac,
         totalMarketingCost,
       },
+
       graphs: {
         retention: retentionGraph,
         comparison: comparisonGraph,
+
+        channelOrders: breakdown.channelOrders,
       },
-      regionData: regionDataArray,
-      period: { start, end },
+
+      regionData: breakdown.regionData,
+
+      period: {
+        start,
+        end,
+      },
     };
-  }
-
-  // =======================================================================
-  // HELPER: Resolve region name dari client data
-  // Format: "City, Province" jika dua-duanya ada
-  // =======================================================================
-  private resolveRegionName(client: {
-    type: string;
-    b2b: { city: string | null; province: string | null } | null;
-    b2c: { city: string | null; province: string | null } | null;
-  }): string {
-    const source = client.type === "B2B" ? client.b2b : client.b2c;
-    if (!source) return UNKNOWN_REGION;
-
-    const city = source.city?.trim();
-    const province = source.province?.trim();
-
-    if (city && province) return `${city}, ${province}`;
-    if (city) return city;
-    if (province) return province;
-    return UNKNOWN_REGION;
   }
 
   // =======================================================================
@@ -337,6 +407,7 @@ export class CustomerAnalyticsService {
   // =======================================================================
   // HELPER: Empty result struktur untuk konsistensi response
   // =======================================================================
+
   private buildEmptyResult(range: {
     start: Date;
     end: Date;
@@ -350,11 +421,16 @@ export class CustomerAnalyticsService {
         cac: null,
         totalMarketingCost: null,
       },
+
       graphs: {
         retention: [],
         comparison: [],
+
+        channelOrders: buildCustomerBreakdown([], range).channelOrders,
       },
+
       regionData: [],
+
       period: range,
     };
   }
