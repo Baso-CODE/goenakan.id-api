@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import { injectable } from "tsyringe";
 import { AuthenticatedRequest } from "../../../middleware/AuthenticatedUser";
 import { ApiError } from "../../../utils/api-error";
+import { ChangeQuotationSignerDTO } from "./dto/changeQuotationSigner.dto";
 import { CreateFollowUpDTO } from "./dto/follow-up.dto";
 import { CreateQuotationDTO, UpdateQuotationDTO } from "./dto/quotation.dto";
 import { QuotationService } from "./quatation.service";
@@ -87,7 +88,6 @@ export class QuotationController {
   };
 
   // === UPDATE ===
-
   update = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;
@@ -184,6 +184,34 @@ export class QuotationController {
 
       res.status(200).json({
         message: "Success fetch quotation for print",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  changeSigner = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const actorUserId = (req as AuthenticatedRequest).user?.id;
+
+      if (!actorUserId) {
+        throw new ApiError("Unauthorized.", 401);
+      }
+
+      const quotationId = String(req.params.id);
+
+      const dto = req.body as ChangeQuotationSignerDTO;
+
+      const result = await this.quotationService.changeQuotationSigner(
+        quotationId,
+        actorUserId,
+        dto,
+      );
+
+      res.status(200).json({
+        success: true,
+        message: "Penandatangan Quotation berhasil diganti.",
         data: result,
       });
     } catch (error) {
