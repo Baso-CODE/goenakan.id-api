@@ -1904,6 +1904,23 @@ model QuotationItemTier {
   @@map("quotation_item_tiers")
 }
 
+model QuotationSignerAudit {
+  id                   String   @id @default(cuid())
+  quotationId          String
+  changedByUserId      String
+  previousSignerUserId String?
+  previousSignerName   String?
+  previousSignatureUrl String?  @db.Text
+  newSignerUserId      String
+  newSignerName        String
+  newSignatureUrl      String   @db.Text
+  reason               String   @db.VarChar(500)
+  changedAt            DateTime @default(now())
+
+  @@index([quotationId, changedAt])
+  @@map("quotation_signer_audits")
+}
+
 // ===============================================
 // CURRENCY MASTER
 // ===============================================

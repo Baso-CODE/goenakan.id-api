@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { autoInjectable } from "tsyringe";
 
+import { verifySuperAdmin } from "../../../middleware/superAdmin.middleware";
+import { ChangeQuotationSignerDTO } from "./dto/changeQuotationSigner.dto";
 import { QuotationController } from "./quotation.controller";
-
 // DTOs & Middlewares
 import multer from "multer";
 import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
@@ -66,6 +67,14 @@ export class QuotationRouter {
       parseFormData,
       validateBody(CreateQuotationDTO),
       this.quotationController.create,
+    );
+
+    // CHANGE QUOTATION SIGNER - SUPER ADMIN ONLY
+    this.router.patch(
+      "/:id/signer",
+      verifySuperAdmin,
+      validateBody(ChangeQuotationSignerDTO),
+      this.quotationController.changeSigner,
     );
 
     // Update

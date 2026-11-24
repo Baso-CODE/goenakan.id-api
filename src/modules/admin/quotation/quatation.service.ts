@@ -7,6 +7,7 @@ import { PaginationService } from "../../pagination/pagination.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { buildQuotationTrackingEvent } from "../../tracking-outbox/quotation-tracking.helper";
 import { resolveDocumentSigner } from "../document-signer/document-signer.helper";
+import { ChangeQuotationSignerDTO } from "./dto/changeQuotationSigner.dto";
 import { CreateFollowUpDTO } from "./dto/follow-up.dto";
 import { CreateQuotationDTO, UpdateQuotationDTO } from "./dto/quotation.dto";
 
@@ -624,7 +625,6 @@ export class QuotationService {
   // ==========================================
   // 4. UPDATE QUOTATION (DIPERBARUI)
   // ==========================================
-  // MANUAL_QUOTATION_ITEM_SUPPORT_V2
   async updateQuotation(
     id: string,
     data: UpdateQuotationDTO,
@@ -639,14 +639,12 @@ export class QuotationService {
       throw new ApiError("Quotation not found", 404);
     }
 
-    const signer =
-      data.signerUserId !== undefined
-        ? await resolveDocumentSigner(
-            this.prisma,
-            actorUserId,
-            data.signerUserId,
-          )
-        : null;
+    if (data.signerUserId !== undefined) {
+      throw new ApiError(
+        "Gunakan fitur Ganti Penandatangan untuk mengubah signer Quotation.",
+        400,
+      );
+    }
 
     const { items, notes, ...headerData } = data;
 
@@ -999,14 +997,6 @@ export class QuotationService {
         ...(headerData.paymentTerms !== undefined && {
           paymentTerms: headerData.paymentTerms || null,
         }),
-
-        ...(signer
-          ? {
-              signerUserId: signer.signerUserId,
-              signerName: signer.signerName,
-              signerSignatureUrl: signer.signerSignatureUrl,
-            }
-          : {}),
 
         subTotal: newSubTotal,
         totalAmount: newTotalAmount,
@@ -1558,6 +1548,174 @@ export class QuotationService {
         },
       ],
       skipDuplicates: true,
+    });
+  }
+
+  async changeQuotationSigner(
+    quotationId: string,
+    actorUserId: string,
+    data: ChangeQuotationSignerDTO,
+  ) {
+    if (!actorUserId) {
+      throw new ApiError("Unauthorized.", 401);
+    }
+
+    if (typeof data.signerUserId !== "string" || !data.signerUserId.trim()) {
+      throw new ApiError("Penandatangan wajib dipilih.", 400);
+    }
+
+    const reason = data.reason?.trim();
+
+    if (!reason || reason.length < 10 || reason.length > 500) {
+      throw new ApiError("Alasan perubahan harus 10–500 karakter.", 400);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // ==========================================
+      // 1. VALIDASI SUPER ADMIN
+      // ==========================================
+      const actor = await tx.user.findUnique({
+        where: { id: actorUserId },
+        select: {
+          id: true,
+          role: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      });
+
+      if (!actor) {
+        throw new ApiError("User tidak ditemukan.", 401);
+      }
+
+      if (actor.role.name !== "SUPER_ADMIN") {
+        throw new ApiError(
+          "Hanya Super Admin yang dapat mengganti penandatangan Quotation.",
+          403,
+        );
+      }
+
+      // ==========================================
+      // 2. GET EXISTING QUOTATION
+      // ==========================================
+      const quotation = await tx.quotation.findUnique({
+        where: { id: quotationId },
+        select: {
+          id: true,
+          quotationNumber: true,
+          userId: true,
+          status: true,
+          updatedAt: true,
+          signerUserId: true,
+          signerName: true,
+          signerSignatureUrl: true,
+        },
+      });
+
+      if (!quotation) {
+        throw new ApiError("Quotation tidak ditemukan.", 404);
+      }
+
+      if (quotation.status === "CANCELLED") {
+        throw new ApiError(
+          "Penandatangan Quotation yang dibatalkan tidak dapat diubah.",
+          400,
+        );
+      }
+
+      // ==========================================
+      // 3. VALIDASI PENANDATANGAN BARU
+      // ==========================================
+      const signer = await resolveDocumentSigner(
+        tx,
+        actorUserId,
+        data.signerUserId,
+      );
+
+      const signatureUrl = signer.signerSignatureUrl?.trim();
+
+      if (!signatureUrl) {
+        throw new ApiError(
+          "Sales yang dipilih belum memiliki tanda tangan.",
+          400,
+        );
+      }
+
+      if (quotation.signerUserId === signer.signerUserId) {
+        throw new ApiError(
+          "Penandatangan yang dipilih sama dengan penandatangan saat ini.",
+          400,
+        );
+      }
+
+      // ==========================================
+      // 4. UPDATE SIGNER SNAPSHOT
+      // ==========================================
+      const updated = await tx.quotation.updateMany({
+        where: {
+          id: quotationId,
+          updatedAt: quotation.updatedAt,
+          status: quotation.status,
+          signerUserId: quotation.signerUserId,
+        },
+        data: {
+          signerUserId: signer.signerUserId,
+          signerName: signer.signerName,
+          signerSignatureUrl: signatureUrl,
+          updatedById: actorUserId,
+        },
+      });
+
+      if (updated.count !== 1) {
+        throw new ApiError(
+          "Quotation telah berubah. Muat ulang halaman dan coba lagi.",
+          409,
+        );
+      }
+
+      // ==========================================
+      // 5. SAVE AUDIT LOG
+      // ==========================================
+      await tx.quotationSignerAudit.create({
+        data: {
+          quotationId: quotation.id,
+          changedByUserId: actorUserId,
+
+          previousSignerUserId: quotation.signerUserId,
+
+          previousSignerName: quotation.signerName,
+
+          previousSignatureUrl: quotation.signerSignatureUrl,
+
+          newSignerUserId: signer.signerUserId,
+
+          newSignerName: signer.signerName,
+
+          newSignatureUrl: signatureUrl,
+
+          reason,
+        },
+      });
+
+      // ==========================================
+      // 6. RETURN UPDATED QUOTATION
+      // ==========================================
+      return tx.quotation.findUniqueOrThrow({
+        where: { id: quotationId },
+        select: {
+          id: true,
+          quotationNumber: true,
+          userId: true,
+          status: true,
+          signerUserId: true,
+          signerName: true,
+          signerSignatureUrl: true,
+          updatedById: true,
+          updatedAt: true,
+        },
+      });
     });
   }
 }
