@@ -118,6 +118,36 @@ export class AnalyticsController {
     }
   };
 
+  // ==========================================
+  // TAB 5: QUOTATION ANALYTICS
+  // ==========================================
+  getQuotationAnalytics = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const queryParams = this.parseFilterQuery(req, DEFAULT_RANGE);
+
+      const data =
+        await this.analyticsService.getQuotationAnalyticsData(queryParams);
+
+      res.status(200).json({
+        success: true,
+
+        data,
+
+        meta: {
+          range: queryParams.range,
+
+          generatedAt: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   // =======================================================================
   // PRIVATE HELPERS
   // =======================================================================

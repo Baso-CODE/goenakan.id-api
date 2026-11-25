@@ -16,7 +16,12 @@ import {
   incrementMap,
   round,
 } from "./analytics.helper";
-
+import {
+  calculateCategoryAverages,
+  LogisticsCategory,
+  resolveCombinedCategory,
+  resolveLogisticsCategory,
+} from "./logistics-averages.helper";
 // =========================================================================
 // TYPE DEFINITIONS
 // =========================================================================
@@ -34,6 +39,21 @@ interface OpsAnalyticsResult {
       avgProductionDays: number | null;
       avgShippingDays: number | null;
       avgFulfillmentDays: number | null;
+
+      avgProductionImportDays: number | null;
+      avgShippingImportDays: number | null;
+
+      avgProductionDomesticDays: number | null;
+      avgShippingDomesticDays: number | null;
+
+      productionImportCount: number;
+      shippingImportCount: number;
+
+      productionDomesticCount: number;
+      shippingDomesticCount: number;
+
+      unclassifiedProductionCount: number;
+      unclassifiedShippingCount: number;
     };
     lateDeliveries: {
       byMonth: Array<{ label: string; value: number }>;
@@ -138,59 +158,217 @@ export class OpsAnalyticsService {
       }),
     ]);
 
-    // 2. Average days dari data asli
-    const completedProductions = await this.prisma.productionTracker.findMany({
-      where: {
-        status: ProductionStatus.COMPLETED,
-        startDate: { not: null },
-        endDate: { not: null, gte: start, lte: end },
-      },
-      select: { startDate: true, endDate: true },
+    // ==========================================
+    // 2. AVERAGE PRODUCTION & SHIPPING DAYS
+    // ==========================================
+    const [completedProductions, arrivedShipments] = await Promise.all([
+      // ==========================================
+      // COMPLETED PRODUCTION
+      // ==========================================
+      this.prisma.productionTracker.findMany({
+        where: {
+          status: ProductionStatus.COMPLETED,
+
+          startDate: {
+            not: null,
+          },
+
+          endDate: {
+            not: null,
+            gte: start,
+            lte: end,
+          },
+        },
+
+        select: {
+          id: true,
+          startDate: true,
+          endDate: true,
+
+          vendor: {
+            select: {
+              country: true,
+            },
+          },
+        },
+      }),
+
+      // ==========================================
+      // ARRIVED SHIPMENTS
+      // ==========================================
+      this.prisma.shipment.findMany({
+        where: {
+          status: ShipmentStatus.ARRIVED,
+
+          departureDate: {
+            not: null,
+          },
+
+          arrivalDate: {
+            not: null,
+            gte: start,
+            lte: end,
+          },
+        },
+
+        select: {
+          id: true,
+          departureDate: true,
+          arrivalDate: true,
+
+          order: {
+            select: {
+              dateOrder: true,
+            },
+          },
+
+          items: {
+            select: {
+              orderProduct: {
+                select: {
+                  productionTrackers: {
+                    where: {
+                      status: ProductionStatus.COMPLETED,
+                      endDate: {
+                        not: null,
+                      },
+                    },
+
+                    select: {
+                      endDate: true,
+
+                      vendor: {
+                        select: {
+                          country: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    // ==========================================
+    // 2A. PRODUCTION CATEGORY BREAKDOWN
+    // ==========================================
+    const productionRecords = completedProductions.map((production) => ({
+      start: production.startDate,
+      end: production.endDate,
+
+      category: resolveLogisticsCategory(production.vendor?.country),
+    }));
+
+    const productionAverages = calculateCategoryAverages(productionRecords);
+
+    // ==========================================
+    // 2B. SHIPPING CATEGORY BREAKDOWN
+    // ==========================================
+    const shippingRecords = arrivedShipments.map((shipment) => {
+      let category: LogisticsCategory = "UNKNOWN";
+
+      const departureDate = shipment.departureDate;
+
+      if (departureDate && shipment.items.length > 0) {
+        const itemCategories = shipment.items.map((item) => {
+          const productions = item.orderProduct.productionTrackers.filter(
+            (production) =>
+              production.endDate !== null &&
+              production.endDate <= departureDate,
+          );
+
+          const vendorCountries = productions.map(
+            (production) => production.vendor?.country,
+          );
+
+          return resolveCombinedCategory(vendorCountries);
+        });
+
+        // Shipment hanya diklasifikasikan jika
+        // semua produknya mempunyai kategori
+        // yang sama dan dapat diketahui.
+        if (itemCategories.every((value) => value === "IMPORT")) {
+          category = "IMPORT";
+        } else if (itemCategories.every((value) => value === "DOMESTIC")) {
+          category = "DOMESTIC";
+        }
+      }
+
+      return {
+        start: shipment.departureDate,
+        end: shipment.arrivalDate,
+        category,
+      };
     });
+
+    const shippingAverages = calculateCategoryAverages(shippingRecords);
+
+    // ==========================================
+    // 2C. EXISTING GLOBAL AVERAGES
+    // ==========================================
+    // Dipertahankan untuk kompatibilitas API.
 
     const avgProductionDays = this.calculateAvgDays(
-      completedProductions.map((p) => ({
-        start: p.startDate!,
-        end: p.endDate!,
-      })),
+      completedProductions
+        .filter((production) => production.startDate && production.endDate)
+        .map((production) => ({
+          start: production.startDate!,
+          end: production.endDate!,
+        })),
     );
-
-    const arrivedShipments = await this.prisma.shipment.findMany({
-      where: {
-        status: ShipmentStatus.ARRIVED,
-        departureDate: { not: null },
-        arrivalDate: { not: null, gte: start, lte: end },
-      },
-      select: { departureDate: true, arrivalDate: true },
-    });
 
     const avgShippingDays = this.calculateAvgDays(
-      arrivedShipments.map((s) => ({
-        start: s.departureDate!,
-        end: s.arrivalDate!,
-      })),
+      arrivedShipments
+        .filter((shipment) => shipment.departureDate && shipment.arrivalDate)
+        .map((shipment) => ({
+          start: shipment.departureDate!,
+          end: shipment.arrivalDate!,
+        })),
     );
 
-    // Fulfillment = dari order dibuat sampai shipment arrived
+    // Pertahankan perhitungan fulfillment lama,
+    // termasuk shipment ARRIVED tanpa departureDate.
     const fulfillmentData = await this.prisma.shipment.findMany({
       where: {
         status: ShipmentStatus.ARRIVED,
-        arrivalDate: { not: null, gte: start, lte: end },
+        arrivalDate: {
+          not: null,
+          gte: start,
+          lte: end,
+        },
       },
       select: {
         arrivalDate: true,
-        order: { select: { dateOrder: true } },
+        order: {
+          select: {
+            dateOrder: true,
+          },
+        },
       },
     });
 
     const avgFulfillmentDays = this.calculateAvgDays(
       fulfillmentData
-        .filter((f) => f.order?.dateOrder && f.arrivalDate)
-        .map((f) => ({
-          start: f.order!.dateOrder,
-          end: f.arrivalDate!,
+        .filter((shipment) => shipment.order?.dateOrder && shipment.arrivalDate)
+        .map((shipment) => ({
+          start: shipment.order!.dateOrder,
+          end: shipment.arrivalDate!,
         })),
     );
+
+    // ==========================================
+    // 2D. IMPORT & DOMESTIC RESULTS
+    // ==========================================
+    const avgProductionImportDays = productionAverages.importDays;
+
+    const avgProductionDomesticDays = productionAverages.domesticDays;
+
+    const avgShippingImportDays = shippingAverages.importDays;
+
+    const avgShippingDomesticDays = shippingAverages.domesticDays;
 
     // 3. Late deliveries dari ProductionTracker
     // CATATAN: Skema saat ini belum punya field targetDate/deadline.
@@ -267,11 +445,37 @@ export class OpsAnalyticsService {
         sendToCustomer: sendToCustCount,
         complete: completeCount,
       },
+
       averages: {
+        // Existing averages
         avgProductionDays,
         avgShippingDays,
         avgFulfillmentDays,
+
+        // Import averages
+        avgProductionImportDays,
+        avgShippingImportDays,
+
+        // Domestic averages
+        avgProductionDomesticDays,
+        avgShippingDomesticDays,
+
+        // Import records
+        productionImportCount: productionAverages.importCount,
+
+        shippingImportCount: shippingAverages.importCount,
+
+        // Domestic records
+        productionDomesticCount: productionAverages.domesticCount,
+
+        shippingDomesticCount: shippingAverages.domesticCount,
+
+        // Unclassified records
+        unclassifiedProductionCount: productionAverages.unknownCount,
+
+        unclassifiedShippingCount: shippingAverages.unknownCount,
       },
+
       lateDeliveries: {
         byMonth: lateByMonth,
         byVendor: lateByVendor,
@@ -474,16 +678,32 @@ export class OpsAnalyticsService {
   // =======================================================================
   // HELPER: hitung rata-rata hari antara start dan end
   // =======================================================================
+
   private calculateAvgDays(
-    pairs: Array<{ start: Date; end: Date }>,
+    pairs: Array<{
+      start: Date;
+      end: Date;
+    }>,
   ): number | null {
-    if (pairs.length === 0) return null;
+    let totalDays = 0;
+    let validCount = 0;
 
-    const totalDays = pairs.reduce((sum, p) => {
-      const diffMs = p.end.getTime() - p.start.getTime();
-      return sum + diffMs / (1000 * 60 * 60 * 24);
-    }, 0);
+    for (const pair of pairs) {
+      const diffMs = pair.end.getTime() - pair.start.getTime();
 
-    return round(totalDays / pairs.length, 1);
+      if (!Number.isFinite(diffMs) || diffMs < 0) {
+        continue;
+      }
+
+      totalDays += diffMs / (1000 * 60 * 60 * 24);
+
+      validCount++;
+    }
+
+    if (validCount === 0) {
+      return null;
+    }
+
+    return round(totalDays / validCount, 1);
   }
 }

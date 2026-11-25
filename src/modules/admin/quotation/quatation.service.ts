@@ -74,6 +74,40 @@ export class QuotationService {
     ];
     return months[date.getMonth()];
   }
+
+  private async recordQuotationMilestone(
+    tx: Prisma.TransactionClient,
+    quotationId: string,
+    status: "SENT" | "ACCEPTED",
+    recordedAt: Date = new Date(),
+  ): Promise<void> {
+    if (status === "SENT") {
+      await tx.quotation.updateMany({
+        where: {
+          id: quotationId,
+          firstSentAt: null,
+        },
+        data: {
+          firstSentAt: recordedAt,
+        },
+      });
+
+      return;
+    }
+
+    if (status === "ACCEPTED") {
+      await tx.quotation.updateMany({
+        where: {
+          id: quotationId,
+          firstAcceptedAt: null,
+        },
+        data: {
+          firstAcceptedAt: recordedAt,
+        },
+      });
+    }
+  }
+
   // ==========================================
   // 1. GET ALL (PAGINATION & SEARCH)
   // ==========================================
@@ -1005,21 +1039,35 @@ export class QuotationService {
 
       const currentQuotation = await tx.quotation.findUniqueOrThrow({
         where: { id },
-        select: { status: true },
+        select: {
+          status: true,
+        },
       });
+
       const updatedQuotation = await tx.quotation.update({
         where: { id },
         data: updatePayload,
       });
 
+      // ==========================================
+      // RECORD QUOTATION STATUS TRANSITION
+      // ==========================================
       if (currentQuotation.status !== updatedQuotation.status) {
         if (
           updatedQuotation.status === "SENT" ||
           updatedQuotation.status === "ACCEPTED"
         ) {
+          await this.recordQuotationMilestone(tx, id, updatedQuotation.status);
+
+          // Pertahankan GA4 tracking yang sudah ada.
           await this.enqueueQuotationTracking(tx, id, updatedQuotation.status);
+
+          return tx.quotation.findUniqueOrThrow({
+            where: { id },
+          });
         }
       }
+
       return updatedQuotation;
     });
   }
@@ -1078,6 +1126,8 @@ export class QuotationService {
 
         // Tracking hanya jika transisi berhasil
         if (updated.count === 1) {
+          await this.recordQuotationMilestone(tx, quotationId, "ACCEPTED");
+
           await this.enqueueQuotationTracking(tx, quotationId, "ACCEPTED");
         }
       } else if (quotation.status === "DRAFT" || quotation.status === "SENT") {
