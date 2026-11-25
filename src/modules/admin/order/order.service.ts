@@ -1,3 +1,4 @@
+import { resolveOrderSalesOwner } from "../sales-ownership/sales-ownership.helper";
 import * as ExcelJS from "exceljs";
 import { injectable } from "tsyringe";
 
@@ -211,6 +212,15 @@ export class OrderService {
 
     const newOrder = await this.prisma.$transaction(async (tx) => {
       const connectRelations: any = {};
+      const salesOwnerId = await resolveOrderSalesOwner(tx, {
+        actorId: orderCore.createdById,
+        clientId: orderCore.clientId,
+        referenceQuotationId: orderCore.referenceQuotationId,
+        referenceSampleId: orderCore.referenceSampleId,
+      });
+      if (salesOwnerId) {
+        connectRelations.salesUser = { connect: { id: salesOwnerId } };
+      }
 
       const generatedOrderNumber = await this.generateOrderNumber(
         tx,

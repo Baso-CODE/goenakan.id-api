@@ -1,3 +1,4 @@
+import { resolveInitialSalesOwner } from "../sales-ownership/sales-ownership.helper";
 import { Prisma } from "@prisma/client";
 import { injectable } from "tsyringe";
 import { ApiError } from "../../../utils/api-error";
@@ -593,6 +594,7 @@ export class QuotationService {
     }
     // D. BUKA TRANSAKSI UNTUK MENYIMPAN KE DATABASE
     const newQuotation = await this.prisma.$transaction(async (tx) => {
+      const salesUserId = await resolveInitialSalesOwner(tx, actorUserId);
       const quotationNumber = await this.generateQuotationNumber(
         tx,
         client.custCode || "000",
@@ -614,6 +616,7 @@ export class QuotationService {
           validUntil: data.validUntil,
           status: "DRAFT",
           userId: actorUserId,
+          salesUserId,
           // Penandatangan + snapshot.
           signerUserId: signer.signerUserId,
           signerName: signer.signerName,

@@ -13,9 +13,11 @@ export class OrderController {
       const body = req.body as CreateOrderDTO;
 
       const authorId = (req as any).user?.id;
-      if (authorId) {
-        body.createdById = authorId;
+      if (!authorId) {
+        res.status(401).json({ message: "Unauthorized" });
+        return;
       }
+      body.createdById = authorId;
 
       // =====================================================================
       //  PERBAIKAN: PARSING STRING JSON DARI FORMDATA MENJADI ARRAY OBJEK

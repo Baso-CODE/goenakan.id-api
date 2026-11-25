@@ -1,3 +1,5 @@
+import { AuthenticatedRequest } from "../../../middleware/AuthenticatedUser";
+import { ApiError } from "../../../utils/api-error";
 // src/modules/analytics/analytics.controller.ts
 
 import { NextFunction, Request, Response } from "express";
@@ -156,6 +158,53 @@ export class AnalyticsController {
    * Parse & validasi query parameters dari request.
    * Throw ValidationError kalau parameter tidak valid.
    */
+  // SALES PERFORMANCE: role-specific endpoints, no broad read_analytics grant.
+  getSalesPerformance = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const actor = (req as AuthenticatedRequest).user;
+      if (!actor) throw new ApiError("Unauthorized", 401);
+      const query = this.parseFilterQuery(req, DEFAULT_RANGE);
+      if (req.query.salesUserId !== undefined && (typeof req.query.salesUserId !== "string" || !req.query.salesUserId.trim())) throw new ApiError("Invalid salesUserId", 400);
+      if (req.query.currency !== undefined && typeof req.query.currency !== "string") throw new ApiError("Invalid currency", 400);
+      const data = await this.analyticsService.salesPerformance.getPerformance(query, actor.id, false, req.query.salesUserId as string | undefined, req.query.currency as string | undefined);
+      res.setHeader("Cache-Control", "private, no-store");
+      res.status(200).json({ success: true, data });
+    } catch (error) { next(error); }
+  };
+
+  getMySalesPerformance = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const actor = (req as AuthenticatedRequest).user;
+      if (!actor) throw new ApiError("Unauthorized", 401);
+      if (req.query.salesUserId !== undefined || req.query.userId !== undefined) throw new ApiError("Personal analytics cannot select another user", 403);
+      if (req.query.currency !== undefined && typeof req.query.currency !== "string") throw new ApiError("Invalid currency", 400);
+      const query = this.parseFilterQuery(req, DEFAULT_RANGE);
+      const data = await this.analyticsService.salesPerformance.getPerformance(query, actor.id, true, undefined, req.query.currency as string | undefined);
+      res.setHeader("Cache-Control", "private, no-store");
+      res.status(200).json({ success: true, data });
+    } catch (error) { next(error); }
+  };
+
+  getSalesOwnership = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const actor = (req as AuthenticatedRequest).user;
+      if (!actor) throw new ApiError("Unauthorized", 401);
+      const data = await this.analyticsService.salesPerformance.getOwnership(actor.id, req.query.documentType, req.query.documentId);
+      res.setHeader("Cache-Control", "private, no-store");
+      res.status(200).json({ success: true, data });
+    } catch (error) { next(error); }
+  };
+
+  changeSalesOwnership = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const actor = (req as AuthenticatedRequest).user;
+      if (!actor) throw new ApiError("Unauthorized", 401);
+      if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) throw new ApiError("Invalid payload", 400);
+      const data = await this.analyticsService.salesPerformance.changeOwnership(actor.id, req.body);
+      res.status(200).json({ success: true, data });
+    } catch (error) { next(error); }
+  };
+
   private parseFilterQuery(
     req: Request,
     defaultRange: ValidRange,

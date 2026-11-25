@@ -251,6 +251,7 @@ model User {
   signedInvoices   Invoice[]   @relation("InvoiceSigner")
   salesOrders      Order[]     @relation("OrderSalesUser")
 
+  salesQuotations Quotation[] @relation("QuotationSalesUser")
   @@map("users")
 }
 
@@ -1815,6 +1816,10 @@ model Quotation {
   signerName         String?
   signerSignatureUrl String? @db.Text
 
+  salesUserId String?
+  salesUser User? @relation("QuotationSalesUser", fields: [salesUserId], references: [id], onDelete: SetNull)
+
+  @@index([salesUserId])
   @@index([signerUserId])
   @@map("quotations")
 }
@@ -2978,4 +2983,18 @@ model CrmSetting {
   updatedAt             DateTime        @updatedAt
 
   @@map("crm_settings")
+}
+
+model SalesOwnershipAudit {
+  id                  String   @id @default(cuid())
+  documentType        String   @db.VarChar(20)
+  documentId          String
+  changedByUserId     String
+  previousSalesUserId String?
+  newSalesUserId      String?
+  reason              String   @db.VarChar(500)
+  changedAt           DateTime @default(now())
+
+  @@index([documentType, documentId, changedAt])
+  @@map("sales_ownership_audits")
 }

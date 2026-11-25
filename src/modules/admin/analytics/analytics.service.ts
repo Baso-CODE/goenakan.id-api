@@ -1,3 +1,4 @@
+import { SalesPerformanceService } from "./sales-performance.service";
 import { inject, injectable } from "tsyringe";
 
 import { AnalyticsFilterQuery } from "./analytics.helper";
@@ -22,6 +23,9 @@ export class AnalyticsService {
 
     @inject(QuotationAnalyticsService)
     private readonly quotationAnalyticsService: QuotationAnalyticsService,
+
+    @inject(SalesPerformanceService)
+    public readonly salesPerformance: SalesPerformanceService,
   ) {}
 
   getSalesOverviewData(query: AnalyticsFilterQuery) {

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { autoInjectable } from "tsyringe";
 import { NextAuthMiddleware } from "../../../middleware/nextAuth.middleware";
 import { autoVerifyPermission } from "../../../middleware/permission.middleware";
+import { verifySuperAdmin } from "../../../middleware/superAdmin.middleware";
 import { AnalyticsController } from "./analytics.controller";
 
 @autoInjectable()
@@ -24,6 +25,28 @@ export class AnalyticsRouter {
     this.router.use(this.nextAuthMiddleware.verifyNextAuthToken);
 
     //  Dibiarkan kosong agar middleware mendeteksi nama modul murni dari URL
+    // Own dashboard does NOT require the company-wide read_analytics permission.
+    // Service enforces ADMIN_SALES role and resolves identity from the token.
+    this.router.get(
+      "/sales-performance/me",
+      this.analyticsController.getMySalesPerformance,
+    );
+    this.router.get(
+      "/sales-performance/ownership",
+      verifySuperAdmin,
+      this.analyticsController.getSalesOwnership,
+    );
+    this.router.patch(
+      "/sales-performance/ownership",
+      verifySuperAdmin,
+      this.analyticsController.changeSalesOwnership,
+    );
+    this.router.get(
+      "/sales-performance",
+      verifySuperAdmin,
+      this.analyticsController.getSalesPerformance,
+    );
+
     this.router.use(autoVerifyPermission("analytics"));
 
     // =========================================================================
