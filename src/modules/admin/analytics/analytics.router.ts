@@ -49,6 +49,12 @@ export class AnalyticsRouter {
     // URL: GET /api/analytics/operations?range=...
     // =========================================================================
     this.router.get("/operations", this.analyticsController.getOpsAnalytics);
+
+    // TAB 5: QUOTATION ANALYTICS
+    this.router.get(
+      "/quotations",
+      this.analyticsController.getQuotationAnalytics,
+    );
   };
 
   getRouter(): Router {

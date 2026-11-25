@@ -1787,6 +1787,9 @@ model Quotation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  firstSentAt     DateTime?
+  firstAcceptedAt DateTime?
+
   // === RELATIONS ===
   orderId         String?
   order           Order?  @relation("OrderQuotations", fields: [orderId], references: [id])
