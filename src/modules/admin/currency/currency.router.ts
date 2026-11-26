@@ -24,6 +24,14 @@ export class CurrencyRouter {
 
   private initializeRoutes = (): void => {
     // ==========================================
+    // PUBLIC CURRENCY ESTIMATION
+    // ==========================================
+    this.router.get(
+      "/public/estimate-rate",
+      this.currencyController.getPublicEstimateRate,
+    );
+
+    // ==========================================
     // 🛡️ GATEKEEPER LEVEL ROUTER
     // Pasang pelindung token dan permission dinamis di sini satu kali saja.
     // Seluruh route di bawahnya otomatis aman.
