@@ -1,11 +1,16 @@
-import { SalesPerformanceService } from "./sales-performance.service";
 import { inject, injectable } from "tsyringe";
 
 import { AnalyticsFilterQuery } from "./analytics.helper";
+
 import { CustomerAnalyticsService } from "./customer-analytics.service";
 import { OpsAnalyticsService } from "./ops-analytics.service";
 import { QuotationAnalyticsService } from "./quotation-analytics.service";
 import { SalesOverviewService } from "./sales-overview.service";
+import { SalesPerformanceService } from "./sales-performance.service";
+import {
+  SampleAnalyticsService,
+  type SampleAnalyticsQuery,
+} from "./sample-analytics.service";
 
 export type { AnalyticsFilterQuery } from "./analytics.helper";
 
@@ -26,6 +31,9 @@ export class AnalyticsService {
 
     @inject(SalesPerformanceService)
     public readonly salesPerformance: SalesPerformanceService,
+
+    @inject(SampleAnalyticsService)
+    private readonly sampleAnalyticsService: SampleAnalyticsService,
   ) {}
 
   getSalesOverviewData(query: AnalyticsFilterQuery) {
@@ -42,5 +50,9 @@ export class AnalyticsService {
 
   getQuotationAnalyticsData(query: AnalyticsFilterQuery) {
     return this.quotationAnalyticsService.getQuotationAnalytics(query);
+  }
+
+  getSampleAnalyticsData(query: SampleAnalyticsQuery) {
+    return this.sampleAnalyticsService.getSampleAnalytics(query);
   }
 }
