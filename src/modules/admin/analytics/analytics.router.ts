@@ -78,6 +78,13 @@ export class AnalyticsRouter {
       "/quotations",
       this.analyticsController.getQuotationAnalytics,
     );
+
+    // TAB 6: SAMPLE ANALYTICS
+    this.router.get(
+      "/samples",
+      verifySuperAdmin,
+      this.analyticsController.getSampleAnalytics,
+    );
   };
 
   getRouter(): Router {
